@@ -1,13 +1,14 @@
 ﻿{
   "Credentials": {
-    "Universe": "",
-    "Email": "",
-    "Password": "",
-    "Language": ""
+    "Universe": "Volans",
+    "Email": "pogobotvda@gmail.com",
+    "Password": "Steficanza%1989",
+    "Language": "en"
   },
   "General": {
     "UserAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.104 Safari/537.36",
-    "Port": "8080"
+    "Port": "8080",
+    "AlwaysShowDebug": false
   },
   "Defender": {
     "Active": true,
@@ -46,9 +47,11 @@
     "AutoCargo": {
       "Active": true,
       "ExcludeMoons": true,
-      "CargoType": "SmallCargo",
+      "MaxCargosToBuild": 250,
+      "MaxCargosToKeep": 250,
+      "CargoType": "LargeCargo",
       "CheckIntervalMin": 60,
-      "CheckIntervalMax": 240
+      "CheckIntervalMax": 120
     },
     "AutoRepatriate": {
       "Active": true,
@@ -58,9 +61,9 @@
         "Galaxy": 4,
         "System": 63,
         "Position": 8,
-        "Type": "Planet"
+        "Type": "Moon"
       },
-      "CargoType": "SmallCargo",
+      "CargoType": "LargeCargo",
       "RandomOrder": true,
       "CheckIntervalMin": 180,
       "CheckIntervalMax": 360
@@ -70,14 +73,14 @@
     "Active": true,
     "AutoSendExpeditions": {
       "Active": true,
-      "MainShip": "SmallCargo",
+      "MainShip": "LargeCargo",
       "WaitForAllExpeditions": true,
       "SplitExpeditionsBetweenSystems": false,
       "Origin": {
         "Galaxy": 4,
         "System": 63,
         "Position": 8,
-        "Type": "Planet"
+        "Type": "Moon"
       }
     },
     "AutoHarvest": {
@@ -86,8 +89,8 @@
     }
   },
   "TelegramMessenger": {
-    "Active": false,
-    "API": "",
-    "ChatId": ""
+    "Active": true,
+    "API": "1588280259:AAG3YIk3pqOpaGQfhdOV158jUZUUkxVl7ks",
+    "ChatId": "612738847"
   }
 }

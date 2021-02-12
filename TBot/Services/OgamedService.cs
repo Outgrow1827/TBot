@@ -32,7 +32,7 @@ namespace Tbot.Services
             this.Client = new RestClient(this.Url);
         }
 
-        internal byte[] OgamedExecutable
+        internal static byte[] OgamedExecutable
         {
             get
             {
@@ -117,12 +117,12 @@ namespace Tbot.Services
             }
         }
 
-        internal byte[] GetOgamedExecutable()
+        internal static byte[] GetOgamedExecutable()
         {
             return OgamedExecutable;
         }
 
-        internal void CreateOgamedExecutable()
+        internal static void CreateOgamedExecutable()
         {
             string tempExeName = Path.Combine(Directory.GetCurrentDirectory(), "ogamed.exe");
             using FileStream fsDst = new FileStream(tempExeName, FileMode.OpenOrCreate, FileAccess.Write);
@@ -130,19 +130,19 @@ namespace Tbot.Services
             fsDst.Write(bytes, 0, bytes.Length);
         }
 
-        internal void ExecuteOgamedExecutable(Credentials credentials)
+        internal static void ExecuteOgamedExecutable(Credentials credentials)
         {
             ExecuteOgamedExecutable(credentials, 8080);
         }
 
-        internal void ExecuteOgamedExecutable(Credentials credentials, int port)
+        internal static void ExecuteOgamedExecutable(Credentials credentials, int port)
         {
             CreateOgamedExecutable();
             string args = "--universe=" + credentials.Universe + " --username=" + credentials.Username + " --password=" + credentials.Password + " --language=" + credentials.Language + " --auto-login=false --port=" + port + " --cookies-filename=cookies.txt";
             Process.Start("ogamed.exe", args);
         }
 
-        public void KillOgamedExecultable()
+        public static void KillOgamedExecultable()
         {
             foreach (var process in Process.GetProcessesByName("ogamed"))
             {
@@ -157,8 +157,12 @@ namespace Tbot.Services
                 Resource = "/bot/set-user-agent",
                 Method = Method.POST,
             };
-            request.AddParameter(new Parameter("userAgent", userAgent, ParameterType.GetOrPost));
+            request.AddParameter("userAgent", userAgent, ParameterType.GetOrPost);
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -174,6 +178,10 @@ namespace Tbot.Services
                 Method = Method.GET
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -189,6 +197,10 @@ namespace Tbot.Services
                 Method = Method.GET
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -204,6 +216,10 @@ namespace Tbot.Services
                 Method = Method.GET
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -219,6 +235,10 @@ namespace Tbot.Services
                 Method = Method.GET
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -234,6 +254,10 @@ namespace Tbot.Services
                 Method = Method.GET
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -249,6 +273,10 @@ namespace Tbot.Services
                 Method = Method.GET
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -264,6 +292,10 @@ namespace Tbot.Services
                 Method = Method.GET
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -279,6 +311,10 @@ namespace Tbot.Services
                 Method = Method.GET
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -294,6 +330,10 @@ namespace Tbot.Services
                 Method = Method.GET
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -309,6 +349,10 @@ namespace Tbot.Services
                 Method = Method.GET
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -324,6 +368,10 @@ namespace Tbot.Services
                 Method = Method.GET
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -339,6 +387,10 @@ namespace Tbot.Services
                 Method = Method.GET
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -354,6 +406,10 @@ namespace Tbot.Services
                 Method = Method.GET
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -369,6 +425,10 @@ namespace Tbot.Services
                 Method = Method.GET
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -384,6 +444,10 @@ namespace Tbot.Services
                 Method = Method.GET
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -399,6 +463,10 @@ namespace Tbot.Services
                 Method = Method.GET
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -414,6 +482,10 @@ namespace Tbot.Services
                 Method = Method.GET
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -429,6 +501,10 @@ namespace Tbot.Services
                 Method = Method.GET
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -463,6 +539,10 @@ namespace Tbot.Services
                 Method = Method.GET,
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -478,6 +558,10 @@ namespace Tbot.Services
                 Method = Method.GET,
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -493,6 +577,10 @@ namespace Tbot.Services
                 Method = Method.GET,
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -508,6 +596,10 @@ namespace Tbot.Services
                 Method = Method.GET,
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -523,6 +615,10 @@ namespace Tbot.Services
                 Method = Method.GET,
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -538,6 +634,10 @@ namespace Tbot.Services
                 Method = Method.GET
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -553,6 +653,10 @@ namespace Tbot.Services
                 Method = Method.GET
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -568,6 +672,10 @@ namespace Tbot.Services
                 Method = Method.GET
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -583,6 +691,10 @@ namespace Tbot.Services
                 Method = Method.GET
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -598,6 +710,10 @@ namespace Tbot.Services
                 Method = Method.GET,
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -613,6 +729,10 @@ namespace Tbot.Services
                 Method = Method.GET,
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -628,6 +748,10 @@ namespace Tbot.Services
                 Method = Method.GET,
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -643,6 +767,10 @@ namespace Tbot.Services
                 Method = Method.GET,
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -658,6 +786,10 @@ namespace Tbot.Services
                 Method = Method.GET,
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -673,6 +805,10 @@ namespace Tbot.Services
                 Method = Method.GET,
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -688,6 +824,10 @@ namespace Tbot.Services
                 Method = Method.POST,
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -703,6 +843,10 @@ namespace Tbot.Services
                 Method = Method.POST,
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -718,10 +862,10 @@ namespace Tbot.Services
                 Method = Method.POST,
             };
 
-            request.AddParameter(new Parameter("galaxy", destination.Galaxy, ParameterType.GetOrPost));
-            request.AddParameter(new Parameter("system", destination.System, ParameterType.GetOrPost));
-            request.AddParameter(new Parameter("position", destination.Position, ParameterType.GetOrPost));
-            request.AddParameter(new Parameter("type", (int)destination.Type, ParameterType.GetOrPost));
+            request.AddParameter("galaxy", destination.Galaxy, ParameterType.GetOrPost);
+            request.AddParameter("system", destination.System, ParameterType.GetOrPost);
+            request.AddParameter("position", destination.Position, ParameterType.GetOrPost);
+            request.AddParameter("type", (int)destination.Type, ParameterType.GetOrPost);
 
             foreach (PropertyInfo prop in ships.GetType().GetProperties())
             {
@@ -729,19 +873,23 @@ namespace Tbot.Services
                 if (qty == 0) continue;
                 if (Enum.TryParse<Buildables>(prop.Name, out Buildables buildable))
                 {
-                    request.AddParameter(new Parameter("ships", (int)buildable + "," + prop.GetValue(ships, null), ParameterType.GetOrPost));
+                    request.AddParameter("ships", (int)buildable + "," + prop.GetValue(ships, null), ParameterType.GetOrPost);
                 }
             }
 
-            request.AddParameter(new Parameter("mission", (int)mission, ParameterType.GetOrPost));
+            request.AddParameter("mission", (int)mission, ParameterType.GetOrPost);
 
-            request.AddParameter(new Parameter("speed", (int)speed, ParameterType.GetOrPost));
+            request.AddParameter("speed", (int)speed, ParameterType.GetOrPost);
 
-            request.AddParameter(new Parameter("metal", payload.Metal, ParameterType.GetOrPost));
-            request.AddParameter(new Parameter("crystal", payload.Crystal, ParameterType.GetOrPost));
-            request.AddParameter(new Parameter("deuterium", payload.Deuterium, ParameterType.GetOrPost));
+            request.AddParameter("metal", payload.Metal, ParameterType.GetOrPost);
+            request.AddParameter("crystal", payload.Crystal, ParameterType.GetOrPost);
+            request.AddParameter("deuterium", payload.Deuterium, ParameterType.GetOrPost);
 
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -757,6 +905,10 @@ namespace Tbot.Services
                 Method = Method.POST,
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -772,6 +924,10 @@ namespace Tbot.Services
                 Method = Method.GET,
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -793,6 +949,10 @@ namespace Tbot.Services
                 Method = Method.POST,
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -808,6 +968,10 @@ namespace Tbot.Services
                 Method = Method.POST,
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -823,6 +987,10 @@ namespace Tbot.Services
                 Method = Method.POST,
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -830,7 +998,7 @@ namespace Tbot.Services
             else return true;
         }
 
-        public bool BuildMilitary(Celestial celestial, Buildables buildable, int quantity)
+        public bool BuildMilitary(Celestial celestial, Buildables buildable, long quantity)
         {
             var request = new RestRequest
             {
@@ -838,6 +1006,10 @@ namespace Tbot.Services
                 Method = Method.POST,
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -845,7 +1017,7 @@ namespace Tbot.Services
             else return true;
         }
 
-        public bool BuildShips(Celestial celestial, Buildables buildable, int quantity)
+        public bool BuildShips(Celestial celestial, Buildables buildable, long quantity)
         {
             var request = new RestRequest
             {
@@ -853,6 +1025,10 @@ namespace Tbot.Services
                 Method = Method.POST,
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -860,7 +1036,7 @@ namespace Tbot.Services
             else return true;
         }
 
-        public bool BuildDefences(Celestial celestial, Buildables buildable, int quantity)
+        public bool BuildDefences(Celestial celestial, Buildables buildable, long quantity)
         {
             var request = new RestRequest
             {
@@ -868,6 +1044,10 @@ namespace Tbot.Services
                 Method = Method.POST,
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -875,7 +1055,7 @@ namespace Tbot.Services
             else return true;
         }
 
-        public Model.Resources GetPrice(Buildables buildable, int levelOrQuantity)
+        public Model.Resources GetPrice(Buildables buildable, long levelOrQuantity)
         {
             var request = new RestRequest
             {
@@ -883,6 +1063,10 @@ namespace Tbot.Services
                 Method = Method.GET,
             };
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);
@@ -897,9 +1081,13 @@ namespace Tbot.Services
                 Resource = "/bot/send-message",
                 Method = Method.POST,
             };
-            request.AddParameter(new Parameter("playerID", playerID, ParameterType.GetOrPost));
-            request.AddParameter(new Parameter("message", message, ParameterType.GetOrPost));
+            request.AddParameter("playerID", playerID, ParameterType.GetOrPost);
+            request.AddParameter("message", message, ParameterType.GetOrPost);
             var result = JsonConvert.DeserializeObject<OgamedResponse>(Client.Execute(request).Content);
+            if (result == null || result.Status == null)
+            {
+                throw new Exception("An error has occurred: Response parsing failed");
+            }
             if (result.Status != "ok")
             {
                 throw new Exception("An error has occurred: Status: " + result.Status + " - Message: " + result.Message);

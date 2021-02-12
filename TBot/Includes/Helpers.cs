@@ -11,7 +11,7 @@ namespace Tbot.Includes
 {
     static class Helpers
     {
-        public static void WriteLog(LogType type, LogSender sender, string message)
+        public static void WriteLog(LogType type, LogSender sender, string message, bool alwaysShowDebug = false)
         {
             Console.ForegroundColor = type switch
             {
@@ -21,7 +21,8 @@ namespace Tbot.Includes
                 LogType.Debug => ConsoleColor.White,
                 _ => ConsoleColor.Gray
             };
-            Console.WriteLine("[" + type.ToString() + "] " + "[" + sender.ToString() + "] " + "[" + DateTime.Now.ToString() + "] - " + message);
+            if (type != LogType.Debug || System.Diagnostics.Debugger.IsAttached || alwaysShowDebug)
+                Console.WriteLine("[" + type.ToString() + "] " + "[" + sender.ToString() + "] " + "[" + DateTime.Now.ToString() + "] - " + message);
             Console.ForegroundColor = ConsoleColor.Gray;
         }
 
@@ -38,11 +39,11 @@ namespace Tbot.Includes
 
         public static void PlayAlarm()
         {
-            Console.Beep(800, 1500);
+            Console.Beep();
             Thread.Sleep(1000);
-            Console.Beep(800, 2000);
+            Console.Beep();
             Thread.Sleep(1000);
-            Console.Beep(800, 2000);
+            Console.Beep();
             return;
         }
 
@@ -968,7 +969,7 @@ namespace Tbot.Includes
             {
                 dic.Add(mine, CalcPrice(mine, GetNextLevel(planet, mine)).ConvertedDeuterium);
             }
-            dic.OrderBy(m => m.Value)
+            dic = dic.OrderBy(m => m.Value)
                 .ToDictionary(m => m.Key, m => m.Value);
             return dic.First().Key;
         }
