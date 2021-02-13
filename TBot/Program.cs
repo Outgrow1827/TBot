@@ -14,6 +14,7 @@ namespace Tbot
 {
     class Program
     {
+        /*TEST*/
         static volatile OgamedService ogamedService;
 
         static volatile TelegramMessenger telegramMessenger;
