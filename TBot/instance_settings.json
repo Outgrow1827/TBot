@@ -373,12 +373,14 @@
 	},
 	"AutoDiscovery": {
 		"Active": true,
-		"Origin": {
-			"Galaxy": 5,
-			"System": 64,
-			"Position": 8,
-			"Type": "Planet"
-		},
+		"Origin": [
+			{
+				"Galaxy": 5,
+				"System": 64,
+				"Position": 8,
+				"Type": "Planet"
+			}
+		],
 		"Range": {
 				"Galaxy": 5,
 				"StartSystem": 1,
