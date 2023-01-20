@@ -112,7 +112,7 @@ namespace Tbot.Workers.Brain {
 							plasmaDOIR <= (float) _tbotInstance.InstanceSettings.Brain.AutoMine.MaxDaysOfInvestmentReturn &&
 							(int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxPlasmaTechnology >= _tbotInstance.UserData.researches.PlasmaTechnology + 1 &&
 							celestial.Facilities.ResearchLab >= 4 &&
-							_tbotInstance.UserData.researches.EnergyTechnology >= 8 &
+							_tbotInstance.UserData.researches.EnergyTechnology >= 8 &&
 							_tbotInstance.UserData.researches.LaserTechnology >= 10 &&
 							_tbotInstance.UserData.researches.IonTechnology >= 5
 						) {
