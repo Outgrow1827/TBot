@@ -103,7 +103,7 @@ namespace TBot.Ogame.Infrastructure {
 			return (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) ? "ogamed.exe" : "ogamed";
 		}
 
-		internal Process ExecuteOgamedExecutable(Credentials credentials, Device device, string host = "localhost", int port = 8080, string captchaKey = "", ProxySettings proxySettings = null) {
+		internal Process ExecuteOgamedExecutable(Credentials credentials, Device device, string host = "0.0.0.0", int port = 8080, string captchaKey = "", ProxySettings proxySettings = null) {
 			Process? ogameProc = null;
 			try {
 				string args = $"--universe=\"{credentials.Universe}\" --username={credentials.Username} --password={credentials.Password} --device-name={device.Name} --language={credentials.Language} --auto-login=false --port={port}";
