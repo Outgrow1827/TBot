@@ -13,6 +13,7 @@ using Tbot.Helpers;
 using TBot.Model;
 using TBot.Ogame.Infrastructure.Models;
 using TBot.Ogame.Infrastructure;
+using System.Numerics;
 
 namespace Tbot.Workers.Brain {
 	public class LifeformsAutoMineCelestialWorker : CelestialWorkerBase {
@@ -101,18 +102,35 @@ namespace Tbot.Workers.Brain {
 				celestial = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.Buildings);
 				celestial = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.Constructions);
 
+				bool preventTechBuilding = false;
+				if (celestial.Constructions.LFResearchCountdown > 0) {
+					preventTechBuilding = true;
+				}
+
+				LFBuildings maxLFBuildings = new();
+				maxLFBuildings.ResidentialSector = maxLFBuildings.AssemblyLine = maxLFBuildings.MeditationEnclave = maxLFBuildings.Sanctuary = (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.MaxBasePopulationBuilding;
+				maxLFBuildings.BiosphereFarm = maxLFBuildings.FusionCellFactory = maxLFBuildings.CrystalFarm = maxLFBuildings.AntimatterCondenser = (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.MaxBaseFoodBuilding;
+				maxLFBuildings.ResearchCentre = maxLFBuildings.RoboticsResearchCentre = maxLFBuildings.RuneTechnologium = maxLFBuildings.VortexChamber = (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.MaxBaseTechBuilding;
+				maxLFBuildings.AcademyOfSciences = maxLFBuildings.UpdateNetwork = maxLFBuildings.RuneForge = maxLFBuildings.HallsOfRealisation = (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.MaxT2Building;
+				maxLFBuildings.NeuroCalibrationCentre = maxLFBuildings.QuantumComputerCentre = maxLFBuildings.Oriktorium = maxLFBuildings.ForumOfTranscendence = (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.MaxT3Building;
+				maxLFBuildings.HighEnergySmelting = maxLFBuildings.AutomatisedAssemblyCentre = maxLFBuildings.MagmaForge = maxLFBuildings.AntimatterConvector = (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.MaxBuilding6;
+				maxLFBuildings.FoodSilo = maxLFBuildings.HighPerformanceTransformer = maxLFBuildings.DisruptionChamber = maxLFBuildings.CloningLaboratory = (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.MaxBuilding7;
+				maxLFBuildings.FusionPoweredProduction = maxLFBuildings.MicrochipAssemblyLine = maxLFBuildings.Megalith = maxLFBuildings.ChrysalisAccelerator = (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.MaxBuilding8;
+				maxLFBuildings.Skyscraper = maxLFBuildings.ProductionAssemblyHall = maxLFBuildings.CrystalRefinery = maxLFBuildings.BioModifier = (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.MaxBuilding9;
+				maxLFBuildings.BiotechLab = maxLFBuildings.HighPerformanceSynthesiser = maxLFBuildings.DeuteriumSynthesiser = maxLFBuildings.PsionicModulator = (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.MaxBuilding10;
+				maxLFBuildings.Metropolis = maxLFBuildings.ChipMassProduction = maxLFBuildings.MineralResearchCentre = maxLFBuildings.ShipManufacturingHall = (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.MaxBuilding11;
+				maxLFBuildings.PlanetaryShield = maxLFBuildings.NanoRepairBots = maxLFBuildings.AdvancedRecyclingPlant = maxLFBuildings.SupraRefractor = (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.MaxBuilding12;
+
 				if (celestial.Constructions.LFBuildingID != 0 || celestial.Constructions.BuildingID == (int) Buildables.RoboticsFactory || celestial.Constructions.BuildingID == (int) Buildables.NaniteFactory) {
 					DoLog(LogLevel.Information, $"Skipping {celestial.ToString()}: there is already a building (LF, robotic or nanite) in production.");
 					delayProduction = true;
-					if (celestial.Constructions.LFBuildingID != 0) {
-						delayTime = (long) celestial.Constructions.LFBuildingCountdown * (long) 1000 + (long) RandomizeHelper.CalcRandomInterval(IntervalType.AFewSeconds);
-					} else {
-						delayTime = (long) celestial.Constructions.BuildingCountdown * (long) 1000 + (long) RandomizeHelper.CalcRandomInterval(IntervalType.AFewSeconds);
-					}
+					delayTime = celestial.Constructions.LFBuildingID != 0
+						? ((long) celestial.Constructions.LFBuildingCountdown * (long) 1000) + (long) RandomizeHelper.CalcRandomInterval(IntervalType.AFewSeconds)
+						: ((long) celestial.Constructions.BuildingCountdown * (long) 1000) + (long) RandomizeHelper.CalcRandomInterval(IntervalType.AFewSeconds);
 				}
 				if (delayTime == 0) {
 					if (celestial is Planet) {
-						buildable = _calculationService.GetNextLFBuildingToBuild(celestial, maxPopuFactory, maxFoodFactory, maxTechFactory, preventIfMoreExpensiveThanNextMine);
+						buildable = _calculationService.GetNextLFBuildingToBuild(celestial, maxLFBuildings, preventIfMoreExpensiveThanNextMine, preventTechBuilding);
 
 						if (buildable != LFBuildables.None) {
 							level = _calculationService.GetNextLevel(celestial, buildable);
@@ -131,7 +149,9 @@ namespace Tbot.Workers.Brain {
 								delayLFResearch = true;
 								return;
 							}
-							Resources xCostBuildable = _calculationService.CalcPrice(buildable, level);
+							float costReduction = _calculationService.CalcLFBuildingsResourcesCostBonus(celestial);
+							float popReduction = _calculationService.CalcLFBuildingsPopulationCostBonus(celestial);
+							Resources xCostBuildable = _calculationService.CalcPrice(buildable, level, costReduction, 0, popReduction);
 
 							if (celestial.Resources.IsBuildable(xCostBuildable)) {
 								DoLog(LogLevel.Information, $"Building {buildable.ToString()} level {level.ToString()} on {celestial.ToString()}");
@@ -143,9 +163,9 @@ namespace Tbot.Workers.Brain {
 										DoLog(LogLevel.Information, "Building succesfully started.");
 									} else {
 										celestial = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.LFBuildings);
-										if (celestial.GetLevel(buildable) != level)
+										if (celestial.GetLevel(buildable) != level) {
 											DoLog(LogLevel.Warning, "Unable to start building construction: an unknown error has occurred");
-										else {
+										} else {
 											started = true;
 											DoLog(LogLevel.Information, "Building succesfully started.");
 										}

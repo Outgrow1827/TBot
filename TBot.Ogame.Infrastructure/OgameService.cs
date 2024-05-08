@@ -106,7 +106,7 @@ namespace TBot.Ogame.Infrastructure {
 		internal Process ExecuteOgamedExecutable(Credentials credentials, Device device, string host = "localhost", int port = 8080, string captchaKey = "", ProxySettings proxySettings = null) {
 			Process? ogameProc = null;
 			try {
-				string args = $"--universe=\"{credentials.Universe}\" --username={credentials.Username} --password={credentials.Password} --device-name={device.Name} --language={credentials.Language} --auto-login=false --port={port} --host=0.0.0.0 --api-new-hostname=http://{host}:{port}";
+				string args = $"--universe=\"{credentials.Universe}\" --username={credentials.Username} --password={credentials.Password} --device-name={device.Name} --language={credentials.Language} --auto-login=false --port={port} --host=0.0.0.0";
 				if (captchaKey != "")
 					args += $" --nja-api-key={captchaKey}";
 				if (proxySettings.Enabled) {
@@ -438,6 +438,10 @@ namespace TBot.Ogame.Infrastructure {
 
 		public async Task<LFBuildings> GetLFBuildings(Celestial celestial) {
 			return await GetAsync<LFBuildings>($"/bot/planets/{celestial.ID}/lifeform-buildings");
+		}
+
+		public async Task<LFBonuses> GetLFBonuses(Celestial celestial) {
+			return await GetAsync<LFBonuses>($"/bot/planets/{celestial.ID}/lifeform-bonuses");
 		}
 
 		public async Task<LFTechs> GetLFTechs(Celestial celestial) {

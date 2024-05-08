@@ -13,7 +13,7 @@
 			"Name": "Device-name",
 			"System": "Windows",
 			"Browser": "Chrome",
-			"UserAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36",
+			"UserAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
 			"Memory": 8,
 			"Concurrency": 16,
 			"Color": 24,
@@ -62,6 +62,11 @@
 		"DefendFromMissiles": true,
 		"IgnoreWeakAttack": false,
 		"WeakAttackRatio": 3,
+		"IgnoreAttackIfIHave": {
+			"Active": false,
+			"MinResourcesToSave": 2000000,
+			"MinFleetToSave": 20000000
+		},
 		"RandomActivity": true,
 		"Home": {
 			"Galaxy": 1,
@@ -168,6 +173,15 @@
 			"MaxBasePopulationBuilding": 60,
 			"MaxBaseFoodBuilding": 62,
 			"MaxBaseTechBuilding": 6,
+			"MaxT2Building": 10,
+			"MaxT3Building": 8,
+			"MaxBuilding6": 5,
+			"MaxBuilding7": 5,
+			"MaxBuilding8": 5,
+			"MaxBuilding9": 5,
+			"MaxBuilding10": 5,
+			"MaxBuilding11": 5,
+			"MaxBuilding12": 5,
 			"Exclude": [
 				{
 					"Galaxy": 3,
@@ -186,6 +200,24 @@
 				"Active": true
 			},
 			"MaxResearchLevel": 6,
+			"MaxTechs11": 6,
+			"MaxTechs12": 6,
+			"MaxTechs13": 6,
+			"MaxTechs14": 6,
+			"MaxTechs15": 6,
+			"MaxTechs16": 6,
+			"MaxTechs21": 6,
+			"MaxTechs22": 6,
+			"MaxTechs23": 6,
+			"MaxTechs24": 6,
+			"MaxTechs25": 6,
+			"MaxTechs26": 6,
+			"MaxTechs31": 6,
+			"MaxTechs32": 6,
+			"MaxTechs33": 6,
+			"MaxTechs34": 6,
+			"MaxTechs35": 6,
+			"MaxTechs36": 6,
 			"Exclude": [
 				{
 					"Galaxy": 3,
@@ -400,6 +432,12 @@
 			"MinFields": 280,
 			"MinTemperatureAcceptable": -130,
 			"MaxTemperatureAcceptable": 260
+		},
+		"IntensiveResearch" : {
+			"Active": false,
+			"MaxSlots": 10,
+			"MinWaitNextFleet": 25,
+			"MaxWaitNextFleet": 55
 		},
 		"Targets": [
 			{

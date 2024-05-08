@@ -13,6 +13,7 @@ using Tbot.Helpers;
 using TBot.Model;
 using TBot.Ogame.Infrastructure.Models;
 using TBot.Ogame.Infrastructure;
+using Tbot.Common.Settings;
 
 namespace Tbot.Workers.Brain {
 	public class LifeformsAutoResearchCelestialWorker : CelestialWorkerBase {
@@ -92,20 +93,60 @@ namespace Tbot.Workers.Brain {
 				celestial = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.LFTechs);
 				celestial = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.Constructions);
 
+				int maxResearchLevel = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.LifeformAutoResearch, "MaxResearchLevel") ? (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoResearch.MaxResearchLevel : 1;
+				int maxTechs11 = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.LifeformAutoResearch, "MaxTechs11") ? (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoResearch.MaxTechs11 : maxResearchLevel;
+				int maxTechs12 = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.LifeformAutoResearch, "MaxTechs12") ? (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoResearch.MaxTechs12 : maxResearchLevel;
+				int maxTechs13 = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.LifeformAutoResearch, "MaxTechs13") ? (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoResearch.MaxTechs13 : maxResearchLevel;
+				int maxTechs14 = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.LifeformAutoResearch, "MaxTechs14") ? (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoResearch.MaxTechs14 : maxResearchLevel;
+				int maxTechs15 = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.LifeformAutoResearch, "MaxTechs15") ? (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoResearch.MaxTechs15 : maxResearchLevel;
+				int maxTechs16 = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.LifeformAutoResearch, "MaxTechs16") ? (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoResearch.MaxTechs16 : maxResearchLevel;
+				int maxTechs21 = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.LifeformAutoResearch, "MaxTechs21") ? (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoResearch.MaxTechs21 : maxResearchLevel;
+				int maxTechs22 = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.LifeformAutoResearch, "MaxTechs22") ? (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoResearch.MaxTechs22 : maxResearchLevel;
+				int maxTechs23 = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.LifeformAutoResearch, "MaxTechs23") ? (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoResearch.MaxTechs23 : maxResearchLevel;
+				int maxTechs24 = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.LifeformAutoResearch, "MaxTechs24") ? (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoResearch.MaxTechs24 : maxResearchLevel;
+				int maxTechs25 = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.LifeformAutoResearch, "MaxTechs25") ? (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoResearch.MaxTechs25 : maxResearchLevel;
+				int maxTechs26 = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.LifeformAutoResearch, "MaxTechs26") ? (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoResearch.MaxTechs26 : maxResearchLevel;
+				int maxTechs31 = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.LifeformAutoResearch, "MaxTechs31") ? (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoResearch.MaxTechs31 : maxResearchLevel;
+				int maxTechs32 = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.LifeformAutoResearch, "MaxTechs32") ? (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoResearch.MaxTechs32 : maxResearchLevel;
+				int maxTechs33 = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.LifeformAutoResearch, "MaxTechs33") ? (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoResearch.MaxTechs33 : maxResearchLevel;
+				int maxTechs34 = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.LifeformAutoResearch, "MaxTechs34") ? (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoResearch.MaxTechs34 : maxResearchLevel;
+				int maxTechs35 = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.LifeformAutoResearch, "MaxTechs35") ? (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoResearch.MaxTechs35 : maxResearchLevel;
+				int maxTechs36 = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.LifeformAutoResearch, "MaxTechs36") ? (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoResearch.MaxTechs36 : maxResearchLevel;
+
+				LFTechs maxLFTechs = new();
+				maxLFTechs.IntergalacticEnvoys = maxLFTechs.VolcanicBatteries = maxLFTechs.CatalyserTechnology = maxLFTechs.HeatRecovery =  maxTechs11;
+				maxLFTechs.HighPerformanceExtractors = maxLFTechs.AcousticScanning = maxLFTechs.PlasmaDrive = maxLFTechs.SulphideProcess = maxTechs12;
+				maxLFTechs.FusionDrives = maxLFTechs.HighEnergyPumpSystems = maxLFTechs.EfficiencyModule = maxLFTechs.PsionicNetwork = maxTechs13;
+				maxLFTechs.StealthFieldGenerator = maxLFTechs.CargoHoldExpansionCivilianShips = maxLFTechs.DepotAI = maxLFTechs.TelekineticTractorBeam = maxTechs14;
+				maxLFTechs.OrbitalDen = maxLFTechs.MagmaPoweredProduction = maxLFTechs.GeneralOverhaulLightFighter = maxLFTechs.EnhancedSensorTechnology = maxTechs15;
+				maxLFTechs.ResearchAI = maxLFTechs.GeothermalPowerPlants = maxLFTechs.AutomatedTransportLines = maxLFTechs.NeuromodalCompressor = maxTechs16;
+				maxLFTechs.HighPerformanceTerraformer = maxLFTechs.DepthSounding = maxLFTechs.ImprovedDroneAI = maxLFTechs.NeuroInterface = maxTechs21;
+				maxLFTechs.EnhancedProductionTechnologies = maxLFTechs.IonCrystalEnhancementHeavyFighter = maxLFTechs.ExperimentalRecyclingTechnology = maxLFTechs.InterplanetaryAnalysisNetwork = maxTechs22;
+				maxLFTechs.LightFighterMkII = maxLFTechs.ImprovedStellarator = maxLFTechs.GeneralOverhaulCruiser = maxLFTechs.OverclockingHeavyFighter = maxTechs23;
+				maxLFTechs.CruiserMkII = maxLFTechs.HardenedDiamondDrillHeads = maxLFTechs.SlingshotAutopilot = maxLFTechs.TelekineticDrive = maxTechs24;
+				maxLFTechs.ImprovedLabTechnology = maxLFTechs.SeismicMiningTechnology = maxLFTechs.HighTemperatureSuperconductors = maxLFTechs.SixthSense = maxTechs25;
+				maxLFTechs.PlasmaTerraformer = maxLFTechs.MagmaPoweredPumpSystems = maxLFTechs.GeneralOverhaulBattleship = maxLFTechs.Psychoharmoniser = maxTechs26;
+				maxLFTechs.LowTemperatureDrives = maxLFTechs.IonCrystalModules = maxLFTechs.ArtificialSwarmIntelligence = maxLFTechs.EfficientSwarmIntelligence = maxTechs31;
+				maxLFTechs.BomberMkII = maxLFTechs.OptimisedSiloConstructionMethod = maxLFTechs.GeneralOverhaulBattlecruiser = maxLFTechs.OverclockingLargeCargo = maxTechs32;
+				maxLFTechs.DestroyerMkII = maxLFTechs.DiamondEnergyTransmitter = maxLFTechs.GeneralOverhaulBomber = maxLFTechs.GravitationSensors = maxTechs33;
+				maxLFTechs.BattlecruiserMkII = maxLFTechs.ObsidianShieldReinforcement = maxLFTechs.GeneralOverhaulDestroyer = maxLFTechs.OverclockingBattleship = maxTechs34;
+				maxLFTechs.RobotAssistants = maxLFTechs.RuneShields = maxLFTechs.ExperimentalWeaponsTechnology = maxLFTechs.PsionicShieldMatrix = maxTechs35;
+				maxLFTechs.Supercomputer = maxLFTechs.RocktalCollectorEnhancement = maxLFTechs.MechanGeneralEnhancement = maxLFTechs.KaeleshDiscovererEnhancement = maxTechs36;
+				
+				
 				if (celestial.Constructions.LFResearchID != 0) {
 					DoLog(LogLevel.Information, $"Skipping {celestial.ToString()}: there is already a Lifeform research in production.");
 					delayProduction = true;
 					delayTime = (long) celestial.Constructions.LFResearchCountdown * (long) 1000 + (long) RandomizeHelper.CalcRandomInterval(IntervalType.AFewSeconds);
 					return;
 				}
-				int maxResearchLevel = (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoResearch.MaxResearchLevel;
 				if (celestial is Planet) {
-					buildable = _calculationService.GetNextLFTechToBuild(celestial, maxResearchLevel);
+					buildable = _calculationService.GetNextLFTechToBuild(celestial, maxLFTechs);//maxResearchLevel);
 
 					if (buildable != LFTechno.None) {
 						level = _calculationService.GetNextLevel(celestial, buildable);
 						Resources nextLFTechCost = _calculationService.CalcPrice(buildable, level);
-						var isLessCostLFTechToBuild = _calculationService.GetLessExpensiveLFTechToBuild(celestial, nextLFTechCost, maxResearchLevel);
+						var isLessCostLFTechToBuild = _calculationService.GetLessExpensiveLFTechToBuild(celestial, nextLFTechCost, maxLFTechs);//maxResearchLevel);
 						if (isLessCostLFTechToBuild != LFTechno.None) {
 							level = _calculationService.GetNextLevel(celestial, isLessCostLFTechToBuild);
 							buildable = isLessCostLFTechToBuild;
