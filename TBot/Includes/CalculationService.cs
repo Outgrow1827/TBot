@@ -366,7 +366,7 @@ namespace Tbot.Includes {
 			int baseConsumption;
 			switch (buildable) {
 				case Buildables.SmallCargo:
-					baseConsumption = 20;
+					baseConsumption = 10;
 					if (impulseDrive >= 5)
 						baseConsumption *= 2;
 					break;
@@ -389,7 +389,7 @@ namespace Tbot.Includes {
 					baseConsumption = 1000;
 					break;
 				case Buildables.Recycler:
-					baseConsumption = 2000;
+					baseConsumption = 300;
 					if (hyperspaceDrive >= 15)
 						baseConsumption *= 3;
 					else if (impulseDrive >= 17)
