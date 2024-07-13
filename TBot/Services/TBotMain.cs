@@ -185,7 +185,6 @@ namespace Tbot.Services {
 
 
 			_ogameService.Initialize(GetCredentialsFromSettings(), GetDeviceFromSettings(), proxy, (string) host, int.Parse(port), (string) captchaKey);
-			await _ogameService.SetUserAgent((string) InstanceSettings.Credentials.DeviceConf.UserAgent);
 		}
 
 		private async Task ResolveCaptcha() {
