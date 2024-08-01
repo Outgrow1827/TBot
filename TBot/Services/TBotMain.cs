@@ -135,7 +135,7 @@ namespace Tbot.Services {
 
 		private Device GetDeviceFromSettings() {
 			return new() {
-				Name = ((string) InstanceSettings.Credentials.DeviceConf.Name).ToUpper(),
+				Name = ((string) InstanceSettings.Credentials.DeviceConf.Name),
 				System = (string) InstanceSettings.Credentials.DeviceConf.System ?? "",
 				Browser = (string) InstanceSettings.Credentials.DeviceConf.Browser ?? "",
 				UserAgent = (string) InstanceSettings.Credentials.DeviceConf.UserAgent ?? "",
