@@ -635,7 +635,7 @@ namespace Tbot.Workers {
 						galaxyInfo = await _ogameService.GetGalaxyInfo(origin.Coordinate.Galaxy, sys);
 						foreach (var planet in galaxyInfo.Planets) {
 							if (planet == null) {
-								possibleDestinations.Add(new(origin.Coordinate.Galaxy, origin.Coordinate.System, pos));
+								possibleDestinations.Add(new(origin.Coordinate.Galaxy, sys, pos));
 							}
 							pos++;
 						}
