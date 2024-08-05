@@ -86,6 +86,7 @@ namespace Tbot.Workers.Brain {
 					return;
 				}
 				_tbotInstance.UserData.slots = await _tbotOgameBridge.UpdateSlots();
+				celestial = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.Buildings) as Planet;
 				celestial = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.Facilities) as Planet;
 				celestial = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.Resources) as Planet;
 				celestial = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.ResourcesProduction) as Planet;
