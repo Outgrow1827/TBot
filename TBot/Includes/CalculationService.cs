@@ -3241,11 +3241,11 @@ namespace Tbot.Includes {
 			var mines = new List<Buildables> { Buildables.MetalMine, Buildables.CrystalMine, Buildables.DeuteriumSynthesizer };
 			Dictionary<Buildables, float> dic = new();
 			foreach (var mine in mines) {
-				if (mine == Buildables.MetalMine && GetNextLevel(planet, mine) >= maxMetalMine)
+				if (mine == Buildables.MetalMine && GetNextLevel(planet, mine) > maxMetalMine)
 					continue;
-				if (mine == Buildables.CrystalMine && GetNextLevel(planet, mine) >= maxCrystalMine)
+				if (mine == Buildables.CrystalMine && GetNextLevel(planet, mine) > maxCrystalMine)
 					continue;
-				if (mine == Buildables.DeuteriumSynthesizer && GetNextLevel(planet, mine) >= maxDeuteriumSynthetizer)
+				if (mine == Buildables.DeuteriumSynthesizer && GetNextLevel(planet, mine) > maxDeuteriumSynthetizer)
 					continue;
 
 				dic.Add(mine, CalcDaysOfInvestmentReturn(planet, mine, researches, speedFactor, ratio, playerClass, hasGeologist, hasStaff));
