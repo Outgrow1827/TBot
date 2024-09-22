@@ -365,6 +365,7 @@
 	},
 	"AutoFarm": {
 		"Active": true,
+		"IgnoreSleep": false,
 		"ExcludeMoons": true,
 		"ScanRange": [
 			{
