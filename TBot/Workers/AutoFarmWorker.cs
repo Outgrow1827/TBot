@@ -632,11 +632,11 @@ namespace Tbot.Workers {
 							fleet.Mission != Missions.Colonize &&
 							fleet.Mission != Missions.Discovery)
 						).Count();
-					_tbotInstance.log(LogLevel.Warning, LogSender.Main, $"Main -> {presentFeature.ToString()}");
+					//_tbotInstance.log(LogLevel.Warning, LogSender.Main, $"Main -> {presentFeature.ToString()}");
 					foreach (RankSlotsPriority feature in rankSlotsPriority) {
 						if (feature == presentFeature)
 							continue;
-						_tbotInstance.log(LogLevel.Warning, LogSender.Main, $"{feature.ToString()}");
+						//_tbotInstance.log(LogLevel.Warning, LogSender.Main, $"{feature.ToString()}");
 						if (feature.Active && feature.HasPriorityOn(presentFeature)) {
 							msg = $"{msg}, {feature.MaxSlots} are reserved for {feature.Feature.ToString()}";
 							reservedSlots += feature.MaxSlots;
