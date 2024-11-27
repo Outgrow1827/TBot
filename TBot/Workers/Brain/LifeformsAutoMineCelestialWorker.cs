@@ -318,6 +318,7 @@ namespace Tbot.Workers.Brain {
 															.Where(planet => planet.Coordinate.Position == celestial.Coordinate.Position)
 															.Where(planet => planet.Coordinate.Type == Celestials.Moon)
 															.First();
+														missingResources = xCostBuildable.Difference(destination.Resources);
 													} else {
 														destination = allCelestials
 															.Where(planet => planet.Coordinate.Galaxy == celestial.Coordinate.Galaxy)
@@ -326,6 +327,7 @@ namespace Tbot.Workers.Brain {
 															.Where(planet => planet.Coordinate.Type == celestial.Coordinate.Type)
 															.First();
 													}
+													closestCelestials = closestCelestials.Where(c => !c.Coordinate.IsSame(destination.Coordinate)).ToList();
 													if (_calculationService.IsThereTransportTowardsCelestial(destination, _tbotInstance.UserData.fleets)) {
 														DoLog(LogLevel.Information, $"Skipping transport: there is already a transport incoming in {destination.ToString()}");
 														return;
@@ -382,6 +384,7 @@ namespace Tbot.Workers.Brain {
 
 													if (resultOrigins.Count > MaxSlots) {
 														DoLog(LogLevel.Information, $"Not enough slots available to send all resources to build: {buildable.ToString()} level {level.ToString()} on {celestial.ToString()}. Slots needed: {resultOrigins.Count().ToString()}/{MaxSlots}.");
+														delay = true;
 														return;
 													}
 													
@@ -455,6 +458,8 @@ namespace Tbot.Workers.Brain {
 												.Where(f => f.Destination.Type == celestial.Coordinate.Type)
 												.First().ID;
 										}
+									} else {
+										delay = true;
 									}
 								}
 							}
