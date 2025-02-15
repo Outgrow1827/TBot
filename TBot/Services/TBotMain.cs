@@ -475,12 +475,15 @@ namespace Tbot.Services {
 				}
 
 				if (feature == Feature.AutoDiscovery || feature == Feature.Null) {
-					jsonObj["AutoDiscovery"]["Origin"]["Galaxy"] = (int) celestial.Coordinate.Galaxy;
-					jsonObj["AutoDiscovery"]["Origin"]["System"] = (int) celestial.Coordinate.System;
-					jsonObj["AutoDiscovery"]["Origin"]["Position"] = (int) celestial.Coordinate.Position;
-					jsonObj["AutoDiscovery"]["Origin"]["Type"] = type;
+					JArray origins = jsonObj["AutoDiscovery"]["Origin"] as JArray ?? new JArray();
+					origins.Add(JObject.FromObject(new {
+						Galaxy = celestial.Coordinate.Galaxy,
+						System = celestial.Coordinate.System,
+						Position = celestial.Coordinate.Position,
+						Type = type
+					}));
+					jsonObj["AutoDiscovery"]["Origin"] = origins;
 				}
-
 				if (feature == Feature.Colonize || feature == Feature.Null) {
 					jsonObj["AutoColonize"]["Origin"]["Galaxy"] = (int) celestial.Coordinate.Galaxy;
 					jsonObj["AutoColonize"]["Origin"]["System"] = (int) celestial.Coordinate.System;

@@ -48,19 +48,15 @@ namespace Tbot.Workers {
 					_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
 					_tbotInstance.UserData.slots = await _tbotOgameBridge.UpdateSlots();
 
-					Celestial origin = _tbotInstance.UserData.celestials
-						.Unique()
-						.Where(c => c.Coordinate.Galaxy == (int) _tbotInstance.InstanceSettings.AutoDiscovery.Origin.Galaxy)
-						.Where(c => c.Coordinate.System == (int) _tbotInstance.InstanceSettings.AutoDiscovery.Origin.System)
-						.Where(c => c.Coordinate.Position == (int) _tbotInstance.InstanceSettings.AutoDiscovery.Origin.Position)
-						.Where(c => c.Coordinate.Type == Enum.Parse<Celestials>((string) _tbotInstance.InstanceSettings.AutoDiscovery.Origin.Type))
-						.SingleOrDefault() ?? new() { ID = 0 };
-					if (origin.ID == 0) {
+					var origins = _calculationService.ParseCelestialsList(
+						_tbotInstance.InstanceSettings.AutoDiscovery.Origin, 
+						_tbotInstance.UserData.celestials
+					);
+					if (origins.Count == 0) {
 						stop = true;
-						DoLog(LogLevel.Warning, "Unable to parse AutoDiscovery origin");
+						DoLog(LogLevel.Warning, "No valid AutoDiscovery origins");
 						return;
 					}
-					
 					if ((bool) _tbotInstance.InstanceSettings.SleepMode.Active) {
 						DateTime.TryParse((string) _tbotInstance.InstanceSettings.SleepMode.GoToSleep, out DateTime goToSleep);
 						DateTime.TryParse((string) _tbotInstance.InstanceSettings.SleepMode.WakeUp, out DateTime wakeUp);
@@ -171,7 +167,11 @@ namespace Tbot.Workers {
 				await _tbotOgameBridge.CheckCelestials();
 			}			
 		}
-
+		private Celestial GetBestOrigin(List<Celestial> origins, Coordinate dest) {
+			return origins
+				.OrderBy(o => _calculationService.CalcDistance(o.Coordinate, dest, _tbotInstance.UserData.serverData))
+				.FirstOrDefault(o => o.Resources.IsEnoughFor(new Resources { Metal = 5000, Crystal = 1000, Deuterium = 500 }));
+}
 		public override bool IsWorkerEnabledBySettings() {
 			try {
 				return 
