@@ -6,7 +6,7 @@ using System.Text;
 using Tbot.Includes;
 using System.Threading.Tasks;
 using System.Threading;
-using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyckInjection;
 using TBot.Ogame.Infrastructure;
 using Microsoft.Extensions.Logging;
 using TBot.Common.Logging;
