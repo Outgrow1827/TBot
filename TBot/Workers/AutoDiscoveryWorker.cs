@@ -47,7 +47,6 @@ namespace Tbot.Workers {
 					DoLog(LogLevel.Information, $"Starting AutoDiscovery...");
 					_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
 					_tbotInstance.UserData.slots = await _tbotOgameBridge.UpdateSlots();
-
 					var origins = _calculationService.ParseCelestialsList(
 						_tbotInstance.InstanceSettings.AutoDiscovery.Origin, 
 						_tbotInstance.UserData.celestials
@@ -57,22 +56,18 @@ namespace Tbot.Workers {
 						DoLog(LogLevel.Warning, "No valid AutoDiscovery origins");
 						return;
 					}
-					if ((bool) _tbotInstance.InstanceSettings.SleepMode.Active) {
-						DateTime.TryParse((string) _tbotInstance.InstanceSettings.SleepMode.GoToSleep, out DateTime goToSleep);
-						DateTime.TryParse((string) _tbotInstance.InstanceSettings.SleepMode.WakeUp, out DateTime wakeUp);
-						DateTime time = await _tbotOgameBridge.GetDateTime();
-						if (GeneralHelper.ShouldSleep(time, goToSleep, wakeUp)) {
-							DoLog(LogLevel.Warning, "Unable to send discovery fleet: bed time has passed");
-							stop = true;
-							return;
-						}
+					var selectedOrigin = GetBestOrigin(origins, new Coordinate { Galaxy = 1, System = 1, Position = 1 });
+
+					if (selectedOrigin == null) {
+						DoLog(LogLevel.Warning, "No valid origin found.");
+						return;
 					}
 
 					List<Coordinate> possibleDestinations = new();
 					for (int i = 1; i <= _tbotInstance.UserData.serverData.Systems; i++) {
 						for (int j = 1; j <= 15; j++) {
 							possibleDestinations.Add(new Coordinate() {
-								Galaxy = origin.Coordinate.Galaxy,
+								Galaxy = selectedOrigin.Coordinate.Galaxy,
 								System = i,
 								Position = j
 							});
@@ -80,21 +75,20 @@ namespace Tbot.Workers {
 					}
 					possibleDestinations = possibleDestinations
 						.Shuffle()
-						.OrderBy(c => _calculationService.CalcDistance(origin.Coordinate, c, _tbotInstance.UserData.serverData))
+						.OrderBy(c => _calculationService.CalcDistance(selectedOrigin.Coordinate, c, _tbotInstance.UserData.serverData))
 						.ToList();
 
 					while (possibleDestinations.Count > 0 && _tbotInstance.UserData.fleets.Where(s => s.Mission == Missions.Discovery).Count() < (int) _tbotInstance.InstanceSettings.AutoDiscovery.MaxSlots && _tbotInstance.UserData.slots.Free > (int) _tbotInstance.InstanceSettings.General.SlotsToLeaveFree) {
 						Coordinate dest = possibleDestinations.First();
 						possibleDestinations.Remove(dest);
-
 						Coordinate blacklistedCoord = _tbotInstance.UserData.discoveryBlackList.Keys
 							.Where(c => c.Galaxy == dest.Galaxy)
 							.Where(c => c.System == dest.System)
 							.Where(c => c.Position == dest.Position)
 							.SingleOrDefault() ?? null;
+
 						if (blacklistedCoord != null) {
 							if (_tbotInstance.UserData.discoveryBlackList.Single(d => d.Key.Galaxy == dest.Galaxy && d.Key.System == dest.System && d.Key.Position == dest.Position).Value > DateTime.Now) {
-								//DoLog(LogLevel.Information, $"Skipping {dest.ToString()} because it's blacklisted until {_tbotInstance.UserData.discoveryBlackList[blacklistedCoord].ToString()}");
 								skips++;
 								if (skips >= _tbotInstance.UserData.serverData.Systems * 15) {
 									DoLog(LogLevel.Information, $"Galaxy depleted: stopping");
@@ -108,45 +102,42 @@ namespace Tbot.Workers {
 							}
 						}
 
-						origin = await _tbotOgameBridge.UpdatePlanet(origin, UpdateTypes.Resources);
-						if (!origin.Resources.IsEnoughFor(new Resources { Metal = 5000, Crystal = 1000, Deuterium = 500 })) {
-							DoLog(LogLevel.Warning, $"Failed to send discovery fleet from {origin.ToString()}: not enough resources.");
+						selectedOrigin = await _tbotOgameBridge.UpdatePlanet(selectedOrigin, UpdateTypes.Resources);
+						if (!selectedOrigin.Resources.IsEnoughFor(new Resources { Metal = 5000, Crystal = 1000, Deuterium = 500 })) {
+							DoLog(LogLevel.Warning, $"Failed to send discovery fleet from {selectedOrigin.ToString()}: not enough resources.");
 							return;
 						}
-						
-						var result = await _ogameService.SendDiscovery(origin, dest);
+
+						var result = await _ogameService.SendDiscovery(selectedOrigin, dest);
 						if (!result) {
 							failures++;
-							DoLog(LogLevel.Warning, $"Failed to send discovery fleet to {dest.ToString()} from {origin.ToString()}.");
+							DoLog(LogLevel.Warning, $"Failed to send discovery fleet to {dest.ToString()} from {selectedOrigin.ToString()}.");
 							_tbotInstance.UserData.discoveryBlackList.Add(dest, DateTime.Now.AddDays(1));
-						}
-						else {
-							DoLog(LogLevel.Information, $"Sent discovery fleet to {dest.ToString()} from {origin.ToString()}.");
+						} else {
+							DoLog(LogLevel.Information, $"Sent discovery fleet to {dest.ToString()} from {selectedOrigin.ToString()}.");
 							_tbotInstance.UserData.discoveryBlackList.Add(dest, DateTime.Now.AddDays(7));
-						}						
+						}
 
 						if (failures >= (int) _tbotInstance.InstanceSettings.AutoDiscovery.MaxFailures) {
 							DoLog(LogLevel.Warning, $"Max failures reached");
 							break;
 						}
-						
+
 						_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
 						_tbotInstance.UserData.slots = await _tbotOgameBridge.UpdateSlots();
 						if (_tbotInstance.UserData.slots.Free <= 1) {
-							DoLog(LogLevel.Information, $"AutoDiscoveryWorker: No slots left, dealying");
+							DoLog(LogLevel.Information, $"AutoDiscoveryWorker: No slots left, delaying");
 							delay = true;
 							break;
 						}
 					}
-				}
-				else {
+				} else {
 					stop = true;
 				}
 			} catch (Exception ex) {
 				DoLog(LogLevel.Error, "AutoDiscovery exception");
 				DoLog(LogLevel.Warning, ex.ToString());
-			}
-			finally {
+			} finally {
 				if (stop) {
 					DoLog(LogLevel.Information, $"Stopping feature.");
 					await EndExecution();
@@ -165,7 +156,7 @@ namespace Tbot.Workers {
 					DoLog(LogLevel.Information, $"Next AutoDiscovery check at {newTime.ToString()}");
 				}
 				await _tbotOgameBridge.CheckCelestials();
-			}			
+			}
 		}
 		private Celestial GetBestOrigin(List<Celestial> origins, Coordinate dest) {
 			return origins
