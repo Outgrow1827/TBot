@@ -473,16 +473,17 @@ namespace Tbot.Services {
 					jsonObj["Expeditions"]["Origin"][0]["Position"] = (int) celestial.Coordinate.Position;
 					jsonObj["Expeditions"]["Origin"][0]["Type"] = type;
 				}
-
-				if (feature == Feature.AutoDiscovery || feature == Feature.Null) {
-					JArray origins = jsonObj["AutoDiscovery"]["Origin"] as JArray ?? new JArray();
-					origins.Add(JObject.FromObject(new {
+				if (feature == Feature.AutoDiscovery || feature == Feature.Null)
+				{
+					var originsArray = jsonObj["AutoDiscovery"]["Origin"] as JArray ?? new JArray();
+					originsArray.Add(JObject.FromObject(new
+					{
 						Galaxy = celestial.Coordinate.Galaxy,
 						System = celestial.Coordinate.System,
 						Position = celestial.Coordinate.Position,
 						Type = type
 					}));
-					jsonObj["AutoDiscovery"]["Origin"] = origins;
+					jsonObj["AutoDiscovery"]["Origin"] = originsArray;
 				}
 				if (feature == Feature.Colonize || feature == Feature.Null) {
 					jsonObj["AutoColonize"]["Origin"]["Galaxy"] = (int) celestial.Coordinate.Galaxy;
