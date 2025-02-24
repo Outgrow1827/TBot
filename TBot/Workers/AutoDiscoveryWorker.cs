@@ -232,7 +232,10 @@ namespace Tbot.Workers {
 					DoLog(LogLevel.Information, $"Stopping feature.");
 					await EndExecution();
 				} else {
-					long interval = (_tbotInstance.UserData.fleets.Where(fleet => fleet.Mission == Missions.Discovery).OrderByDescending(f => f.BackIn).First().BackIn ?? 0) * 1000 + RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
+					long interval = 0;
+					if (_tbotInstance.UserData.fleets.Where(fleet => fleet.Mission == Missions.Discovery).Count() > 0)
+						interval = (_tbotInstance.UserData.fleets.Where(fleet => fleet.Mission == Missions.Discovery).OrderByDescending(f => f.BackIn).First().BackIn ?? 0) * 1000 + RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
+					
 					if (delay) {
 						DoLog(LogLevel.Information, $"Delaying...");
 						_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
