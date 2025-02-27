@@ -317,7 +317,7 @@
 				"Position": 8,
 				"Type": "Moon"
 			},
-			"TargetAssociateMoon": true,
+			"TargetAssociateMoon": false,
 			"CargoType": "LargeCargo",
 			"RandomOrder": true,
 			"SkipIfIncomingTransport": true,
