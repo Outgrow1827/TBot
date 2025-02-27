@@ -180,7 +180,7 @@ namespace Tbot.Services {
 				while (isTyping) {
 					await Client.SendChatActionAsync(
 						chatId: Channel,
-						action: ChatAction.Typing,
+						action: ChatAction.Typing,//ChatAction.Typing,
 						cancellationToken: cancellationToken);
 					await Task.Delay(3000);
 				}
@@ -202,7 +202,8 @@ namespace Tbot.Services {
 		public async Task SendMessage(ITelegramBotClient client, Chat chat, string message, ParseMode parseMode = ParseMode.Html) {
 			try {
 				isTyping = false;
-				await client.SendTextMessageAsync(chat, message, ((int)parseMode));
+				//await client.SendTextMessageAsync(chat, message, parseMode);
+				await client.SendTextMessageAsync(chat, message, null, parseMode);
 			} catch (Exception e) {
 				_logger.WriteLog(LogLevel.Error, LogSender.Tbot, $"Could not send Telegram message: an exception has occurred: {e.Message}");
 			}
@@ -1291,6 +1292,7 @@ namespace Tbot.Services {
 
 				var receiverOptions = new ReceiverOptions {
 					AllowedUpdates = Array.Empty<UpdateType>(),
+					DropPendingUpdates = false,
 					//ThrowPendingUpdates = true
 				};
 
