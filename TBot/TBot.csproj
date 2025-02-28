@@ -13,7 +13,7 @@
     <PackageProjectUrl>https://www.ogame-tbot.net</PackageProjectUrl>
     <RepositoryUrl>https://github.com/ogame-tbot/TBot</RepositoryUrl>
     <AssemblyVersion>3.0.8</AssemblyVersion>
-    <FileVersion>3.0.7</FileVersion>
+    <FileVersion>3.0.8</FileVersion>
     <Description>OGame Bot</Description>
     <SignAssembly>False</SignAssembly>
     <AssemblyOriginatorKeyFile>ELK-Lab.pfx</AssemblyOriginatorKeyFile>

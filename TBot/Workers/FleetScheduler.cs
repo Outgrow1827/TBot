@@ -289,10 +289,34 @@ namespace Tbot.Workers {
 					}
 				}
 			}
+
 			//Doing Spy
 			if (!AlreadySent && celestial.Ships.EspionageProbe > 0) {
 				_tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler, $"Fleetsave from {celestial.ToString()} no {mission} found, checking Spy destination...");
 				mission = Missions.Spy;
+				fleetHypotesis = await GetFleetSaveDestination(_tbotInstance.UserData.celestials, celestial, departureTime, minDuration, mission, maxDeuterium);
+				if (fleetHypotesis.Count > 0) {
+					foreach (FleetHypotesis fleet in fleetHypotesis.OrderBy(pf => pf.Fuel).ThenBy(pf => pf.Duration <= minDuration)) {
+						_tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler, $"checking {mission} fleet to: {fleet.Destination}");
+						if (CheckFuel(fleet, celestial)) {
+							fleetId = await SendFleet(fleet.Origin, fleet.Ships, fleet.Destination, fleet.Mission, fleet.Speed, payload, _tbotInstance.UserData.userInfo.Class, true);
+
+							if (fleetId != (int) SendFleetCode.GenericError ||
+								fleetId != (int) SendFleetCode.AfterSleepTime ||
+								fleetId != (int) SendFleetCode.NotEnoughSlots) {
+								possibleFleet = fleet;
+								AlreadySent = true;
+								break;
+							}
+						}
+					}
+				}
+			}
+
+			//Doing Transport
+			if (!AlreadySent) {
+				_tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler, $"Fleetsave from {celestial.ToString()} no {mission} found, checking Transport destination...");
+				mission = Missions.Transport;
 				fleetHypotesis = await GetFleetSaveDestination(_tbotInstance.UserData.celestials, celestial, departureTime, minDuration, mission, maxDeuterium);
 				if (fleetHypotesis.Count > 0) {
 					foreach (FleetHypotesis fleet in fleetHypotesis.OrderBy(pf => pf.Fuel).ThenBy(pf => pf.Duration <= minDuration)) {
@@ -599,7 +623,55 @@ namespace Tbot.Workers {
 			origin = await _tbotOgameBridge.UpdatePlanet(origin, UpdateTypes.LFBonuses);
 			int sys = 0;
 
+			int playerid = _tbotInstance.UserData.userInfo.PlayerID;
+
 			switch (mission) {
+				case Missions.Transport:
+					//if (origin.Ships.Recycler == 0) {
+					//	_tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler, $"No recycler available, skipping to next mission...");
+					//	break;
+					//}
+					//int playerid = _tbotInstance.UserData.userInfo.PlayerID;
+					for (sys = origin.Coordinate.System - 5; sys <= origin.Coordinate.System + 5; sys++) {
+						if (possibleDestinations.Count() == 10) {
+							break;
+						}
+						sys = GeneralHelper.ClampSystem(sys);
+						galaxyInfo = await _ogameService.GetGalaxyInfo(origin.Coordinate.Galaxy, sys);
+						foreach (var planet in galaxyInfo.Planets) {
+							//if (planet != null && planet.Inactive && !planet.Vacation && !planet.Administrator && !planet.Banned && !planet.StrongPlayer) {
+							if (planet != null && !planet.Vacation && !planet.Administrator && !planet.Banned && !planet.StrongPlayer) {
+								possibleDestinations.Add(new(planet.Coordinate.Galaxy, planet.Coordinate.System, planet.Coordinate.Position, Celestials.Planet));
+								//if (planet.Moon != null) {
+								//	possibleDestinations.Add(new(planet.Coordinate.Galaxy, planet.Coordinate.System, planet.Coordinate.Position, Celestials.Moon));
+								//}
+							}
+						}
+					}
+
+					if (possibleDestinations.Count() > 0) {
+						foreach (var possibleDestination in possibleDestinations) {
+							foreach (var currentSpeed in validSpeeds) {
+								FleetPrediction fleetPrediction = _calcService.CalcFleetPrediction(origin.Coordinate, possibleDestination, origin.Ships.GetMovableShips(), mission, currentSpeed, _tbotInstance.UserData.researches, _tbotInstance.UserData.serverData, origin.LFBonuses, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.allianceClass);
+
+								FleetHypotesis fleetHypotesis = new() {
+									Origin = origin,
+									Destination = possibleDestination,
+									Ships = origin.Ships.GetMovableShips(),
+									Mission = mission,
+									Speed = currentSpeed,
+									Duration = fleetPrediction.Time,
+									Fuel = fleetPrediction.Fuel
+								};
+								if (fleetHypotesis.Duration >= minFlightTime / 2 && fleetHypotesis.Fuel <= maxFuel) {
+									possibleFleets.Add(fleetHypotesis);
+									break;
+								}
+							}
+						}
+					}
+					break;
+
 				case Missions.Spy:
 					if (origin.Ships.EspionageProbe == 0) {
 						_tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler, $"No espionageprobe available, skipping to next mission...");
@@ -675,7 +747,7 @@ namespace Tbot.Workers {
 						_tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler, $"No recycler available, skipping to next mission...");
 						break;
 					}
-					int playerid = _tbotInstance.UserData.userInfo.PlayerID;
+					//int playerid = _tbotInstance.UserData.userInfo.PlayerID;
 					for (sys = origin.Coordinate.System - 5; sys <= origin.Coordinate.System + 5; sys++) {
 						sys = GeneralHelper.ClampSystem(sys);
 						galaxyInfo = await _ogameService.GetGalaxyInfo(origin.Coordinate.Galaxy, sys);
