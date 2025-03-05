@@ -283,6 +283,7 @@ namespace Tbot.Workers.Brain {
 											}
 											List<Celestial> closestCelestials = (bool) _tbotInstance.InstanceSettings.Brain.Transports.MultipleOrigins.OnlyFromMoons ?
 												allCelestials
+												.Unique()
 													.Where(planet => !celestialsToExclude.Has(planet))
 													.Where(planet => planet.Resources.TotalResources > 0)
 													.Where(planet => planet.Resources.Deuterium > (long) _tbotInstance.InstanceSettings.Brain.Transports.DeutToLeave)
@@ -306,19 +307,21 @@ namespace Tbot.Workers.Brain {
 											Celestial destination;
 											if ((bool) _tbotInstance.InstanceSettings.Brain.Transports.SendToTheMoonIfPossible && celestial.Coordinate.Type == Celestials.Planet && _calculationService.IsThereMoonHere(allCelestials, celestial) && (!celestial.Ships.IsEmpty() || celestial.Resources.TotalResources > 0)) {
 												destination = allCelestials
+													.Unique()
 													.Where(planet => planet.Coordinate.Galaxy == celestial.Coordinate.Galaxy)
 													.Where(planet => planet.Coordinate.System == celestial.Coordinate.System)
 													.Where(planet => planet.Coordinate.Position == celestial.Coordinate.Position)
 													.Where(planet => planet.Coordinate.Type == Celestials.Moon)
-													.First();
+													.SingleOrDefault() ?? new() { ID = 0 };
 												missingResources = cost.Difference(destination.Resources);
 											} else {
 												destination = allCelestials
+													.Unique()
 													.Where(planet => planet.Coordinate.Galaxy == celestial.Coordinate.Galaxy)
 													.Where(planet => planet.Coordinate.System == celestial.Coordinate.System)
 													.Where(planet => planet.Coordinate.Position == celestial.Coordinate.Position)
 													.Where(planet => planet.Coordinate.Type == celestial.Coordinate.Type)
-													.First();
+													.SingleOrDefault() ?? new() { ID = 0 };
 											}
 											closestCelestials = closestCelestials.Where(c => !c.Coordinate.IsSame(destination.Coordinate)).ToList();
 											if (_calculationService.IsThereTransportTowardsCelestial(destination, _tbotInstance.UserData.fleets)) {
@@ -411,18 +414,20 @@ namespace Tbot.Workers.Brain {
 											Celestial destination;
 											if ((bool) _tbotInstance.InstanceSettings.Brain.Transports.SendToTheMoonIfPossible && celestial.Coordinate.Type == Celestials.Planet && _calculationService.IsThereMoonHere(_tbotInstance.UserData.celestials, celestial) && (!celestial.Ships.IsEmpty() || celestial.Resources.TotalResources > 0)) {
 												destination = _tbotInstance.UserData.celestials
+													.Unique()
 													.Where(planet => planet.Coordinate.Galaxy == celestial.Coordinate.Galaxy)
 													.Where(planet => planet.Coordinate.System == celestial.Coordinate.System)
 													.Where(planet => planet.Coordinate.Position == celestial.Coordinate.Position)
 													.Where(planet => planet.Coordinate.Type == Celestials.Moon)
-													.First();
+													.SingleOrDefault() ?? new() { ID = 0 };
 											} else {
 												destination = _tbotInstance.UserData.celestials
+													.Unique()
 													.Where(planet => planet.Coordinate.Galaxy == celestial.Coordinate.Galaxy)
 													.Where(planet => planet.Coordinate.System == celestial.Coordinate.System)
 													.Where(planet => planet.Coordinate.Position == celestial.Coordinate.Position)
 													.Where(planet => planet.Coordinate.Type == celestial.Coordinate.Type)
-													.First();
+													.SingleOrDefault() ?? new() { ID = 0 };
 											}
 											origin = _tbotInstance.UserData.celestials
 												.Unique()
