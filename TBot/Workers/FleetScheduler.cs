@@ -1015,6 +1015,9 @@ namespace Tbot.Workers {
 						idealShips = _calcService.CalcShipNumberForPayload(missingResources, preferredShip, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, cargoBonus, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo);
 						var availableShips = origin.Ships.GetAmount(preferredShip);
 						if (buildable != LFBuildables.None) {
+							destination = await _tbotOgameBridge.UpdatePlanet(destination, UpdateTypes.LFBuildings);
+							destination = await _tbotOgameBridge.UpdatePlanet(destination, UpdateTypes.LFTechs);
+							destination = await _tbotOgameBridge.UpdatePlanet(destination, UpdateTypes.LFBonuses);
 							int level = _calcService.GetNextLevel(destination, buildable);
 							long buildTime = _calcService.CalcProductionTime(buildable, level, _tbotInstance.UserData.serverData, destination);
 							var tempCelestial = destination;
