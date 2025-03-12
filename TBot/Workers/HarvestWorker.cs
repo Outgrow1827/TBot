@@ -198,7 +198,7 @@ namespace Tbot.Workers {
 						if (feature == presentFeature)
 							continue;
 						_tbotInstance.log(LogLevel.Warning, LogSender.Main, $"{feature.ToString()}");
-						if (feature.Active && feature.HasPriorityOn(presentFeature)) {
+						if (feature.Rank > 0 && ((feature.Active && feature.HasPriorityOn(presentFeature)) || presentFeature.Rank == 0)) {
 							msg = $"{msg}, {feature.MaxSlots} are reserved for {feature.Feature.ToString()}";
 							reservedSlots += feature.MaxSlots;
 						} else {

@@ -232,7 +232,7 @@ namespace Tbot.Workers.Brain {
 								if (feature == presentFeature)
 									continue;
 								//_tbotInstance.log(LogLevel.Warning, LogSender.Main, $"{feature.ToString()}");
-								if (feature.Active && feature.HasPriorityOn(presentFeature)) {
+								if (feature.Rank > 0 && ((feature.Active && feature.HasPriorityOn(presentFeature)) || presentFeature.Rank == 0)) {
 									msg = $"{msg}, {feature.MaxSlots} are reserved for {feature.Feature.ToString()}";
 									reservedSlots += feature.MaxSlots;
 								} else {
@@ -459,6 +459,13 @@ namespace Tbot.Workers.Brain {
 										.ID;
 								}
 							} else {
+								if (_tbotInstance.InstanceSettings.Brain.SlotPriorityLevel > 0) {
+									if (_tbotInstance.InstanceSettings.Brain.Transports.MaxSlots == 0)
+										DoLog(LogLevel.Information, $"Transports.MaxSlots is set to 0, you should increase it.");
+									else
+										DoLog(LogLevel.Information, $"0 slots available.");
+								}
+								DoLog(LogLevel.Information, $"Not enough slots: Transports.MaxSlots");
 								delay = true;
 							}
 						}
