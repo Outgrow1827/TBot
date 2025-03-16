@@ -1612,8 +1612,8 @@ namespace Tbot.Includes {
 					metalBaseCost = 6;
 					crystalbaseCost = 3;
 					energyBaseCost = 9;
-					metalFactor = 1.21;
-					crystalFactor = 1.21;
+					metalFactor = 1.20;
+					crystalFactor = 1.20;
 					energyFactor = 1.02;
 					break;
 				case LFBuildables.VortexChamber:
