@@ -4809,13 +4809,202 @@ namespace Tbot.Includes {
 
 		public bool	IsThereMoonHere(List<Celestial> planets, Celestial celestial) {
 			Celestial moon = planets.Unique()
-				.Where(c => c.Coordinate.Galaxy == (int) celestial.Coordinate.Galaxy)
+				.Single(c => c.HasCoords(new(
+					(int) celestial.Coordinate.Galaxy,
+					(int) celestial.Coordinate.System,
+					(int) celestial.Coordinate.Position,
+					Celestials.Moon
+				)
+			)) ?? new() { ID = 0 };
+				/*.Where(c => c.Coordinate.Galaxy == (int) celestial.Coordinate.Galaxy)
 				.Where(c => c.Coordinate.System == (int) celestial.Coordinate.System)
 				.Where(c => c.Coordinate.Position == (int) celestial.Coordinate.Position)
 				.Where(c => c.Coordinate.Type == Celestials.Moon)
-				.SingleOrDefault() ?? new() { ID = 0 };
+				.SingleOrDefault() ?? new() { ID = 0 };*/
 
 			return moon.ID == 0 ? false: true;
+		}
+
+		public int CalcSlotsPriority(Feature feature, List<RankSlotsPriority> rankSlotsPriority, Slots slots, List<Fleet> fleets, int slotsToLeaveFree = 0) {
+
+			RankSlotsPriority actualFeature = rankSlotsPriority.Where(f => (f.Feature == feature)).SingleOrDefault();
+			int slotsAvailable = 0;
+			int reservedSlots = slotsToLeaveFree;
+			int otherSlots = (int) fleets.Where(fleet => (fleet.Mission != Missions.Transport && fleet.Mission != Missions.Expedition && fleet.Mission != Missions.Attack && fleet.Mission != Missions.Spy && fleet.Mission != Missions.Colonize && fleet.Mission != Missions.Discovery)).Count();
+			if (slots.Free - slotsToLeaveFree > 0) {
+				rankSlotsPriority.Where(f => (f.Feature == Feature.BrainAutoMine || f.Feature == Feature.BrainAutoResearch || f.Feature == Feature.BrainLifeformAutoMine || f.Feature == Feature.BrainLifeformAutoResearch)).SingleOrDefault().SlotsUsed = fleets.Where(fleet => fleet.Mission == Missions.Transport).Count();
+				rankSlotsPriority.Where(f => f.Feature == Feature.Expeditions).SingleOrDefault().SlotsUsed = fleets.Where(fleet => fleet.Mission == Missions.Expedition).Count();
+				rankSlotsPriority.Where(f => f.Feature == Feature.AutoFarm).SingleOrDefault().SlotsUsed = fleets.Where(fleet => fleet.Mission == Missions.Attack).Count();
+				rankSlotsPriority.Where(f => f.Feature == Feature.Colonize).SingleOrDefault().SlotsUsed = fleets.Where(fleet => fleet.Mission == Missions.Colonize).Count();
+				rankSlotsPriority.Where(f => f.Feature == Feature.AutoDiscovery).SingleOrDefault().SlotsUsed = fleets.Where(fleet => fleet.Mission == Missions.Discovery).Count();
+				rankSlotsPriority = rankSlotsPriority.OrderBy(r => r.Rank).ToList();
+
+				if (actualFeature.Rank > 0) {
+					reservedSlots += rankSlotsPriority.Where(f => f.Active).Where(f => f.Rank > 0).Where(f => f.Rank < actualFeature.Rank).Sum(f => f.MaxSlots);
+					otherSlots += rankSlotsPriority.Where(f => f.Rank > 0).Where(f => f.Rank >= actualFeature.Rank).Sum(f => f.SlotsUsed);
+					otherSlots += rankSlotsPriority.Where(f => f.Rank == 0).Sum(f => f.SlotsUsed);
+					slotsAvailable = slots.Total - reservedSlots - otherSlots;
+					_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Total slots: {slots.Total}. {slotsToLeaveFree} must remain free, {reservedSlots} slots are reserved and {otherSlots} are used for other.");
+					if (slotsAvailable > 0) {
+						if (slotsAvailable < actualFeature.MaxSlots) {
+							_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Less slots available. Steping back to {slotsAvailable} instead of {actualFeature.MaxSlots}");
+							return slotsAvailable;
+						} else {
+							_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"{slots.Free} are availables and {actualFeature.MaxSlots} can be used for {feature.ToString()}");
+							return actualFeature.MaxSlots;
+						}
+					} else {
+						_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"No slots available.");
+						return 0;
+					}
+				} else {
+					reservedSlots += rankSlotsPriority.Where(f => f.Active).Where(f => f.Rank > 0).Sum(f => f.MaxSlots);
+					otherSlots += rankSlotsPriority.Where(f => !f.Active).Where(f => f.Rank > 0).Sum(f => f.SlotsUsed);
+					otherSlots += rankSlotsPriority.Where(f => f.Rank == 0).Sum(f => f.SlotsUsed);
+					slotsAvailable = slots.Total - reservedSlots - otherSlots;
+					if (slotsAvailable > 0) {
+						_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Total slots: {slots.Total} and {slotsToLeaveFree} must remain free. {reservedSlots} slots are reserved and {otherSlots} are used for other. {slotsAvailable} are availables and can be used for {feature.ToString()}");
+						return actualFeature.MaxSlots;
+					} else {
+						_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"No slots available. Total slots: {slots.Total}, {slotsToLeaveFree} must remain free, {reservedSlots} slots are reserved and {otherSlots} are used for other.");
+						return 0;
+					}
+				}
+			} else {
+				_logger.WriteLog(LogLevel.Information, LogSender.Brain, "No slots left, delaying");
+				return 0;
+			}
+		}
+
+		public List<Dictionary<Celestial, Resources>> CalcMultipleOrigin(Celestial celestialToBuild, List<Celestial> allCelestials, Resources missingResources, TransportSettings transportSettings, List<Fleet> fleets, UserData userData) {
+			List<Dictionary<Celestial, Resources>> result = new();
+			bool roundRes = transportSettings.RoundResources;
+			Resources resources = new();
+			List<Celestial> closestCelestials = transportSettings.MultipleOrigin.OnlyFromMoons ?
+				allCelestials
+					.Where(planet => !transportSettings.MultipleOrigin.Exclude.Has(planet))
+					.Where(planet => planet.Resources.TotalResources > 0)
+					.Where(planet => planet.Coordinate.Type == Celestials.Moon)
+					.OrderByDescending(planet => planet.Coordinate.Type == Celestials.Moon)
+					.ToList():
+				allCelestials
+					.Where(c => !transportSettings.MultipleOrigin.Exclude.Has(c))
+					.Where(c => c.Resources.TotalResources > 0)
+					.ToList();
+
+			Resources TotalResources = allCelestials.Aggregate(new Resources(), (total, celestial) => total.Sum(celestial.Resources));
+			if (!TotalResources.IsEnoughFor(missingResources)) {
+				_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Not enough resources available on all celestials: Needed: {missingResources.TransportableResources} - Available: {TotalResources.TransportableResources}");
+				return new();
+			} else {
+				_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Enough resources available on all celestials: Needed: {missingResources.TransportableResources} - Available: {TotalResources.TransportableResources}");
+			}
+
+			closestCelestials = transportSettings.MultipleOrigin.PriorityToProximityOverQuantity ? 
+				closestCelestials.OrderBy(c => CalcDistance(c.Coordinate, celestialToBuild.Coordinate, userData.serverData)).ToList() :
+				closestCelestials.OrderByDescending(c => c.Resources.TotalResources).ToList();
+
+			Celestial destination = celestialToBuild;
+			if ((bool) transportSettings.SendToTheMoonIfPossible && celestialToBuild.Coordinate.Type == Celestials.Planet && IsThereMoonHere(allCelestials, celestialToBuild) && (!celestialToBuild.Ships.IsEmpty() || celestialToBuild.Resources.TotalResources > 0)) {
+				destination = allCelestials.Unique()
+					.Single(c => c.HasCoords(new(
+							(int) celestialToBuild.Coordinate.Galaxy,
+							(int) celestialToBuild.Coordinate.System,
+							(int) celestialToBuild.Coordinate.Position,
+							Celestials.Moon
+						)
+					));
+				destination.Resources = roundRes ? destination.Resources.Round() : destination.Resources;
+				if (destination.Resources.IsEnoughFor(missingResources)) {
+					if (destination.Ships.GetAmount(transportSettings.CargoType) >= CalcShipNumberForPayload(missingResources, transportSettings.CargoType, userData.researches.HyperspaceTechnology, userData.serverData, destination.LFBonuses.GetShipCargoBonus(transportSettings.CargoType), userData.userInfo.Class, userData.serverData.ProbeCargo)) {
+						result.Add(new Dictionary<Celestial, Resources> { { destination, missingResources } } );
+						return result;
+					} else if (transportSettings.DoMultipleTransportIsNotEnoughShipButSamePosition) {
+						result.Add(new Dictionary<Celestial, Resources> { { destination, CalcMaxTransportableResources(destination.Ships, missingResources, userData.researches.HyperspaceTechnology, userData.serverData, destination.LFBonuses, userData.userInfo.Class, 0, userData.serverData.ProbeCargo) } } );
+						return result;
+					} else {
+						_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Enough Resources on {destination.ToString()}, but not enough transporters and \"DoMultipleTransportIsNotEnoughShipButSamePosition\" is false.");
+						return new();
+					}
+				} else {
+					missingResources = missingResources.Difference(destination.Resources);
+				}
+			} else {
+				destination = celestialToBuild;
+			}
+			closestCelestials = closestCelestials.Where(c => !c.Coordinate.IsSame(destination.Coordinate))
+				.Where(c => !IsThereTransportTowardsCelestial(c, fleets))
+				.ToList();
+			if (closestCelestials.Count() == 0) {
+				_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Skipping transport: no celestial available");
+				return new();
+			}
+			if (IsThereTransportTowardsCelestial(destination, fleets)) {
+				_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Skipping transport: there is already a transport incoming in {destination.ToString()}");
+				return new();
+			}
+			TotalResources = closestCelestials.Aggregate(new Resources(), (total, celestial) => {
+				if (celestial.Ships.GetAmount(transportSettings.CargoType) >= CalcShipNumberForPayload(celestial.Resources, transportSettings.CargoType, userData.researches.HyperspaceTechnology, userData.serverData, celestial.LFBonuses.GetShipCargoBonus(transportSettings.CargoType), userData.userInfo.Class, userData.serverData.ProbeCargo)) {
+					return total.Sum(celestial.Resources);
+				} else {
+					Ships ships = new();
+					ships.Add(transportSettings.CargoType, celestial.Ships.GetAmount(transportSettings.CargoType));
+					Resources res = CalcMaxTransportableResources(ships, missingResources.Difference(total), userData.researches.HyperspaceTechnology, userData.serverData, celestial.LFBonuses, userData.userInfo.Class, 0, userData.serverData.ProbeCargo);
+					return total.Sum(res);
+				}
+			} );
+			if (!TotalResources.IsEnoughFor(missingResources)) {
+				_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Not enough resources available on all celestials: Needed: {missingResources.TransportableResources} - Available: {TotalResources.TransportableResources}");
+				return new();
+			}
+
+			for (int i = 0; i < closestCelestials.Count(); i++) {
+				Celestial cel = closestCelestials[i];
+				Resources celResources = cel.Resources.Difference(new Resources(0, 0, transportSettings.DeutToLeave));
+				if (resources.Sum(celResources).IsEnoughFor(missingResources)) {
+					celResources = roundRes ? missingResources.Difference(resources).Round() : missingResources.Difference(resources);
+				} else {
+					celResources = roundRes ?
+						celResources.Difference(celResources.Difference(missingResources.Difference(resources))).Round():
+						celResources.Difference(celResources.Difference(missingResources.Difference(resources)));
+				}
+				if (celResources.TotalResources < transportSettings.MultipleOrigin.MinimumResourcesToSend || celResources.TotalResources == 0)
+					continue;
+				if (cel.Ships.GetAmount(transportSettings.CargoType) >= CalcShipNumberForPayload(celResources, transportSettings.CargoType, userData.researches.HyperspaceTechnology, userData.serverData, cel.LFBonuses.GetShipCargoBonus(transportSettings.CargoType), userData.userInfo.Class, userData.serverData.ProbeCargo)) {
+					resources = resources.Sum(celResources);
+					result.Add(new Dictionary<Celestial, Resources> { { cel, celResources } } );
+				} else {
+					if (i < closestCelestials.Count() - 1) {
+						Ships ships = new();
+						ships.Add(transportSettings.CargoType, cel.Ships.GetAmount(transportSettings.CargoType));
+						Resources res = CalcMaxTransportableResources(ships, celResources, userData.researches.HyperspaceTechnology, userData.serverData, cel.LFBonuses, userData.userInfo.Class, 0, userData.serverData.ProbeCargo);
+						if (resources.Sum(res).IsEnoughFor(missingResources)) {
+							resources = resources.Sum(res);
+							celResources = res;
+							if (celResources.TotalResources == 0)
+								continue;
+							result.Add(new Dictionary<Celestial, Resources> { { cel, celResources } } );
+						} else {
+							_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Not enough resources transportable");
+							return new();
+						}
+					} else {
+						_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Not enough resources transportable");
+						return new();
+					}
+				}
+				_logger.WriteLog(LogLevel.Information, LogSender.Tbot, $"Sending resources from: {cel.Coordinate.ToString()} to {destination.Coordinate.ToString()} - Resources: {celResources.TransportableResources}");
+				if (resources.IsEnoughFor(missingResources)) {
+					return result;
+				}
+			}
+			if (resources.IsEnoughFor(missingResources)) {
+				_logger.WriteLog(LogLevel.Information, LogSender.Tbot, $"{result.Count()} transports will be send to {destination.ToString()}");
+				return result;
+			} else {
+				_logger.WriteLog(LogLevel.Information, LogSender.Tbot, $"Not enough resources transportable");
+				return new();
+			}
 		}
 	}
 }

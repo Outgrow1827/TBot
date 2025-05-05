@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Tbot.Services;
 using TBot.Model;
 using TBot.Ogame.Infrastructure;
 using TBot.Ogame.Infrastructure.Enums;
@@ -153,7 +154,8 @@ namespace Tbot.Includes {
 		int CountPlanetsInRange(List<Planet> planets, int galaxy, int minSystem, int maxSystem, int minPosition, int maxPositions, int minSlots, int minTemperature, int maxTemperature);
 		int CountPlanetsInRange(List<Celestial> planets, int galaxy, int minSystem, int maxSystem, int minPosition, int maxPositions, int minSlots, int minTemperature, int maxTemperature);
 		bool IsThereMoonHere(List<Celestial> planets, Celestial celestial);
-
+		int CalcSlotsPriority(Feature feature, List<RankSlotsPriority> rankSlotsPriority, Slots slots, List<Fleet> fleets, int slotsToLeaveFree = 0);
+		List<Dictionary<Celestial, Resources>> CalcMultipleOrigin(Celestial celestialToBuild, List<Celestial> allCelestials, Resources missingResources, TransportSettings transportSettings, List<Fleet> fleets, UserData userData);
 	}
 
 }
