@@ -36,7 +36,15 @@
 		},
 		"CaptchaAPIKey": "",
 		"CustomTitle": "",
-		"SlotsToLeaveFree": 1
+		"SlotsToLeaveFree": 1,
+		"SlotPriorityLevel": {
+			"Brain": 2,
+			"Expeditions": 1,
+			"AutoFarm": 3,
+			"AutoColonize": 4,
+			"AutoDiscovery": 10,
+			"AutoHarvest": 99
+		}
 	},
 	"SleepMode": {
 		"Active": false,
@@ -107,11 +115,10 @@
 	},
 	"Brain": {
 		"Active": true,
-		"SlotPriorityLevel": 2,
 		"Transports": {
 			"Active": true,
 			"CargoType": "SmallCargo",
-			"DeutToLeave": 1000000,
+			"DeutToLeaveOnMoons": 1000000,
 			"RoundResources": true,
 			"SendToTheMoonIfPossible": true,
 			"Origin": {
@@ -127,7 +134,7 @@
 				"Active": false,
 				"OnlyFromMoons": true,
 				"MinimumResourcesToSend": 10000000,
-				"PriorityToProximityOverQuantity": true,
+				"PriorityToProximityOverQuantity": false,
 				"Exclude": [
 					{
 						"Galaxy": 1,
@@ -135,7 +142,7 @@
 						"Position": 1,
 						"Type": "Planet"
 					}
-				]			
+				]
 			}
 		},
 		"AutoMine": {
@@ -340,7 +347,6 @@
 	},
 	"Expeditions": {
 		"Active": true,
-		"SlotPriorityLevel": 1,
 		"IgnoreSleep": false,
 		"MinWaitNextFleet": 5,
 		"MaxWaitNextFleet": 15,
@@ -387,7 +393,6 @@
 	},
 	"AutoFarm": {
 		"Active": true,
-		"SlotPriorityLevel": 0,
 		"ExcludeMoons": true,
 		"ScanRange": [
 			{
@@ -438,12 +443,12 @@
 		"HarvestDeepSpace": true,
 		"MinimumResourcesOwnDF": 300,
 		"MinimumResourcesDeepSpace": 50000,
+		"MaxSlots": 5,
 		"CheckIntervalMin": 30,
 		"CheckIntervalMax": 60
 	},
 	"AutoColonize": {
 		"Active": true,
-		"SlotPriorityLevel": 0,
 		"Origin": {
 			"Galaxy": 5,
 			"System": 64,
@@ -481,13 +486,12 @@
 				"MaxPlanets": 2
 			}
 		],
-		"RandomPosition": true,
-		"CheckIntervalMin": 30,
-		"CheckIntervalMax": 60
+		"RandomPosition": false,
+		"CheckIntervalMin": 900,
+		"CheckIntervalMax": 1200
 	},
 	"AutoDiscovery": {
 		"Active": true,
-		"SlotPriorityLevel": 0,
 		"Origin": {
 			"Galaxy": 5,
 			"System": 64,
