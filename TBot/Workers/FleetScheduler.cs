@@ -708,14 +708,23 @@ namespace Tbot.Workers {
 					galaxyInfo = await _ogameService.GetGalaxyInfo(origin.Coordinate);
 
 					for (sys = origin.Coordinate.System - 5; sys <= origin.Coordinate.System + 5; sys++) {
-						int pos = 1;
+						int pos = 0;
 						sys = GeneralHelper.ClampSystem(sys);
 						galaxyInfo = await _ogameService.GetGalaxyInfo(origin.Coordinate.Galaxy, sys);
 						foreach (var planet in galaxyInfo.Planets) {
+							pos++;
 							if (planet == null) {
+								if (_tbotInstance.UserData.researches.Astrophysics < 4 && (pos <= 3 || pos >= 13)){
+									continue;
+								}
+								if (_tbotInstance.UserData.researches.Astrophysics < 6 && (pos <= 2 || pos >= 14)) {
+									continue;
+								}
+								if (_tbotInstance.UserData.researches.Astrophysics < 8 && (pos <= 1 || pos >= 15)) {
+									continue;
+								}
 								possibleDestinations.Add(new(origin.Coordinate.Galaxy, sys, pos));
 							}
-							pos++;
 						}
 					}
 
