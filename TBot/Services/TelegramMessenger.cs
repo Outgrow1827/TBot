@@ -163,7 +163,8 @@ namespace Tbot.Services {
 		public async Task SendMessage(string message, ParseMode parseMode = ParseMode.Html, CancellationToken cancellationToken = default) {
 			try {
 				isTyping = false;
-				await Client.SendTextMessageAsync(
+				//await Client.SendTextMessageAsync(
+				await Client.SendMessage(
 					chatId: Channel,
 					text: message,
 					parseMode: parseMode,
@@ -178,7 +179,8 @@ namespace Tbot.Services {
 			isTyping = true;
 			Task.Run(async () => {
 				while (isTyping) {
-					await Client.SendChatActionAsync(
+					//await Client.SendChatActionAsync(
+					await Client.SendChatAction(
 						chatId: Channel,
 						action: ChatAction.Typing,//ChatAction.Typing,
 						cancellationToken: cancellationToken);
@@ -191,7 +193,8 @@ namespace Tbot.Services {
 		public async Task SendReplyMarkup(string text, IEnumerable<IEnumerable<InlineKeyboardButton>> buttons, CancellationToken ct) {
 			isTyping = false;
 			var inlineKeyboard = new InlineKeyboardMarkup(buttons);
-			await Client.SendTextMessageAsync(
+			//await Client.SendTextMessageAsync(
+			await Client.SendMessage(
 				chatId: Channel,
 				text: text,
 				replyMarkup: inlineKeyboard,
@@ -203,7 +206,8 @@ namespace Tbot.Services {
 			try {
 				isTyping = false;
 				//await client.SendTextMessageAsync(chat, message, parseMode);
-				await client.SendTextMessageAsync(chat, message, null, parseMode);
+				//await client.SendTextMessageAsync(chat, message, null, parseMode);
+				await client.SendMessage(chat, message, parseMode);
 			} catch (Exception e) {
 				_logger.WriteLog(LogLevel.Error, LogSender.Tbot, $"Could not send Telegram message: an exception has occurred: {e.Message}");
 			}
@@ -1279,7 +1283,8 @@ namespace Tbot.Services {
 		async Task HandleErrorAsync(ITelegramBotClient botClient, Exception exception, CancellationToken cancellationToken) {
 			try {
 				if (exception is ApiRequestException apiRequestException) {
-					await botClient.SendTextMessageAsync(Channel, apiRequestException.ToString());
+					//await botClient.SendTextMessageAsync(Channel, apiRequestException.ToString());
+					await botClient.SendMessage(Channel, apiRequestException.ToString());
 				}
 			} catch { }
 		}
