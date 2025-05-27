@@ -120,7 +120,7 @@
 			"CargoType": "SmallCargo",
 			"DeutToLeaveOnMoons": 1000000,
 			"RoundResources": true,
-			"SendToTheMoonIfPossible": true,
+			"SendToTheMoonIfPossible": false,
 			"Origin": {
 				"Galaxy": 3,
 				"System": 333,
@@ -128,8 +128,8 @@
 				"Type": "Moon"
 			},
 			"MaxSlots": 10,
-			"CheckMoonOrPlanetFirst": true,
-			"DoMultipleTransportIsNotEnoughShipButSamePosition": true,
+			"CheckMoonOrPlanetFirst": false,
+			"DoMultipleTransportIsNotEnoughShipButSamePosition": false,
 			"MultipleOrigins": {
 				"Active": false,
 				"OnlyFromMoons": true,
@@ -318,12 +318,14 @@
 				"OnlyOnMoons": true,
 				"DeutToLeave": 1000000
 			},
-			"Target": {
-				"Galaxy": 5,
-				"System": 63,
-				"Position": 8,
-				"Type": "Moon"
-			},
+			"Target": [
+				{
+					"Galaxy": 5,
+					"System": 63,
+					"Position": 8,
+					"Type": "Moon"
+				}
+			],
 			"TargetAssociateMoon": false,
 			"CargoType": "LargeCargo",
 			"RandomOrder": true,

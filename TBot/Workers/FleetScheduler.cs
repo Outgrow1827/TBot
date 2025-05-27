@@ -838,7 +838,7 @@ namespace Tbot.Workers {
 			}
 		}
 
-		public async Task<int> HandleMinerTransport(Celestial origin, Celestial destination, Resources resources, Buildables buildable = Buildables.Null, Buildings maxBuildings = null, Facilities maxFacilities = null, Facilities maxLunarFacilities = null, AutoMinerSettings autoMinerSettings = null) {
+		public async Task<int> HandleMinerTransport(Celestial origin, Celestial destination, Celestial differentDestination, Resources resources, Buildables buildable = Buildables.Null, Buildings maxBuildings = null, Facilities maxFacilities = null, Facilities maxLunarFacilities = null, AutoMinerSettings autoMinerSettings = null) {
 			try {
 				if (origin.ID == destination.ID) {
 					_tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler, "Skipping transport: origin and destination are the same.");
@@ -959,6 +959,8 @@ namespace Tbot.Workers {
 									resources.Crystal > destination.ResourcesProduction.Crystal.StorageCapacity ||
 									resources.Deuterium > destination.ResourcesProduction.Deuterium.StorageCapacity
 								) {
+									if (differentDestination != null && differentDestination.ID != 0)
+										destination = differentDestination;
 									_tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler, $"Sending {ships.ToString()} with {missingResources.TransportableResources} from {origin.ToString()} to {destination.ToString()}");
 									return await SendFleet(origin, ships, destination.Coordinate, Missions.Transport, Speeds.HundredPercent, missingResources, _tbotInstance.UserData.userInfo.Class);
 								} else {
@@ -966,6 +968,8 @@ namespace Tbot.Workers {
 									return 0;
 								}
 							} else {
+								if (differentDestination != null && differentDestination.ID != 0)
+									destination = differentDestination;
 								_tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler, $"Sending {ships.ToString()} with {missingResources.TransportableResources} from {origin.ToString()} to {destination.ToString()}");
 								return await SendFleet(origin, ships, destination.Coordinate, Missions.Transport, Speeds.HundredPercent, missingResources, _tbotInstance.UserData.userInfo.Class);
 							}
@@ -985,7 +989,7 @@ namespace Tbot.Workers {
 			}
 		}
 
-		public async Task<int> HandleMinerTransport(Celestial origin, Celestial destination, Resources resources, LFBuildables buildable = LFBuildables.None, LFBuildings maxLFBuildings = null, bool preventIfMoreExpensiveThanNextMine = false) {
+		public async Task<int> HandleMinerTransport(Celestial origin, Celestial destination, Celestial differentDestination, Resources resources, LFBuildables buildable = LFBuildables.None, LFBuildings maxLFBuildings = null, bool preventIfMoreExpensiveThanNextMine = false) {
 			try {
 				if (origin.ID == destination.ID) {
 					_tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler, "Skipping transport: origin and destination are the same.");
@@ -1112,6 +1116,8 @@ namespace Tbot.Workers {
 									resources.Crystal > destination.ResourcesProduction.Crystal.StorageCapacity ||
 									resources.Deuterium > destination.ResourcesProduction.Deuterium.StorageCapacity
 								) {
+									if (differentDestination != null && differentDestination.ID != 0)
+										destination = differentDestination;
 									_tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler, $"Sending {ships.ToString()} with {missingResources.TransportableResources} from {origin.ToString()} to {destination.ToString()}");
 									return await SendFleet(origin, ships, destination.Coordinate, Missions.Transport, Speeds.HundredPercent, missingResources, _tbotInstance.UserData.userInfo.Class);
 								} else {
@@ -1119,6 +1125,8 @@ namespace Tbot.Workers {
 									return (int) SendFleetCode.QuickerToWaitForProduction;
 								}
 							} else {
+								if (differentDestination != null && differentDestination.ID != 0)
+									destination = differentDestination;
 								_tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler, $"Sending {ships.ToString()} with {missingResources.TransportableResources} from {origin.ToString()} to {destination.ToString()}");
 								return await SendFleet(origin, ships, destination.Coordinate, Missions.Transport, Speeds.HundredPercent, missingResources, _tbotInstance.UserData.userInfo.Class);
 							}
@@ -1232,28 +1240,30 @@ namespace Tbot.Workers {
 				if (fromTelegram) {
 					_tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler, $"Telegram collect initated..");
 				}
-				if (_tbotInstance.InstanceSettings.Brain.AutoRepatriate.Target) {
+				
+				List<Celestial> tempCelestials = new();
+				if (_tbotInstance.InstanceSettings.Brain.AutoRepatriate.Target.Length > 0) {
+					tempCelestials = _calcService.ParseCelestialsList(_tbotInstance.InstanceSettings.Brain.AutoRepatriate.Target, _tbotInstance.UserData.celestials);
+				} else {
+					_tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler, "Skipping autorepatriate: no custom destination");
+					return RepatriateCode.Failure;
+				}
+				if (tempCelestials.Count() > 0) {
 					_tbotInstance.UserData.fleets = await UpdateFleets();
 					long TotalMet = 0;
 					long TotalCri = 0;
 					long TotalDeut = 0;
 					bool samePosition = (bool) _tbotInstance.InstanceSettings.Brain.AutoRepatriate.TargetAssociateMoon;
-					Coordinate destinationCoordinate = new();
-					if (!samePosition) {
-						destinationCoordinate = new(
-						(int) _tbotInstance.InstanceSettings.Brain.AutoRepatriate.Target.Galaxy,
-							(int) _tbotInstance.InstanceSettings.Brain.AutoRepatriate.Target.System,
-							(int) _tbotInstance.InstanceSettings.Brain.AutoRepatriate.Target.Position,
-							Enum.Parse<Celestials>((string) _tbotInstance.InstanceSettings.Brain.AutoRepatriate.Target.Type)
-						);
-					}
 					List<Celestial> newCelestials = _tbotInstance.UserData.celestials.ToList();
 					List<Celestial> celestialsToExclude = _calcService.ParseCelestialsList(_tbotInstance.InstanceSettings.Brain.AutoRepatriate.Exclude, _tbotInstance.UserData.celestials);
 					List<Celestial> celestialList = _tbotInstance.UserData.celestials.ToList();
-					if (!samePosition)
-						celestialList = (bool) _tbotInstance.InstanceSettings.Brain.AutoRepatriate.RandomOrder ? celestialList.Shuffle().ToList() : celestialList.OrderBy(c => _calcService.CalcDistance(c.Coordinate, destinationCoordinate, _tbotInstance.UserData.serverData)).ToList();
-
+					
+					celestialList = (bool) _tbotInstance.InstanceSettings.Brain.AutoRepatriate.RandomOrder ? celestialList.Shuffle().ToList() : celestialList.ToList();
+					
 					foreach (Celestial celestial in celestialList) {
+						List<Celestial> closestCelestials = tempCelestials
+							.OrderBy(c => _calcService.CalcDistance(c.Coordinate, celestial.Coordinate, _tbotInstance.UserData.serverData)).ToList();
+						Coordinate destinationCoordinate = new();
 						if (samePosition) {
 							if (celestial.Coordinate.Type == Celestials.Planet && !_calcService.IsThereMoonHere(_tbotInstance.UserData.celestials, celestial)) {
 								_tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler, $"Skipping {celestial.ToString()}: There is no moon.");
@@ -1265,6 +1275,8 @@ namespace Tbot.Workers {
 								(int) celestial.Coordinate.Position,
 								celestial.Coordinate.Type == Celestials.Planet ? Celestials.Moon : Celestials.Planet
 							);
+						} else {
+							destinationCoordinate = closestCelestials.First().Coordinate;
 						}
 						if (celestialsToExclude.Has(celestial)) {
 							_tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler, $"Skipping {celestial.ToString()}: celestial in exclude list.");
@@ -1324,7 +1336,7 @@ namespace Tbot.Workers {
 								ships.Add(preferredShip, tempCelestial.Ships.GetAmount(preferredShip));
 							}
 							payload = _calcService.CalcMaxTransportableResources(ships, payload, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, tempCelestial.LFBonuses, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo);
-							
+
 							if (payload.TotalResources > 0) {
 								var fleetId = await SendFleet(tempCelestial, ships, destinationCoordinate, Missions.Transport, Speeds.HundredPercent, payload);
 								if (fleetId == (int) SendFleetCode.AfterSleepTime) {
