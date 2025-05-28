@@ -233,41 +233,45 @@ namespace Tbot.Workers.Brain {
 														.Where(c => c.Coordinate.Type == Celestials.Moon)
 														.SingleOrDefault() ?? new() { ID = 0 };
 												}
-												if (origin.Resources.IsEnoughFor(missingResources) && origin.ID != 0) {
-													missingResources = _tbotInstance.InstanceSettings.Brain.Transports.RoundResources ? missingResources.Round() : missingResources;
-													Buildables preferredShip = Buildables.SmallCargo;
-													if (!Enum.TryParse<Buildables>((string) _tbotInstance.InstanceSettings.Brain.Transports.CargoType, true, out preferredShip)) {
-														_tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler, "Unable to parse CargoType. Falling back to default SmallCargo");
-														preferredShip = Buildables.SmallCargo;
-													}
-													long shipsNeeded = _calculationService.CalcShipNumberForPayload(missingResources, preferredShip, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, origin.LFBonuses.GetShipCargoBonus(preferredShip), _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo);
-													if (origin.Ships.GetAmount(preferredShip) >= shipsNeeded) {
-														Ships ships = new();
-														ships.Add((Buildables) preferredShip, shipsNeeded);
-														fleetId = await _fleetScheduler.SendFleet(origin, ships, celestial.Coordinate, Missions.Transport, Speeds.HundredPercent, missingResources);
-														if (fleetId == (int) SendFleetCode.AfterSleepTime) {
-															stop = true;
+												if (origin.ID != 0) {
+													if (origin.Resources.IsEnoughFor(missingResources)) {
+														missingResources = _tbotInstance.InstanceSettings.Brain.Transports.RoundResources ? missingResources.Round() : missingResources;
+														Buildables preferredShip = Buildables.SmallCargo;
+														if (!Enum.TryParse<Buildables>((string) _tbotInstance.InstanceSettings.Brain.Transports.CargoType, true, out preferredShip)) {
+															_tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler, "Unable to parse CargoType. Falling back to default SmallCargo");
+															preferredShip = Buildables.SmallCargo;
 														}
-														if (fleetId == (int) SendFleetCode.NotEnoughSlots) {
-															delay = true;
-														}
-													} else if (_tbotInstance.InstanceSettings.Brain.Transports.DoMultipleTransportIsNotEnoughShipButSamePosition) {
-														DoLog(LogLevel.Warning, $"Not enough Cargo available. Multiple transports will take place.");
-														Ships ships = new();
-														ships.Add((Buildables) preferredShip, origin.Ships.GetAmount(preferredShip));
-														Resources transportableResources = _calculationService.CalcMaxTransportableResources(ships, missingResources, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, origin.LFBonuses, _tbotInstance.UserData.userInfo.Class, 0, _tbotInstance.UserData.serverData.ProbeCargo);
-														fleetId = await _fleetScheduler.SendFleet(origin, ships, celestial.Coordinate, Missions.Transport, Speeds.HundredPercent, transportableResources);
-														if (fleetId == (int) SendFleetCode.AfterSleepTime) {
-															stop = true;
-														}
-														if (fleetId == (int) SendFleetCode.NotEnoughSlots) {
-															delay = true;
+														long shipsNeeded = _calculationService.CalcShipNumberForPayload(missingResources, preferredShip, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, origin.LFBonuses.GetShipCargoBonus(preferredShip), _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo);
+														if (origin.Ships.GetAmount(preferredShip) >= shipsNeeded) {
+															Ships ships = new();
+															ships.Add((Buildables) preferredShip, shipsNeeded);
+															fleetId = await _fleetScheduler.SendFleet(origin, ships, celestial.Coordinate, Missions.Transport, Speeds.HundredPercent, missingResources);
+															if (fleetId == (int) SendFleetCode.AfterSleepTime) {
+																stop = true;
+															}
+															if (fleetId == (int) SendFleetCode.NotEnoughSlots) {
+																delay = true;
+															}
+														} else if (_tbotInstance.InstanceSettings.Brain.Transports.DoMultipleTransportIsNotEnoughShipButSamePosition) {
+															DoLog(LogLevel.Warning, $"Not enough Cargo available. Multiple transports will take place.");
+															Ships ships = new();
+															ships.Add((Buildables) preferredShip, origin.Ships.GetAmount(preferredShip));
+															Resources transportableResources = _calculationService.CalcMaxTransportableResources(ships, missingResources, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, origin.LFBonuses, _tbotInstance.UserData.userInfo.Class, 0, _tbotInstance.UserData.serverData.ProbeCargo);
+															fleetId = await _fleetScheduler.SendFleet(origin, ships, celestial.Coordinate, Missions.Transport, Speeds.HundredPercent, transportableResources);
+															if (fleetId == (int) SendFleetCode.AfterSleepTime) {
+																stop = true;
+															}
+															if (fleetId == (int) SendFleetCode.NotEnoughSlots) {
+																delay = true;
+															}
+														} else {
+															DoLog(LogLevel.Warning, $"Not enough Cargo available. Skipping CheckMoonOrPlanetFirst.");
 														}
 													} else {
-														DoLog(LogLevel.Warning, $"Not enough Cargo available. Skipping CheckMoonOrPlanetFirst.");
+														DoLog(LogLevel.Warning, $"Not enough resources available on {origin.ToString()} only to send resources to {celestial.ToString()}.");
 													}
 												} else {
-													DoLog(LogLevel.Warning, $"Not enough resources available on {origin.ToString()} only to send resources to {celestial.ToString()}.");
+													DoLog(LogLevel.Warning, $"No Moon available on {celestial.ToString()}.");
 												}
 											}
 
@@ -321,7 +325,6 @@ namespace Tbot.Workers.Brain {
 
 													if (resultOrigins.Count() == 0) {
 														DoLog(LogLevel.Information, $"No origin is available. This may be due to a lack of resources or cargo.");
-														delay = true;
 														return;
 													}
 													if (resultOrigins.Count() > MaxSlots) {
@@ -345,6 +348,7 @@ namespace Tbot.Workers.Brain {
 															return;
 														}
 														if (fleetId == (int) SendFleetCode.NotEnoughSlots) {
+															delay = true;
 															return;
 														}
 													}
@@ -377,7 +381,7 @@ namespace Tbot.Workers.Brain {
 														.Where(c => c.Coordinate.Position == (int) _tbotInstance.InstanceSettings.Brain.Transports.Origin.Position)
 														.Where(c => c.Coordinate.Type == Enum.Parse<Celestials>((string) _tbotInstance.InstanceSettings.Brain.Transports.Origin.Type))
 														.SingleOrDefault() ?? new() { ID = 0 };
-													fleetId = await _fleetScheduler.HandleMinerTransport(origin, destination, missingResources, buildable, maxLFBuildings, preventIfMoreExpensiveThanNextMine);
+													fleetId = await _fleetScheduler.HandleMinerTransport(origin, celestial, destination, missingResources, buildable, maxLFBuildings, preventIfMoreExpensiveThanNextMine);
 													if (fleetId == (int) SendFleetCode.AfterSleepTime) {
 														stop = true;
 													}
@@ -404,7 +408,7 @@ namespace Tbot.Workers.Brain {
 											else
 												DoLog(LogLevel.Information, $"0 slots available.");
 										}
-										DoLog(LogLevel.Information, $"Not enough slots: Transports.MaxSlots");
+										DoLog(LogLevel.Information, $"Not enough slots available for Transports.MaxSlots, delaying.");
 										delay = true;
 									}
 								}
@@ -439,7 +443,7 @@ namespace Tbot.Workers.Brain {
 						DoLog(LogLevel.Information, $"Delaying...");
 						_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
 						try {
-							interval = (_tbotInstance.UserData.fleets.OrderBy(f => f.BackIn).First().BackIn ?? 0) * 1000 + RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
+							interval = (_tbotInstance.UserData.fleets.Where(f => f.Mission == Missions.Transport).OrderBy(f => f.BackIn).First().BackIn ?? 0) * 1000 + RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
 						} catch {
 							interval = RandomizeHelper.CalcRandomInterval((int) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.CheckIntervalMin, (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.CheckIntervalMax);
 						}
