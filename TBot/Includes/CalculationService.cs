@@ -4744,7 +4744,7 @@ namespace Tbot.Includes {
 			8 => pos >= 1 && pos <= 15,
 			7 or 6 => pos >= 2 && pos <= 14,
 			5 or 4 => pos >= 3 && pos <= 13,
-			3 or 2 or 1 => pos >= 4 && pos <= 14,
+			3 or 2 or 1 => pos >= 4 && pos <= 12,
 			_ => true
 		};
 
