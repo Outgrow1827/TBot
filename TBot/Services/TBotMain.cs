@@ -460,10 +460,10 @@ namespace Tbot.Services {
 				}
 
 				if (feature == Feature.BrainAutoRepatriate || feature == Feature.Null) {
-					jsonObj["Brain"]["AutoRepatriate"]["Target"]["Galaxy"] = (int) celestial.Coordinate.Galaxy;
-					jsonObj["Brain"]["AutoRepatriate"]["Target"]["System"] = (int) celestial.Coordinate.System;
-					jsonObj["Brain"]["AutoRepatriate"]["Target"]["Position"] = (int) celestial.Coordinate.Position;
-					jsonObj["Brain"]["AutoRepatriate"]["Target"]["Type"] = type;
+					jsonObj["Brain"]["AutoRepatriate"]["Target"][0]["Galaxy"] = (int) celestial.Coordinate.Galaxy;
+					jsonObj["Brain"]["AutoRepatriate"]["Target"][0]["System"] = (int) celestial.Coordinate.System;
+					jsonObj["Brain"]["AutoRepatriate"]["Target"][0]["Position"] = (int) celestial.Coordinate.Position;
+					jsonObj["Brain"]["AutoRepatriate"]["Target"][0]["Type"] = type;
 				}
 
 				if (feature == Feature.Expeditions || feature == Feature.Null) {
