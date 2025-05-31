@@ -713,16 +713,7 @@ namespace Tbot.Workers {
 						galaxyInfo = await _ogameService.GetGalaxyInfo(origin.Coordinate.Galaxy, sys);
 						foreach (var planet in galaxyInfo.Planets) {
 							pos++;
-							if (planet == null) {
-								if (_tbotInstance.UserData.researches.Astrophysics < 4 && (pos <= 3 || pos >= 13)){
-									continue;
-								}
-								if (_tbotInstance.UserData.researches.Astrophysics < 6 && (pos <= 2 || pos >= 14)) {
-									continue;
-								}
-								if (_tbotInstance.UserData.researches.Astrophysics < 8 && (pos <= 1 || pos >= 15)) {
-									continue;
-								}
+							if (!_calcService.CalcLimitAstro((int) pos, _tbotInstance.UserData.researches)) {
 								possibleDestinations.Add(new(origin.Coordinate.Galaxy, sys, pos));
 							}
 						}
