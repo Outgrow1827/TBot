@@ -172,7 +172,7 @@ namespace Tbot.Workers {
 												(int) ii,
 												Celestials.Planet
 											);
-											if (!_calculationService.CalcLimitAstro((int) targetCoords.Position, _tbotInstance.UserData.researches)) {
+											if (_calculationService.IsAstrophysicsPositionValid((int) targetCoords.Position, (int) _tbotInstance.UserData.researches.Astrophysics)) {
 												targets.Add(targetCoords);
 											}
 										}

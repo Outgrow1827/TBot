@@ -713,7 +713,7 @@ namespace Tbot.Workers {
 						galaxyInfo = await _ogameService.GetGalaxyInfo(origin.Coordinate.Galaxy, sys);
 						foreach (var planet in galaxyInfo.Planets) {
 							pos++;
-							if (!_calcService.CalcLimitAstro((int) pos, _tbotInstance.UserData.researches)) {
+							if (_calcService.IsAstrophysicsPositionValid((int) pos, (int)_tbotInstance.UserData.researches.Astrophysics)) {
 								possibleDestinations.Add(new(origin.Coordinate.Galaxy, sys, pos));
 							}
 						}
