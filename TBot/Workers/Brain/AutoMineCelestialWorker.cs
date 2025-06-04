@@ -515,6 +515,7 @@ namespace Tbot.Workers.Brain {
 												.Where(c => c.Coordinate.Position == (int) _tbotInstance.InstanceSettings.Brain.Transports.Origin.Position)
 												.Where(c => c.Coordinate.Type == Enum.Parse<Celestials>((string) _tbotInstance.InstanceSettings.Brain.Transports.Origin.Type))
 												.SingleOrDefault() ?? new() { ID = 0 };
+											missingResources = xCostBuildable;
 											fleetId = await _fleetScheduler.HandleMinerTransport(origin, celestial, destination, missingResources, buildable, maxBuildings, maxFacilities, maxLunarFacilities, autoMinerSettings);
 											if (fleetId == (int) SendFleetCode.AfterSleepTime) {
 												stop = true;
