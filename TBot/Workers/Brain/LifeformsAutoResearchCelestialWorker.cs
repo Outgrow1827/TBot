@@ -374,7 +374,7 @@ namespace Tbot.Workers.Brain {
 														.SingleOrDefault() ?? new() { ID = 0 };
 													if (destination.Ships.IsEmpty() || celestial.Resources.TotalResources == 0)
 														destination = celestial;
-													missingResources = missingResources.Difference(destination.Resources);
+													xCostBuildable = xCostBuildable.Difference(destination.Resources);
 												} else {
 													destination = allCelestials
 														.Unique()

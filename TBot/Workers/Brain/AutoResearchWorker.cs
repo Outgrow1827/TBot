@@ -366,7 +366,7 @@ namespace Tbot.Workers.Brain {
 													.SingleOrDefault() ?? new() { ID = 0 };
 												if (destination.Ships.IsEmpty() || celestial.Resources.TotalResources == 0)
 													destination = celestial;
-												missingResources = missingResources.Difference(destination.Resources);
+												cost = cost.Difference(destination.Resources);
 											} else {
 												destination = allCelestials
 													.Unique()
@@ -383,7 +383,7 @@ namespace Tbot.Workers.Brain {
 												.Where(c => c.Coordinate.Position == (int) _tbotInstance.InstanceSettings.Brain.Transports.Origin.Position)
 												.Where(c => c.Coordinate.Type == Enum.Parse<Celestials>((string) _tbotInstance.InstanceSettings.Brain.Transports.Origin.Type))
 												.SingleOrDefault() ?? new() { ID = 0 };
-											fleetId = await _fleetScheduler.HandleMinerTransport(origin, celestial, destination, missingResources, Buildables.Null);
+											fleetId = await _fleetScheduler.HandleMinerTransport(origin, celestial, destination, cost, Buildables.Null);
 											if (fleetId == (int) SendFleetCode.AfterSleepTime) {
 												stop = true;
 											}
