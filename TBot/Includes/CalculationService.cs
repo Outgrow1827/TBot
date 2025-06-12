@@ -4906,7 +4906,7 @@ namespace Tbot.Includes {
 					.Where(c => c.Resources.TotalResources > 0)
 					.ToList();
 
-			Resources TotalResources = allCelestials.Aggregate(new Resources(), (total, celestial) => total.Sum(celestial.Resources));
+			Resources TotalResources = closestCelestials.Aggregate(new Resources(), (total, celestial) => total.Sum(celestial.Resources.Difference(new Resources(0, 0, transportSettings.DeutToLeave))) );
 			if (!TotalResources.IsEnoughFor(missingResources)) {
 				_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Not enough resources available on all celestials: Needed: {missingResources.TransportableResources} - Available: {TotalResources.TransportableResources}");
 				return new();
@@ -4958,8 +4958,10 @@ namespace Tbot.Includes {
 				return new();
 			}
 			TotalResources = closestCelestials.Aggregate(new Resources(), (total, celestial) => {
-				if (celestial.Ships.GetAmount(transportSettings.CargoType) >= CalcShipNumberForPayload(celestial.Resources, transportSettings.CargoType, userData.researches.HyperspaceTechnology, userData.serverData, celestial.LFBonuses.GetShipCargoBonus(transportSettings.CargoType), userData.userInfo.Class, userData.serverData.ProbeCargo)) {
-					return total.Sum(celestial.Resources);
+				if (celestial.Resources.TotalResources < transportSettings.MultipleOrigin.MinimumResourcesToSend || celestial.Resources.TotalResources == 0)
+					return total;
+				if (celestial.Ships.GetAmount(transportSettings.CargoType) >= CalcShipNumberForPayload(celestial.Resources.Difference(new Resources(0, 0, transportSettings.DeutToLeave)), transportSettings.CargoType, userData.researches.HyperspaceTechnology, userData.serverData, celestial.LFBonuses.GetShipCargoBonus(transportSettings.CargoType), userData.userInfo.Class, userData.serverData.ProbeCargo)) {
+					return total.Sum(celestial.Resources.Difference(new Resources(0, 0, transportSettings.DeutToLeave)));
 				} else {
 					Ships ships = new();
 					ships.Add(transportSettings.CargoType, celestial.Ships.GetAmount(transportSettings.CargoType));
@@ -4994,16 +4996,11 @@ namespace Tbot.Includes {
 						Ships ships = new();
 						ships.Add(transportSettings.CargoType, cel.Ships.GetAmount(transportSettings.CargoType));
 						Resources res = CalcMaxTransportableResources(ships, celResources, userData.researches.HyperspaceTechnology, userData.serverData, cel.LFBonuses, userData.userInfo.Class, 0, userData.serverData.ProbeCargo);
-						if (resources.Sum(res).IsEnoughFor(missingResources)) {
-							resources = resources.Sum(res);
-							celResources = res;
-							if (celResources.TotalResources == 0)
-								continue;
-							result.Add(new Dictionary<Celestial, Resources> { { cel, celResources } } );
-						} else {
-							_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Not enough resources transportable");
-							return new();
-						}
+						resources = resources.Sum(res);
+						celResources = res;
+						if (celResources.TotalResources == 0)
+							continue;
+						result.Add(new Dictionary<Celestial, Resources> { { cel, celResources } } );
 					} else {
 						_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Not enough resources transportable");
 						return new();
@@ -5011,6 +5008,7 @@ namespace Tbot.Includes {
 				}
 				_logger.WriteLog(LogLevel.Information, LogSender.Tbot, $"Sending resources from: {cel.Coordinate.ToString()} to {destination.Coordinate.ToString()} - Resources: {celResources.TransportableResources}");
 				if (resources.IsEnoughFor(missingResources)) {
+					_logger.WriteLog(LogLevel.Information, LogSender.Tbot, $"{result.Count()} transports will be send to {destination.ToString()}");
 					return result;
 				}
 			}
