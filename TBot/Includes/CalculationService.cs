@@ -4860,7 +4860,7 @@ namespace Tbot.Includes {
 							return slotsAvailable;
 						} else {
 							_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"{slots.Free} slots are Free. {slotsAvailable} are availables and {actualFeature.SlotsUsed}/{actualFeature.MaxSlots} used for {feature.ToString()}");
-							return actualFeature.MaxSlots;
+							return actualFeature.MaxSlots - actualFeature.SlotsUsed;
 						}
 					} else {
 						_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"No slots available.");
@@ -4874,7 +4874,7 @@ namespace Tbot.Includes {
 					slotsAvailable = slots.Total - reservedSlots - otherSlots;
 					if (slotsAvailable > 0) {
 						_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Total slots: {slots.Total} and {slotsToLeaveFree} must remain free. {reservedSlots} slots are reserved ({usedSlots} used) and {otherSlots} are used for other. {slotsAvailable} are availables and can be used for {feature.ToString()}");
-						return actualFeature.MaxSlots;
+						return slotsAvailable;
 					} else {
 						_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"No slots available. Total slots: {slots.Total}, {slotsToLeaveFree} must remain free, {reservedSlots} slots are reserved and {otherSlots} are used for other.");
 						return 0;
@@ -4887,6 +4887,10 @@ namespace Tbot.Includes {
 		}
 
 		public List<Dictionary<Celestial, Resources>> CalcMultipleOrigin(Celestial celestialToBuild, List<Celestial> allCelestials, Resources missingResources, TransportSettings transportSettings, List<Fleet> fleets, UserData userData) {
+			if (missingResources.TotalResources < transportSettings.MultipleOrigin.MinimumResourcesToSend) {
+				_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Skipping transport: missing resources {missingResources.TransportableResources} is less than minimum {transportSettings.MultipleOrigin.MinimumResourcesToSend}");
+				return new();
+			}
 			List<Dictionary<Celestial, Resources>> result = new();
 			bool roundRes = transportSettings.RoundResources;
 			Resources resources = new();
@@ -4978,8 +4982,10 @@ namespace Tbot.Includes {
 						celResources.Difference(celResources.Difference(missingResources.Difference(resources))).Round():
 						celResources.Difference(celResources.Difference(missingResources.Difference(resources)));
 				}
-				if (celResources.TotalResources < transportSettings.MultipleOrigin.MinimumResourcesToSend || celResources.TotalResources == 0)
+				if (celResources.TotalResources < transportSettings.MultipleOrigin.MinimumResourcesToSend || celResources.TotalResources == 0) {
+					_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Skipping transport from {cel.ToString()}: resources under minimum threshold ({celResources.TotalResources} < {transportSettings.MultipleOrigin.MinimumResourcesToSend})");
 					continue;
+				}
 				if (cel.Ships.GetAmount(transportSettings.CargoType) >= CalcShipNumberForPayload(celResources, transportSettings.CargoType, userData.researches.HyperspaceTechnology, userData.serverData, cel.LFBonuses.GetShipCargoBonus(transportSettings.CargoType), userData.userInfo.Class, userData.serverData.ProbeCargo)) {
 					resources = resources.Sum(celResources);
 					result.Add(new Dictionary<Celestial, Resources> { { cel, celResources } } );
