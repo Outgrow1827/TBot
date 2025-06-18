@@ -4415,6 +4415,8 @@ namespace Tbot.Includes {
 			}
 
 			if (optimizeForStart) {
+				if (researches.ComputerTechnology < 6 && celestial.Facilities.ResearchLab >= 1 && researches.Astrophysics > 1 && researches.ComputerTechnology < maxComputerTechnology)
+					return Buildables.ComputerTechnology;
 				if (researches.EnergyTechnology == 0 && celestial.Facilities.ResearchLab > 0 && researches.EnergyTechnology < maxEnergyTechnology)
 					return Buildables.EnergyTechnology;
 				if (researches.CombustionDrive < 2 && celestial.Facilities.ResearchLab > 0 && researches.EnergyTechnology >= 1 && researches.CombustionDrive < maxCombustionDrive)
