@@ -4837,6 +4837,39 @@ namespace Tbot.Includes {
 			int reservedSlots = slotsToLeaveFree;
 			int otherSlots = (int) fleets.Where(fleet => (fleet.Mission != Missions.Transport && fleet.Mission != Missions.Expedition && fleet.Mission != Missions.Attack && fleet.Mission != Missions.Spy && fleet.Mission != Missions.Colonize && fleet.Mission != Missions.Discovery)).Count();
 			int usedSlots = 0;
+			LogSender logsender;
+			switch (feature) {
+				case Feature.BrainAutoMine:
+					logsender = LogSender.AutoMine;
+					break;
+				case Feature.BrainAutoResearch:
+					logsender = LogSender.AutoResearch;
+					break;
+				case Feature.BrainLifeformAutoMine:
+					logsender = LogSender.LifeformsAutoMine;
+					break;
+				case Feature.BrainLifeformAutoResearch:
+					logsender = LogSender.LifeformsAutoResearch;
+					break;
+				case Feature.Expeditions:
+					logsender = LogSender.Expeditions;
+					break;
+				case Feature.AutoFarm:
+					logsender = LogSender.AutoFarm;
+					break;
+				case Feature.Colonize:
+					logsender = LogSender.Colonize;
+					break;
+				case Feature.AutoDiscovery:
+					logsender = LogSender.AutoDiscovery;
+					break;
+				case Feature.Harvest:
+					logsender = LogSender.Harvest;
+					break;
+				default:
+					logsender = LogSender.FleetScheduler;
+					break;
+			}
 			if (slots.Free - slotsToLeaveFree > 0) {
 				rankSlotsPriority.Where(f => (f.Feature == Feature.BrainAutoMine || f.Feature == Feature.BrainAutoResearch || f.Feature == Feature.BrainLifeformAutoMine || f.Feature == Feature.BrainLifeformAutoResearch)).SingleOrDefault().SlotsUsed = fleets.Where(fleet => fleet.Mission == Missions.Transport).Count();
 				rankSlotsPriority.Where(f => f.Feature == Feature.Expeditions).SingleOrDefault().SlotsUsed = fleets.Where(fleet => fleet.Mission == Missions.Expedition).Count();
@@ -4852,20 +4885,20 @@ namespace Tbot.Includes {
 					otherSlots += rankSlotsPriority.Where(f => f.Rank > 0).Where(f => f.Rank >= actualFeature.Rank).Sum(f => f.SlotsUsed);
 					otherSlots += rankSlotsPriority.Where(f => f.Rank == 0).Sum(f => f.SlotsUsed);
 					slotsAvailable = slots.Total - reservedSlots - otherSlots;
-					_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Total slots: {slots.Total}. {slotsToLeaveFree} must remain free, {reservedSlots} slots are reserved ({usedSlots} used) and {otherSlots} are used for other.");
+					_logger.WriteLog(LogLevel.Information, logsender, $"Total slots: {slots.Total}. {slotsToLeaveFree} must remain free, {reservedSlots} slots are reserved ({usedSlots} used) and {otherSlots} are used for other.");
 					if (slotsAvailable > 0) {
 						if ((actualFeature.MaxSlots - actualFeature.SlotsUsed) <= 0) {
-							_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"All reserved slots for {feature.ToString()} are used ({actualFeature.SlotsUsed}/{actualFeature.MaxSlots}).");
+							_logger.WriteLog(LogLevel.Information, logsender, $"All reserved slots for {feature.ToString()} are used ({actualFeature.SlotsUsed}/{actualFeature.MaxSlots}).");
 							return 0;
 						} else if (slotsAvailable < (actualFeature.MaxSlots - actualFeature.SlotsUsed)) {
-							_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Less slots available. Steping back to {slotsAvailable} instead of {actualFeature.MaxSlots - actualFeature.SlotsUsed} ({actualFeature.SlotsUsed}/{actualFeature.MaxSlots} used)");
+							_logger.WriteLog(LogLevel.Information, logsender, $"Less slots available. Steping back to {slotsAvailable} instead of {actualFeature.MaxSlots - actualFeature.SlotsUsed} ({actualFeature.SlotsUsed}/{actualFeature.MaxSlots} used)");
 							return slotsAvailable;
 						} else {
-							_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"{slots.Free} slots are Free. {slotsAvailable} are availables and {actualFeature.SlotsUsed}/{actualFeature.MaxSlots} used for {feature.ToString()}");
+							_logger.WriteLog(LogLevel.Information, logsender, $"{slots.Free} slots are Free. {slotsAvailable} are availables and {actualFeature.SlotsUsed}/{actualFeature.MaxSlots} used for {feature.ToString()}");
 							return actualFeature.MaxSlots - actualFeature.SlotsUsed;
 						}
 					} else {
-						_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"No slots available.");
+						_logger.WriteLog(LogLevel.Information, logsender, $"No slots available.");
 						return 0;
 					}
 				} else {
@@ -4875,15 +4908,15 @@ namespace Tbot.Includes {
 					otherSlots += rankSlotsPriority.Where(f => f.Rank == 0).Sum(f => f.SlotsUsed);
 					slotsAvailable = slots.Total - reservedSlots - otherSlots;
 					if (slotsAvailable > 0) {
-						_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Total slots: {slots.Total} and {slotsToLeaveFree} must remain free. {reservedSlots} slots are reserved ({usedSlots} used) and {otherSlots} are used for other. {slotsAvailable} are availables and can be used for {feature.ToString()}");
+						_logger.WriteLog(LogLevel.Information, logsender, $"Total slots: {slots.Total} and {slotsToLeaveFree} must remain free. {reservedSlots} slots are reserved ({usedSlots} used) and {otherSlots} are used for other. {slotsAvailable} are availables and can be used for {feature.ToString()}");
 						return slotsAvailable;
 					} else {
-						_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"No slots available. Total slots: {slots.Total}, {slotsToLeaveFree} must remain free, {reservedSlots} slots are reserved and {otherSlots} are used for other.");
+						_logger.WriteLog(LogLevel.Information, logsender, $"No slots available. Total slots: {slots.Total}, {slotsToLeaveFree} must remain free, {reservedSlots} slots are reserved and {otherSlots} are used for other.");
 						return 0;
 					}
 				}
 			} else {
-				_logger.WriteLog(LogLevel.Information, LogSender.Brain, "No slots left, delaying");
+				_logger.WriteLog(LogLevel.Information, logsender, "No slots left, delaying");
 				return 0;
 			}
 		}
