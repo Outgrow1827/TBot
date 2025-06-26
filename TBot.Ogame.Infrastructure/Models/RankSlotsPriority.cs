@@ -9,7 +9,7 @@ using TBot.Ogame.Infrastructure.Enums;
 namespace TBot.Ogame.Infrastructure.Models {
 	public class RankSlotsPriority {
 		public RankSlotsPriority(Feature feature = Feature.Null, int rank = int.MaxValue, bool active = false, int maxSlots = 0, int slotsUsed = 0) {
-            Rank = rank;
+            Rank = rank < 1 ? int.MaxValue : rank;
             Active = active;
             MaxSlots = maxSlots;
             SlotsUsed = slotsUsed;
