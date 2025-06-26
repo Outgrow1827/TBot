@@ -287,6 +287,7 @@
 			"PrioritizePlasmaTechnology": true,
 			"PrioritizeEnergyTechnology": true,
 			"PrioritizeIntergalacticResearchNetwork": true,
+			"ForceResearchWhateverTheLabLevel": false,
 			"CheckIntervalMin": 10,
 			"CheckIntervalMax": 20
 		},

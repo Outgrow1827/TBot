@@ -4408,11 +4408,15 @@ namespace Tbot.Includes {
 			return ShouldResearchEnergyTech(planets, researches.EnergyTechnology, maxEnergyTech, playerClass, hasEngineer, hasStaff);
 		}
 
-		public Buildables GetNextResearchToBuild(Planet celestial, Researches researches, bool prioritizeRobotsAndNanitesOnNewPlanets = false, Slots slots = null, int maxEnergyTechnology = 20, int maxLaserTechnology = 12, int maxIonTechnology = 5, int maxHyperspaceTechnology = 20, int maxPlasmaTechnology = 20, int maxCombustionDrive = 19, int maxImpulseDrive = 17, int maxHyperspaceDrive = 15, int maxEspionageTechnology = 8, int maxComputerTechnology = 20, int maxAstrophysics = 23, int maxIntergalacticResearchNetwork = 12, int maxWeaponsTechnology = 25, int maxShieldingTechnology = 25, int maxArmourTechnology = 25, bool optimizeForStart = true, bool ensureExpoSlots = true, CharacterClass playerClass = CharacterClass.NoClass, bool hasGeologist = false, bool hasAdmiral = false) {
-			if (ShouldBuildResearchLab(celestial, 12, researches))
+		public Buildables GetNextResearchToBuild(Planet celestial, Researches researches, bool prioritizeRobotsAndNanitesOnNewPlanets = false, Slots slots = null, int maxEnergyTechnology = 20, int maxLaserTechnology = 12, int maxIonTechnology = 5, int maxHyperspaceTechnology = 20, int maxPlasmaTechnology = 20, int maxCombustionDrive = 19, int maxImpulseDrive = 17, int maxHyperspaceDrive = 15, int maxEspionageTechnology = 8, int maxComputerTechnology = 20, int maxAstrophysics = 23, int maxIntergalacticResearchNetwork = 12, int maxWeaponsTechnology = 25, int maxShieldingTechnology = 25, int maxArmourTechnology = 25, bool optimizeForStart = true, bool ensureExpoSlots = true, bool ForceResearchWhateverTheLabLevel = false, CharacterClass playerClass = CharacterClass.NoClass, bool hasGeologist = false, bool hasAdmiral = false) {
+			if (ShouldBuildResearchLab(celestial, 12, researches) && !ForceResearchWhateverTheLabLevel) {
+				_logger.WriteLog(LogLevel.Information, LogSender.Tbot, $"Skipping AutoResearch: Can't build any research, Research Lab need to be upgraded first (actually cheaper than the next mine).");
 				return Buildables.Null;
+			}
 
 			if (optimizeForStart) {
+				if (researches.ComputerTechnology < 6 && celestial.Facilities.ResearchLab >= 1 && researches.Astrophysics > 1 && researches.ComputerTechnology < maxComputerTechnology)
+					return Buildables.ComputerTechnology;
 				if (researches.EnergyTechnology == 0 && celestial.Facilities.ResearchLab > 0 && researches.EnergyTechnology < maxEnergyTechnology)
 					return Buildables.EnergyTechnology;
 				if (researches.CombustionDrive < 2 && celestial.Facilities.ResearchLab > 0 && researches.EnergyTechnology >= 1 && researches.CombustionDrive < maxCombustionDrive)
@@ -4833,6 +4837,39 @@ namespace Tbot.Includes {
 			int reservedSlots = slotsToLeaveFree;
 			int otherSlots = (int) fleets.Where(fleet => (fleet.Mission != Missions.Transport && fleet.Mission != Missions.Expedition && fleet.Mission != Missions.Attack && fleet.Mission != Missions.Spy && fleet.Mission != Missions.Colonize && fleet.Mission != Missions.Discovery)).Count();
 			int usedSlots = 0;
+			LogSender logsender;
+			switch (feature) {
+				case Feature.BrainAutoMine:
+					logsender = LogSender.AutoMine;
+					break;
+				case Feature.BrainAutoResearch:
+					logsender = LogSender.AutoResearch;
+					break;
+				case Feature.BrainLifeformAutoMine:
+					logsender = LogSender.LifeformsAutoMine;
+					break;
+				case Feature.BrainLifeformAutoResearch:
+					logsender = LogSender.LifeformsAutoResearch;
+					break;
+				case Feature.Expeditions:
+					logsender = LogSender.Expeditions;
+					break;
+				case Feature.AutoFarm:
+					logsender = LogSender.AutoFarm;
+					break;
+				case Feature.Colonize:
+					logsender = LogSender.Colonize;
+					break;
+				case Feature.AutoDiscovery:
+					logsender = LogSender.AutoDiscovery;
+					break;
+				case Feature.Harvest:
+					logsender = LogSender.Harvest;
+					break;
+				default:
+					logsender = LogSender.FleetScheduler;
+					break;
+			}
 			if (slots.Free - slotsToLeaveFree > 0) {
 				rankSlotsPriority.Where(f => (f.Feature == Feature.BrainAutoMine || f.Feature == Feature.BrainAutoResearch || f.Feature == Feature.BrainLifeformAutoMine || f.Feature == Feature.BrainLifeformAutoResearch)).SingleOrDefault().SlotsUsed = fleets.Where(fleet => fleet.Mission == Missions.Transport).Count();
 				rankSlotsPriority.Where(f => f.Feature == Feature.Expeditions).SingleOrDefault().SlotsUsed = fleets.Where(fleet => fleet.Mission == Missions.Expedition).Count();
@@ -4848,20 +4885,20 @@ namespace Tbot.Includes {
 					otherSlots += rankSlotsPriority.Where(f => f.Rank > 0).Where(f => f.Rank >= actualFeature.Rank).Sum(f => f.SlotsUsed);
 					otherSlots += rankSlotsPriority.Where(f => f.Rank == 0).Sum(f => f.SlotsUsed);
 					slotsAvailable = slots.Total - reservedSlots - otherSlots;
-					_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Total slots: {slots.Total}. {slotsToLeaveFree} must remain free, {reservedSlots} slots are reserved ({usedSlots} used) and {otherSlots} are used for other.");
+					_logger.WriteLog(LogLevel.Information, logsender, $"Total slots: {slots.Total}. {slotsToLeaveFree} must remain free, {reservedSlots} slots are reserved ({usedSlots} used) and {otherSlots} are used for other.");
 					if (slotsAvailable > 0) {
 						if ((actualFeature.MaxSlots - actualFeature.SlotsUsed) <= 0) {
-							_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"All reserved slots for {feature.ToString()} are used ({actualFeature.SlotsUsed}/{actualFeature.MaxSlots}).");
+							_logger.WriteLog(LogLevel.Information, logsender, $"All reserved slots for {feature.ToString()} are used ({actualFeature.SlotsUsed}/{actualFeature.MaxSlots}).");
 							return 0;
 						} else if (slotsAvailable < (actualFeature.MaxSlots - actualFeature.SlotsUsed)) {
-							_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Less slots available. Steping back to {slotsAvailable} instead of {actualFeature.MaxSlots - actualFeature.SlotsUsed} ({actualFeature.SlotsUsed}/{actualFeature.MaxSlots} used)");
+							_logger.WriteLog(LogLevel.Information, logsender, $"Less slots available. Steping back to {slotsAvailable} instead of {actualFeature.MaxSlots - actualFeature.SlotsUsed} ({actualFeature.SlotsUsed}/{actualFeature.MaxSlots} used)");
 							return slotsAvailable;
 						} else {
-							_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"{slots.Free} slots are Free. {slotsAvailable} are availables and {actualFeature.SlotsUsed}/{actualFeature.MaxSlots} used for {feature.ToString()}");
-							return actualFeature.MaxSlots;
+							_logger.WriteLog(LogLevel.Information, logsender, $"{slots.Free} slots are Free. {slotsAvailable} are availables and {actualFeature.SlotsUsed}/{actualFeature.MaxSlots} used for {feature.ToString()}");
+							return actualFeature.MaxSlots - actualFeature.SlotsUsed;
 						}
 					} else {
-						_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"No slots available.");
+						_logger.WriteLog(LogLevel.Information, logsender, $"No slots available.");
 						return 0;
 					}
 				} else {
@@ -4871,20 +4908,24 @@ namespace Tbot.Includes {
 					otherSlots += rankSlotsPriority.Where(f => f.Rank == 0).Sum(f => f.SlotsUsed);
 					slotsAvailable = slots.Total - reservedSlots - otherSlots;
 					if (slotsAvailable > 0) {
-						_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Total slots: {slots.Total} and {slotsToLeaveFree} must remain free. {reservedSlots} slots are reserved ({usedSlots} used) and {otherSlots} are used for other. {slotsAvailable} are availables and can be used for {feature.ToString()}");
-						return actualFeature.MaxSlots;
+						_logger.WriteLog(LogLevel.Information, logsender, $"Total slots: {slots.Total} and {slotsToLeaveFree} must remain free. {reservedSlots} slots are reserved ({usedSlots} used) and {otherSlots} are used for other. {slotsAvailable} are availables and can be used for {feature.ToString()}");
+						return slotsAvailable;
 					} else {
-						_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"No slots available. Total slots: {slots.Total}, {slotsToLeaveFree} must remain free, {reservedSlots} slots are reserved and {otherSlots} are used for other.");
+						_logger.WriteLog(LogLevel.Information, logsender, $"No slots available. Total slots: {slots.Total}, {slotsToLeaveFree} must remain free, {reservedSlots} slots are reserved and {otherSlots} are used for other.");
 						return 0;
 					}
 				}
 			} else {
-				_logger.WriteLog(LogLevel.Information, LogSender.Brain, "No slots left, delaying");
+				_logger.WriteLog(LogLevel.Information, logsender, "No slots left, delaying");
 				return 0;
 			}
 		}
 
 		public List<Dictionary<Celestial, Resources>> CalcMultipleOrigin(Celestial celestialToBuild, List<Celestial> allCelestials, Resources missingResources, TransportSettings transportSettings, List<Fleet> fleets, UserData userData) {
+			if (missingResources.TotalResources < transportSettings.MultipleOrigin.MinimumResourcesToSend) {
+				_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Skipping transport: missing resources {missingResources.TransportableResources} is less than minimum {transportSettings.MultipleOrigin.MinimumResourcesToSend}");
+				return new();
+			}
 			List<Dictionary<Celestial, Resources>> result = new();
 			bool roundRes = transportSettings.RoundResources;
 			Resources resources = new();
@@ -4900,7 +4941,7 @@ namespace Tbot.Includes {
 					.Where(c => c.Resources.TotalResources > 0)
 					.ToList();
 
-			Resources TotalResources = allCelestials.Aggregate(new Resources(), (total, celestial) => total.Sum(celestial.Resources));
+			Resources TotalResources = closestCelestials.Aggregate(new Resources(), (total, celestial) => total.Sum(celestial.Resources.Difference(new Resources(0, 0, transportSettings.DeutToLeave))) );
 			if (!TotalResources.IsEnoughFor(missingResources)) {
 				_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Not enough resources available on all celestials: Needed: {missingResources.TransportableResources} - Available: {TotalResources.TransportableResources}");
 				return new();
@@ -4952,8 +4993,10 @@ namespace Tbot.Includes {
 				return new();
 			}
 			TotalResources = closestCelestials.Aggregate(new Resources(), (total, celestial) => {
-				if (celestial.Ships.GetAmount(transportSettings.CargoType) >= CalcShipNumberForPayload(celestial.Resources, transportSettings.CargoType, userData.researches.HyperspaceTechnology, userData.serverData, celestial.LFBonuses.GetShipCargoBonus(transportSettings.CargoType), userData.userInfo.Class, userData.serverData.ProbeCargo)) {
-					return total.Sum(celestial.Resources);
+				if (celestial.Resources.TotalResources < transportSettings.MultipleOrigin.MinimumResourcesToSend || celestial.Resources.TotalResources == 0)
+					return total;
+				if (celestial.Ships.GetAmount(transportSettings.CargoType) >= CalcShipNumberForPayload(celestial.Resources.Difference(new Resources(0, 0, transportSettings.DeutToLeave)), transportSettings.CargoType, userData.researches.HyperspaceTechnology, userData.serverData, celestial.LFBonuses.GetShipCargoBonus(transportSettings.CargoType), userData.userInfo.Class, userData.serverData.ProbeCargo)) {
+					return total.Sum(celestial.Resources.Difference(new Resources(0, 0, transportSettings.DeutToLeave)));
 				} else {
 					Ships ships = new();
 					ships.Add(transportSettings.CargoType, celestial.Ships.GetAmount(transportSettings.CargoType));
@@ -4976,8 +5019,10 @@ namespace Tbot.Includes {
 						celResources.Difference(celResources.Difference(missingResources.Difference(resources))).Round():
 						celResources.Difference(celResources.Difference(missingResources.Difference(resources)));
 				}
-				if (celResources.TotalResources < transportSettings.MultipleOrigin.MinimumResourcesToSend || celResources.TotalResources == 0)
+				if (celResources.TotalResources < transportSettings.MultipleOrigin.MinimumResourcesToSend || celResources.TotalResources == 0) {
+					_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Skipping transport from {cel.ToString()}: resources under minimum threshold ({celResources.TotalResources} < {transportSettings.MultipleOrigin.MinimumResourcesToSend})");
 					continue;
+				}
 				if (cel.Ships.GetAmount(transportSettings.CargoType) >= CalcShipNumberForPayload(celResources, transportSettings.CargoType, userData.researches.HyperspaceTechnology, userData.serverData, cel.LFBonuses.GetShipCargoBonus(transportSettings.CargoType), userData.userInfo.Class, userData.serverData.ProbeCargo)) {
 					resources = resources.Sum(celResources);
 					result.Add(new Dictionary<Celestial, Resources> { { cel, celResources } } );
@@ -4986,16 +5031,11 @@ namespace Tbot.Includes {
 						Ships ships = new();
 						ships.Add(transportSettings.CargoType, cel.Ships.GetAmount(transportSettings.CargoType));
 						Resources res = CalcMaxTransportableResources(ships, celResources, userData.researches.HyperspaceTechnology, userData.serverData, cel.LFBonuses, userData.userInfo.Class, 0, userData.serverData.ProbeCargo);
-						if (resources.Sum(res).IsEnoughFor(missingResources)) {
-							resources = resources.Sum(res);
-							celResources = res;
-							if (celResources.TotalResources == 0)
-								continue;
-							result.Add(new Dictionary<Celestial, Resources> { { cel, celResources } } );
-						} else {
-							_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Not enough resources transportable");
-							return new();
-						}
+						resources = resources.Sum(res);
+						celResources = res;
+						if (celResources.TotalResources == 0)
+							continue;
+						result.Add(new Dictionary<Celestial, Resources> { { cel, celResources } } );
 					} else {
 						_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Not enough resources transportable");
 						return new();
@@ -5003,6 +5043,7 @@ namespace Tbot.Includes {
 				}
 				_logger.WriteLog(LogLevel.Information, LogSender.Tbot, $"Sending resources from: {cel.Coordinate.ToString()} to {destination.Coordinate.ToString()} - Resources: {celResources.TransportableResources}");
 				if (resources.IsEnoughFor(missingResources)) {
+					_logger.WriteLog(LogLevel.Information, LogSender.Tbot, $"{result.Count()} transports will be send to {destination.ToString()}");
 					return result;
 				}
 			}

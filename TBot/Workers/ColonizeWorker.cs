@@ -138,7 +138,7 @@ namespace Tbot.Workers {
 							interval = (_tbotInstance.UserData.fleets
 								.OrderBy(f => f.ArriveIn)
 							.First(f => !f.ReturnFlight)
-								.ArriveIn * 1000) + RandomizeHelper.CalcRandomInterval(IntervalType.AFewSeconds);
+								.ArriveIn * 1000) + RandomizeHelper.CalcRandomInterval(IntervalType.LessThanFiveSeconds);
 						} else {
 							Coordinate originCoords = new(
 								(int) _tbotInstance.InstanceSettings.AutoColonize.Origin.Galaxy,

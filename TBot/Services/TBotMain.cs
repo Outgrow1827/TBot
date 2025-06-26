@@ -1444,6 +1444,17 @@ namespace Tbot.Services {
 			}
 			_fleetScheduler.RetireFleet(ToRecallFleet);
 		}
+		public async Task TelegramRetireFleetM(Missions mission) {
+			userData.fleets = await _fleetScheduler.UpdateFleets();
+			List<Fleet> ToRecallFleet = userData.fleets.Where(f => f.Mission == mission).ToList();
+			if (ToRecallFleet.Count == 0) {
+				await SendTelegramMessage($"Unable to recall fleet ! No mission ?");
+				return;
+			}
+			foreach (var fleet in ToRecallFleet) {
+				_fleetScheduler.RetireFleet(fleet);
+			}
+		}
 
 		public async Task TelegramMesgAttacker(string message) {
 			userData.attacks = await _ogameService.GetAttacks();

@@ -258,6 +258,7 @@ namespace Tbot.Services {
 				"/getinfo",
 				"/celestial",
 				"/cancel",
+				"/cancelmission",
 				"/cancelghostsleep",
 				"/editsettings",
 				"/spycrash",
@@ -430,6 +431,7 @@ namespace Tbot.Services {
 								"/sleep - Stop bot for the specified amount of hours. Format: <code>/sleep 4h3m or 3m50s</code>\n" +
 								"/wakeup - Wakeup bot\n" +
 								"/cancel - Cancel fleet with specified ID. Format: <code>/cancel 65656</code>\n" +
+								"/cancelmission - Cancel all fleets with specified mission. Format: <code>/cancel Deploy</code> or other mission\n" +
 								"/getcelestials - Return the list of your celestials\n" +
 								"/attacked - check if you're (still) under attack\n" +
 								"/celestial - Update program current celestial target. Format: <code>/celestial 2:45:8 Moon/Planet</code>\n" +
@@ -791,6 +793,18 @@ namespace Tbot.Services {
 								int fleetId = int.Parse(arg);
 
 								await currInstance.TelegramRetireFleet(fleetId);
+								return;
+
+
+							case "/cancelmission":
+								if (message.Text.Split(' ').Length != 2) {
+									await SendMessage(botClient, message.Chat, "Mission argument required!");
+									return;
+								}
+								arg = message.Text.Split(' ')[1];
+								Missions.TryParse(arg, out mission);
+
+								await currInstance.TelegramRetireFleetM(mission);
 								return;
 
 
