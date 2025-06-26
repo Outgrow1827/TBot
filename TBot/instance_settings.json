@@ -1,34 +1,34 @@
 {
 	"Credentials": {
-		"Universe": "",
-		"Email": "",
-		"Password": "",
-		"Language": "",
-		"LobbyPioneers": false,
+		"Universe": "Bermuda",
+		"Email": "reporter@netterchef.de",
+		"Password": "jIOj28rJFAIUOJFaw",
+		"Language": "en",
+		"LobbyPioneers": true,
 		"BasicAuth": {
 			"Username": "",
 			"Password": ""
 		},
 		"DeviceConf": {
-			"Name": "Device-name",
+			"Name": "reporter@netterchef.de.dev",
 			"System": "Windows",
 			"Browser": "Chrome",
 			"UserAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-			"Memory": 8,
-			"Concurrency": 16,
+			"Memory": 16,
+			"Concurrency": 24,
 			"Color": 24,
 			"Width": 1920,
 			"Height": 1080,
 			"Timezone": "Europe/London",
 			"Lang": "en"
-		  }
+		}
 	},
 	"General": {
-		"Host": "localhost",
+		"Host": "192.168.2.115",
 		"Port": "8080",
 		"Proxy": {
 			"Enabled": false,
-			"Address": "",
+			"Address": "127.0.0.1:5789",
 			"Type": "socks5",
 			"Username": "",
 			"Password": "",
@@ -48,23 +48,23 @@
 	},
 	"SleepMode": {
 		"Active": false,
-		"GoToSleep": "23:15",
-		"WakeUp": "07:05",
+		"GoToSleep": "08:30",
+		"WakeUp": "14:00",
 		"PreventIfThereAreFleets": true,
 		"TelegramMessenger": {
 			"Active": false
 		},
 		"AutoFleetSave": {
 			"Active": true,
-			"OnlyMoons": true,
-			"DeutToLeave": 200000,
+			"OnlyMoons": false,
+			"DeutToLeave": 100,
 			"Recall": true,
 			"DefaultMission": "Deploy"
 		}
 	},
 	"Defender": {
 		"Active": true,
-		"CheckIntervalMin": 1,
+		"CheckIntervalMin": 9,
 		"CheckIntervalMax": 22,
 		"IgnoreProbes": true,
 		"DefendFromMissiles": true,
@@ -77,13 +77,13 @@
 		},
 		"RandomActivity": true,
 		"Home": {
-			"Galaxy": 1,
-			"System": 1,
-			"Position": 1,
+			"Galaxy": 5,
+			"System": 313,
+			"Position": 8,
 			"Type": "Planet"
 		},
 		"Autofleet": {
-			"Active": true,
+			"Active": false,
 			"TelegramMessenger": {
 				"Active": false
 			}
@@ -95,7 +95,7 @@
 			100004
 		],
 		"SpyAttacker": {
-			"Active": true,
+			"Active": false,
 			"Probes": 20
 		},
 		"MessageAttacker": {
@@ -117,15 +117,15 @@
 		"Active": true,
 		"Transports": {
 			"Active": true,
-			"CargoType": "SmallCargo",
+			"CargoType": "LargeCargo",
 			"DeutToLeaveOnMoons": 1000000,
-			"RoundResources": true,
+			"RoundResources": false,
 			"SendToTheMoonIfPossible": false,
 			"Origin": {
-				"Galaxy": 3,
-				"System": 333,
+				"Galaxy": 5,
+				"System": 313,
 				"Position": 8,
-				"Type": "Moon"
+				"Type": "Planet"
 			},
 			"MaxSlots": 10,
 			"CheckMoonOrPlanetFirst": false,
@@ -146,7 +146,7 @@
 			}
 		},
 		"AutoMine": {
-			"Active": true,
+			"Active": false,
 			"Transports": {
 				"Active": true
 			},
@@ -154,7 +154,7 @@
 			"MaxCrystalMine": 35,
 			"MaxDeuteriumSynthetizer": 37,
 			"MaxSolarPlant": 20,
-			"MaxFusionReactor": 20,
+			"MaxFusionReactor": 0,
 			"MaxMetalStorage": 13,
 			"MaxCrystalStorage": 12,
 			"MaxDeuteriumTank": 11,
@@ -162,7 +162,7 @@
 			"MaxShipyard": 12,
 			"MaxResearchLab": 12,
 			"MaxMissileSilo": 0,
-			"MaxNaniteFactory": 7,
+			"MaxNaniteFactory": 3,
 			"MaxTerraformer": 8,
 			"MaxSpaceDock": 7,
 			"MaxLunarBase": 8,
@@ -173,41 +173,41 @@
 			"RandomOrder": true,
 			"Exclude": [
 				{
-					"Galaxy": 3,
-					"System": 333,
-					"Position": 15,
+					"Galaxy": 5,
+					"System": 119,
+					"Position": 6,
 					"Type": "Planet"
 				}
 			],
-			"OptimizeForStart": true,
-			"PrioritizeRobotsAndNanites": false,
+			"OptimizeForStart": false,
+			"PrioritizeRobotsAndNanites": true,
 			"BuildDepositIfFull": false,
 			"BuildSolarSatellites": true,
-			"BuildCrawlers": true,
-			"DepositHours": 6,
-			"MaxDaysOfInvestmentReturn": 7,
+			"BuildCrawlers": false,
+			"DepositHours": 24,
+			"MaxDaysOfInvestmentReturn": 14,
 			"DeutToLeaveOnMoons": 1000000,
 			"CheckIntervalMin": 10,
 			"CheckIntervalMax": 20
 		},
 		"LifeformAutoMine": {
-			"Active": true,
+			"Active": false,
 			"Transports": {
-				"Active": true
+				"Active": false
 			},
-			"StartFromCrystalMineLvl": 20,
-			"MaxBasePopulationBuilding": 60,
-			"MaxBaseFoodBuilding": 62,
-			"MaxBaseTechBuilding": 6,
-			"MaxT2Building": 10,
-			"MaxT3Building": 8,
-			"MaxBuilding6": 5,
-			"MaxBuilding7": 5,
-			"MaxBuilding8": 5,
-			"MaxBuilding9": 5,
-			"MaxBuilding10": 5,
-			"MaxBuilding11": 5,
-			"MaxBuilding12": 5,
+			"StartFromCrystalMineLvl": 15,
+			"MaxBasePopulationBuilding": 30,
+			"MaxBaseFoodBuilding": 31,
+			"MaxBaseTechBuilding": 1,
+			"MaxT2Building": 0,
+			"MaxT3Building": 0,
+			"MaxBuilding6": 0,
+			"MaxBuilding7": 0,
+			"MaxBuilding8": 0,
+			"MaxBuilding9": 0,
+			"MaxBuilding10": 0,
+			"MaxBuilding11": 0,
+			"MaxBuilding12": 0,
 			"Exclude": [
 				{
 					"Galaxy": 3,
@@ -256,29 +256,29 @@
 			"CheckIntervalMax": 60
 		},
 		"AutoResearch": {
-			"Active": true,
+			"Active": false,
 			"Transports": {
-				"Active": true
+				"Active": false
 			},
-			"MaxEnergyTechnology": 20,
+			"MaxEnergyTechnology": 10,
 			"MaxLaserTechnology": 12,
 			"MaxIonTechnology": 5,
-			"MaxHyperspaceTechnology": 20,
-			"MaxPlasmaTechnology": 20,
-			"MaxCombustionDrive": 19,
-			"MaxImpulseDrive": 17,
-			"MaxHyperspaceDrive": 15,
+			"MaxHyperspaceTechnology": 8,
+			"MaxPlasmaTechnology": 7,
+			"MaxCombustionDrive": 6,
+			"MaxImpulseDrive": 8,
+			"MaxHyperspaceDrive": 8,
 			"MaxEspionageTechnology": 8,
-			"MaxComputerTechnology": 20,
-			"MaxAstrophysics": 23,
-			"MaxIntergalacticResearchNetwork": 12,
-			"MaxWeaponsTechnology": 25,
-			"MaxShieldingTechnology": 25,
-			"MaxArmourTechnology": 25,
+			"MaxComputerTechnology": 10,
+			"MaxAstrophysics": 9,
+			"MaxIntergalacticResearchNetwork": 4,
+			"MaxWeaponsTechnology": 10,
+			"MaxShieldingTechnology": 10,
+			"MaxArmourTechnology": 15,
 			"Target": {
-				"Galaxy": 3,
-				"System": 333,
-				"Position": 8,
+				"Galaxy": 5,
+				"System": 119,
+				"Position": 6,
 				"Type": "Planet"
 			},
 			"OptimizeForStart": true,
@@ -292,7 +292,7 @@
 			"CheckIntervalMax": 20
 		},
 		"AutoCargo": {
-			"Active": true,
+			"Active": false,
 			"ExcludeMoons": true,
 			"CargoType": "LargeCargo",
 			"RandomOrder": true,
@@ -312,19 +312,19 @@
 			"CheckIntervalMax": 240
 		},
 		"AutoRepatriate": {
-			"Active": true,
+			"Active": false,
 			"ExcludeMoons": false,
-			"MinimumResources": 1000000,
+			"MinimumResources": 1000,
 			"LeaveDeut": {
 				"OnlyOnMoons": true,
-				"DeutToLeave": 1000000
+				"DeutToLeave": 1000
 			},
 			"Target": [
 				{
 					"Galaxy": 5,
-					"System": 63,
-					"Position": 8,
-					"Type": "Moon"
+					"System": 119,
+					"Position": 6,
+					"Type": "Planet"
 				}
 			],
 			"TargetAssociateMoon": false,
@@ -349,16 +349,16 @@
 		}
 	},
 	"Expeditions": {
-		"Active": true,
+		"Active": false,
 		"IgnoreSleep": false,
 		"MinWaitNextFleet": 5,
 		"MaxWaitNextFleet": 15,
-		"PrimaryShip": "LargeCargo",
-		"MinPrimaryToSend": 1000,
-		"PrimaryToKeep": 10000,
-		"SecondaryShip": "Null",
+		"PrimaryShip": "SmallCargo",
+		"MinPrimaryToSend": 1,
+		"PrimaryToKeep": 300,
+		"SecondaryShip": "LargeCargo",
 		"MinSecondaryToSend": 0,
-		"SecondaryToPrimaryRatio": 2,
+		"SecondaryToPrimaryRatio": 100,
 		"ManualShips": {
 			"Active": false,
 			"Ships": {
@@ -369,7 +369,7 @@
 				"EspionageProbe": 1
 			}
 		},
-		"WaitForAllExpeditions": false,
+		"WaitForAllExpeditions": true,
 		"WaitForMajorityOfExpeditions": false,
 		"MinWaitNextRound": 30,
 		"MaxWaitNextRound": 300,
@@ -378,51 +378,45 @@
 			"Range": 1
 		},
 		"RandomizeOrder": true,
-		"FuelToCarry": 20000,
+		"FuelToCarry": 100,
 		"Origin": [
 			{
 				"Galaxy": 5,
-				"System": 63,
+				"System": 313,
 				"Position": 8,
-				"Type": "Moon"
-			},
-			{
-				"Galaxy": 5,
-				"System": 64,
-				"Position": 8,
-				"Type": "Moon"
+				"Type": "Planet"
 			}
 		]
 	},
 	"AutoFarm": {
-		"Active": true,
+		"Active": false,
 		"ExcludeMoons": true,
 		"ScanRange": [
 			{
-				"Galaxy": 2,
-				"StartSystem": 360,
-				"EndSystem": 420
+				"Galaxy": 5,
+				"StartSystem": 199,
+				"EndSystem": 499
 			}
 		],
 		"Exclude": [
 			{
-				"Galaxy": 3,
-				"System": 3,
-				"Planet": 3
+				"Galaxy": 1,
+				"System": 1,
+				"Planet": 1
 			}
 		],
-		"KeepReportFor": 180,
-		"NumProbes": 10,
+		"KeepReportFor": 1440,
+		"NumProbes": 52,
 		"Origin": [
 			{
-				"Galaxy": 2,
-				"System": 396,
-				"Position": 4,
+				"Galaxy": 5,
+				"System": 313,
+				"Position": 8,
 				"Type": "Planet"
 			}
 		],
 		"TargetsProbedBeforeAttack": 30,
-		"CargoType": "LargeCargo",
+		"CargoType": "SmallCargo",
 		"FleetSpeed": 100,
 		"MinCargosToKeep": 0,
 		"MinCargosToSend": 25,
@@ -430,12 +424,12 @@
 		"BuildCargos": false,
 		"BuildProbes": false,
 		"MinimumResources": 1000000,
-		"MinimumPlayerRank": 500,
+		"MinimumPlayerRank": 9999,
 		"MaxFlightTime": 7200,
 		"MaxWaitTime": 7200,
 		"MinLootFuelRatio": 0.5,
-		"PreferedResource": "",
-		"MaxSlots": 18,
+		"PreferedResource": "Crystal",
+		"MaxSlots": 6,
 		"SlotsToLeaveFree": 1,
 		"CheckIntervalMin": 30,
 		"CheckIntervalMax": 60
@@ -451,21 +445,21 @@
 		"CheckIntervalMax": 60
 	},
 	"AutoColonize": {
-		"Active": true,
+		"Active": false,
 		"Origin": {
 			"Galaxy": 5,
-			"System": 64,
+			"System": 313,
 			"Position": 8,
 			"Type": "Planet"
 		},
 		"SlotsToLeaveFree": 0,
 		"Abandon": {
 			"Active": true,
-			"MinFields": 280,
+			"MinFields": 300,
 			"MinTemperatureAcceptable": -130,
 			"MaxTemperatureAcceptable": 260
 		},
-		"IntensiveResearch" : {
+		"IntensiveResearch": {
 			"Active": false,
 			"MaxSlots": 10,
 			"MinWaitNextFleet": 25,
@@ -473,19 +467,27 @@
 		},
 		"Targets": [
 			{
-				"Galaxy": 1,
-				"StartSystem": 123,
-				"EndSystem": 123,
-				"StartPosition": 7,
-				"EndPosition": 9,
-				"MaxPlanets": 1
+				"Galaxy": 5,
+				"StartSystem": 1,
+				"EndSystem": 499,
+				"StartPosition": 8,
+				"EndPosition": 8,
+				"MaxPlanets": 3
 			},
 			{
-				"Galaxy": 3,
-				"StartSystem": 150,
-				"EndSystem": 350,
-				"StartPosition": 15,
-				"EndPosition": 15,
+				"Galaxy": 6,
+				"StartSystem": 1,
+				"EndSystem": 499,
+				"StartPosition": 8,
+				"EndPosition": 8,
+				"MaxPlanets": 2
+			},
+			{
+				"Galaxy": 4,
+				"StartSystem": 1,
+				"EndSystem": 499,
+				"StartPosition": 8,
+				"EndPosition": 8,
 				"MaxPlanets": 2
 			}
 		],
@@ -494,10 +496,10 @@
 		"CheckIntervalMax": 1200
 	},
 	"AutoDiscovery": {
-		"Active": true,
+		"Active": false,
 		"Origin": {
 			"Galaxy": 5,
-			"System": 64,
+			"System": 313,
 			"Position": 8,
 			"Type": "Planet"
 		},
