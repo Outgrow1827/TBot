@@ -840,8 +840,8 @@ namespace Tbot.Workers {
 				} else {
 					var missingResources = resources.Difference(destination.Resources);
 					Resources resToLeave = new(0, 0, 0);
-					if ((long) _tbotInstance.InstanceSettings.Brain.Transports.DeutToLeave > 0)
-						resToLeave.Deuterium = (long) _tbotInstance.InstanceSettings.Brain.Transports.DeutToLeave;
+					if ((long) _tbotInstance.InstanceSettings.Brain.Transports.DeutToLeaveOnMoons > 0)
+						resToLeave.Deuterium = (long) _tbotInstance.InstanceSettings.Brain.Transports.DeutToLeaveOnMoons;
 
 					origin = await _tbotOgameBridge.UpdatePlanet(origin, UpdateTypes.Resources);
 					if (origin.Resources.IsEnoughFor(missingResources, resToLeave)) {
@@ -991,8 +991,8 @@ namespace Tbot.Workers {
 				} else {
 					var missingResources = resources.Difference(destination.Resources);
 					Resources resToLeave = new(0, 0, 0);
-					if ((long) _tbotInstance.InstanceSettings.Brain.Transports.DeutToLeave > 0)
-						resToLeave.Deuterium = (long) _tbotInstance.InstanceSettings.Brain.Transports.DeutToLeave;
+					if ((long) _tbotInstance.InstanceSettings.Brain.Transports.DeutToLeaveOnMoons > 0)
+						resToLeave.Deuterium = (long) _tbotInstance.InstanceSettings.Brain.Transports.DeutToLeaveOnMoons;
 					
 					origin = await _tbotOgameBridge.UpdatePlanet(origin, UpdateTypes.Resources);
 					if (origin.Resources.IsEnoughFor(missingResources, resToLeave)) {
