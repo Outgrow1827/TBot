@@ -15,7 +15,7 @@ namespace TBot.Ogame.Infrastructure.Models {
 		[JsonProperty("name")]
 		public string Name { get; set; }
 
-		public int otherPlanetId { get; set; } = 0;
+		public int? otherPlanetId { get; set; } = 0;
 
 		public override string ToString() {
 			string outStr = "[";
