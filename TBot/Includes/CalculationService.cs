@@ -663,7 +663,8 @@ namespace Tbot.Includes {
 					long availableVal = (long) prop.GetValue(fleet);
 					long idealVal = (long) prop.GetValue(ideal);
 					if (availableVal < idealVal * expeditionsNumber) {
-						long realVal = (long) Math.Round(((float) availableVal / (float) expeditionsNumber), MidpointRounding.AwayFromZero);
+						//long realVal = (long) Math.Round(((float) availableVal / (float) expeditionsNumber), MidpointRounding.AwayFromZero);
+						long realVal = (long) Math.Floor(((float) availableVal / (float) expeditionsNumber));
 						prop.SetValue(ideal, realVal);
 					}
 				}
