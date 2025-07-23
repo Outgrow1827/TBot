@@ -4895,7 +4895,8 @@ namespace Tbot.Includes {
 					otherSlots += rankSlotsPriority.Where(f => !f.Active).Sum(f => f.SlotsUsed);
 					/*otherSlots += rankSlotsPriority.Where(f => f.Rank > 0).Where(f => f.Rank > actualFeature.Rank).Sum(f => f.SlotsUsed);
 					otherSlots += rankSlotsPriority.Where(f => f.Rank == 0).Sum(f => f.SlotsUsed);*/
-					slotsAvailable = slots.Total - slotsToLeaveFree - reservedSlots - usedSlots - otherSlots;
+					//slotsAvailable = slots.Total - slotsToLeaveFree - reservedSlots - usedSlots - otherSlots; // usedSlots is alread measured in reservedSlots variable
+					slotsAvailable = slots.Total - slotsToLeaveFree - reservedSlots - otherSlots;
 					_logger.WriteLog(LogLevel.Information, logsender, $"Total slots: {slots.Total}. {slotsToLeaveFree} must remain free, {reservedSlots} slots are reserved and {otherSlots} are used for other. {slotsAvailable} are availables.");
 					if (slotsAvailable > 0) {
 						if ((actualFeature.MaxSlots - actualFeature.SlotsUsed) <= 0) {
@@ -4918,7 +4919,8 @@ namespace Tbot.Includes {
 					otherSlots += rankSlotsPriority.Where(f => !f.Active).Sum(f => f.SlotsUsed);
 					/*otherSlots += rankSlotsPriority.Where(f => f.Rank > 0).Where(f => f.Rank > actualFeature.Rank).Sum(f => f.SlotsUsed);
 					otherSlots += rankSlotsPriority.Where(f => f.Rank == 0).Sum(f => f.SlotsUsed);*/
-					slotsAvailable = slots.Total - slotsToLeaveFree - reservedSlots - usedSlots - otherSlots;
+					//slotsAvailable = slots.Total - slotsToLeaveFree - reservedSlots - usedSlots - otherSlots; // usedSlots is alread measured in reservedSlots variable
+					slotsAvailable = slots.Total - slotsToLeaveFree - reservedSlots - otherSlots;
 					if (slotsAvailable > 0) {
 						_logger.WriteLog(LogLevel.Information, logsender, $"Total slots: {slots.Total} and {slotsToLeaveFree} must remain free. {reservedSlots} slots are reserved ({usedSlots} used) and {otherSlots} are used for other. {slotsAvailable} are availables and can be used for {feature.ToString()}");
 						return slotsAvailable;
