@@ -562,34 +562,38 @@ namespace TBot.Ogame.Infrastructure {
 		}
 
 		public async Task<Fleet> SendFleet(Celestial origin, Ships ships, Coordinate destination, Missions mission, decimal speed, Resources payload) {
-			List<KeyValuePair<string, string>> parameters = new List<KeyValuePair<string, string>>();
-			parameters.Add(new KeyValuePair<string, string>("galaxy", destination.Galaxy.ToString()));
-			parameters.Add(new KeyValuePair<string, string>("system", destination.System.ToString()));
-			parameters.Add(new KeyValuePair<string, string>("position", destination.Position.ToString()));
-			parameters.Add(new KeyValuePair<string, string>("type", ((int) destination.Type).ToString()));
+			try {
+				List<KeyValuePair<string, string>> parameters = new List<KeyValuePair<string, string>>();
+				parameters.Add(new KeyValuePair<string, string>("galaxy", destination.Galaxy.ToString()));
+				parameters.Add(new KeyValuePair<string, string>("system", destination.System.ToString()));
+				parameters.Add(new KeyValuePair<string, string>("position", destination.Position.ToString()));
+				parameters.Add(new KeyValuePair<string, string>("type", ((int)destination.Type).ToString()));
 
-			var request = new RestRequest {
-				Resource = $"/bot/planets/{origin.ID}/send-fleet",
-				Method = Method.Post,
-			};
-			foreach (PropertyInfo prop in ships.GetType().GetProperties()) {
-				long qty = (long) prop.GetValue(ships, null);
-				if (qty == 0)
-					continue;
-				if (Enum.TryParse<Buildables>(prop.Name, out Buildables buildable)) {
-					parameters.Add(new KeyValuePair<string, string>("ships", (int) buildable + "," + prop.GetValue(ships, null)));
+				var request = new RestRequest {
+					Resource = $"/bot/planets/{origin.ID}/send-fleet",
+					Method = Method.Post,
+				};
+				foreach (PropertyInfo prop in ships.GetType().GetProperties()) {
+					long qty = (long) prop.GetValue(ships, null);
+					if (qty == 0)
+						continue;
+					if (Enum.TryParse<Buildables>(prop.Name, out Buildables buildable)) {
+						parameters.Add(new KeyValuePair<string, string>("ships", (int) buildable + "," + prop.GetValue(ships, null)));
+					}
 				}
+				parameters.Add(new KeyValuePair<string, string>("mission", ((int) mission).ToString()));
+
+
+				parameters.Add(new KeyValuePair<string, string>("speed", speed.ToString()));
+				parameters.Add(new KeyValuePair<string, string>("metal", payload.Metal.ToString()));
+				parameters.Add(new KeyValuePair<string, string>("crystal", payload.Crystal.ToString()));
+				parameters.Add(new KeyValuePair<string, string>("deuterium", payload.Deuterium.ToString()));
+				parameters.Add(new KeyValuePair<string, string>("food", payload.Food.ToString()));
+
+				return await PostAsync<Fleet>($"/bot/planets/{origin.ID}/send-fleet", parameters.ToArray());
+			} catch (OgamedException e) when (e.Message.Contains("no ships to send")) {
+				return null;
 			}
-			parameters.Add(new KeyValuePair<string, string>("mission", ((int) mission).ToString()));
-
-
-			parameters.Add(new KeyValuePair<string, string>("speed", speed.ToString()));
-			parameters.Add(new KeyValuePair<string, string>("metal", payload.Metal.ToString()));
-			parameters.Add(new KeyValuePair<string, string>("crystal", payload.Crystal.ToString()));
-			parameters.Add(new KeyValuePair<string, string>("deuterium", payload.Deuterium.ToString()));
-			parameters.Add(new KeyValuePair<string, string>("food", payload.Food.ToString()));
-
-			return await PostAsync<Fleet>($"/bot/planets/{origin.ID}/send-fleet", parameters.ToArray());
 		}
 
 		public async Task CancelFleet(Fleet fleet) {
@@ -728,7 +732,19 @@ namespace TBot.Ogame.Infrastructure {
 			return success;
 		}
 
-		public async Task<bool> AbandonCelestial(Celestial celestial) {
+		        public async Task<List<Coordinate>> GetPositionsAvailableForDiscoveryFleet(Celestial celestial, Coordinate coordinate) {
+            List<KeyValuePair<string, string>> parameters = new List<KeyValuePair<string, string>>();
+            parameters.Add(new KeyValuePair<string, string>("galaxy", coordinate.Galaxy.ToString()));
+            parameters.Add(new KeyValuePair<string, string>("system", coordinate.System.ToString()));
+            parameters.Add(new KeyValuePair<string, string>("position", coordinate.Position.ToString()));
+            return await PostAsync<List<Coordinate>>($"/bot/planets/{celestial.ID}/get-system-available-discovery", parameters.ToArray());
+        }
+
+        public async Task<int> GetAvailableDiscoveries(Celestial celestial) {
+            return await GetAsync<int>($"/bot/planets/{celestial.ID}/get-available-discoveries");
+        }
+
+        public async Task<bool> AbandonCelestial(Celestial celestial) {
 			bool success = false;
 			try {
 				Abandon result = await GetAsync<Abandon>($"/bot/celestials/{celestial.ID}/abandon");

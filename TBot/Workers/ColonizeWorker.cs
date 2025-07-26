@@ -49,10 +49,9 @@ namespace Tbot.Workers {
 			return LogSender.Colonize;
 		}
 
-		protected override async Task Execute() {
+				protected override async Task Execute() {
 			await _tbotOgameBridge.CheckCelestials();
 			bool stop = false;
-			bool delay = false;
 			Fields fieldsSettings = new() {
 				Total = (int) _tbotInstance.InstanceSettings.AutoColonize.Abandon.MinFields
 			};
@@ -257,7 +256,14 @@ namespace Tbot.Workers {
 												return;
 											}
 											if (fleetId == (int) SendFleetCode.NotEnoughSlots) {
-												delay = true;
+												long delayInterval = 0;
+												try {
+													delayInterval = (_tbotInstance.UserData.fleets.OrderBy(f => f.BackIn).First().BackIn ?? 0) * 1000 + RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
+												} catch {
+													delayInterval = RandomizeHelper.CalcRandomInterval((int) _tbotInstance.InstanceSettings.AutoColonize.CheckIntervalMin, (int) _tbotInstance.InstanceSettings.AutoColonize.CheckIntervalMax);
+												}
+												_tbotInstance.log(LogLevel.Information, LogSender.Colonize, $"Not enough fleet slots available. Delaying for {TimeSpan.FromMilliseconds(delayInterval).TotalSeconds}s.");
+												await Task.Delay((int)delayInterval);
 												return;
 											}
 											var minWaitNextFleet = (int) _tbotInstance.InstanceSettings.AutoColonize.IntensiveResearch.MinWaitNextFleet;
@@ -355,20 +361,7 @@ namespace Tbot.Workers {
 						_tbotInstance.log(LogLevel.Information, LogSender.Colonize, $"Stopping feature.");
 						await EndExecution();
 					}
-					if (delay) {
-						_tbotInstance.log(LogLevel.Information, LogSender.Colonize, $"Delaying...");
-						var time = await _tbotOgameBridge.GetDateTime();
-						_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
-						long interval;
-						try {
-							interval = (_tbotInstance.UserData.fleets.OrderBy(f => f.BackIn).First().BackIn ?? 0) * 1000 + RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
-						} catch {
-							interval = RandomizeHelper.CalcRandomInterval((int) _tbotInstance.InstanceSettings.AutoColonize.CheckIntervalMin, (int) _tbotInstance.InstanceSettings.AutoColonize.CheckIntervalMax);
-						}
-						var newTime = time.AddMilliseconds(interval);
-						ChangeWorkerPeriod(interval);
-						_tbotInstance.log(LogLevel.Information, LogSender.Colonize, $"Next check at {newTime}");
-					}
+					
 					await _tbotOgameBridge.CheckCelestials();
 				}
 			}

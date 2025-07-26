@@ -511,11 +511,15 @@ namespace Tbot.Workers {
 						payload.Deuterium = 0;
 					if (payload.Food < 0)
 						payload.Food = 0;
-					Fleet fleet = await _ogameService.SendFleet(origin, ships, destination, mission, speed, payload);
-					_tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler, "Fleet succesfully sent");
-					_tbotInstance.UserData.fleets = await _ogameService.GetFleets();
+					Fleet newFleet = await _ogameService.SendFleet(origin, ships, destination, mission, speed, payload);
+					if (newFleet == null) {
+						_tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler, $"Unable to send fleet from {origin.Coordinate.ToString()}: no ships to send.");
+						return (int) SendFleetCode.GenericError;
+					}
+					_tbotInstance.UserData.fleets.Add(newFleet);
+					_tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler, "Fleet sent successfully!");
 					_tbotInstance.UserData.slots = await _tbotOgameBridge.UpdateSlots();
-					return fleet.ID;
+					return newFleet.ID;
 				} catch (Exception e) {
 					_tbotInstance.log(LogLevel.Error, LogSender.FleetScheduler, $"Unable to send fleet: an exception has occurred: {e.Message}");
 					_tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler, $"Stacktrace: {e.StackTrace}");
