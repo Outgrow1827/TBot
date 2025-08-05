@@ -174,7 +174,7 @@ namespace Tbot.Workers {
 
 							DoLog(LogLevel.Information, $"No more fleet slots available or max discovery fleets sent. Delaying for {TimeSpan.FromMilliseconds(interval).TotalSeconds}s.");
 							await Task.Delay((int)interval);
-							break;
+							// break; // https://discord.com/channels/801453618770214923/919312220637249537/1402221089588903968
 						}
 						await Task.Delay(Random.Shared.Next((int)_tbotInstance.InstanceSettings.AutoDiscovery.CheckIntervalMin, (int)_tbotInstance.InstanceSettings.AutoDiscovery.CheckIntervalMax) * 1000);
 					}
