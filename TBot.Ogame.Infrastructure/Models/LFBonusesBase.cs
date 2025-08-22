@@ -9,9 +9,9 @@ namespace TBot.Ogame.Infrastructure.Models {
 		public float Cost { get; set; }
 		public float Duration { get; set; }
 
-		public LFBonusesBase() {
-			Cost = 0;
-			Duration = 0;
+		public LFBonusesBase(float cost = 0, float duration = 0) {
+			Cost = cost;
+			Duration = duration;
 		}
     }
 }

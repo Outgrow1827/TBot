@@ -9,6 +9,7 @@ namespace TBot.Ogame.Infrastructure.Enums {
 		public static readonly List<Feature> AllFeatures = new List<Feature>() {
 			Feature.Defender,
 			Feature.BrainAutobuildCargo,
+			Feature.BrainAutobuildDefence,
 			Feature.BrainAutoRepatriate,
 			Feature.BrainAutoMine,
 			Feature.BrainLifeformAutoMine,

@@ -3029,6 +3029,29 @@ namespace Tbot.Includes {
 			return output;
 		}
 
+		public Defences CalcmaxDefencesBuildable(Defences defences, Resources resources) {
+			Defences output = new();
+			Dictionary<Buildables, long> defenceTypes = defences.GetDefenceTypesWithAmount();
+			Resources resourcesLeft = resources;
+
+			bool canBuild = true;
+			while (canBuild) {
+				canBuild = false;
+				foreach (var (defenceType, amountNeeded) in defenceTypes) {
+					if (amountNeeded <= 0)
+						continue;
+					Resources unitCost = CalcPrice(defenceType, 1);
+					if (resourcesLeft.IsEnoughFor(unitCost)) {
+						output.Add(defenceType.ToString(), 1);
+						resourcesLeft = resourcesLeft.Difference(unitCost);
+						defenceTypes[defenceType]--;
+						canBuild = true;
+					}
+				}
+			}
+			return output;
+		}
+
 		public long GetRequiredEnergyDelta(Buildables buildable, int level) {
 			if (buildable == Buildables.MetalMine || buildable == Buildables.CrystalMine || buildable == Buildables.DeuteriumSynthesizer) {
 				if (level > 1) {
@@ -4841,11 +4864,9 @@ namespace Tbot.Includes {
 			return moon.ID == 0 ? false: true;
 		}
 
-		public int CalcSlotsPriority(Feature feature, List<RankSlotsPriority> rankSlotsPriority, Slots slots, List<Fleet> fleets, int slotsToLeaveFree = 0)
-		{
+		public int CalcSlotsPriority(Feature feature, List<RankSlotsPriority> rankSlotsPriority, Slots slots, List<Fleet> fleets, int slotsToLeaveFree = 0) {
 			LogSender logsender;
-			switch (feature)
-			{
+			switch (feature) {
 				case Feature.BrainAutoMine: logsender = LogSender.AutoMine; break;
 				case Feature.BrainAutoResearch: logsender = LogSender.AutoResearch; break;
 				case Feature.BrainLifeformAutoMine: logsender = LogSender.LifeformsAutoMine; break;
@@ -4857,67 +4878,56 @@ namespace Tbot.Includes {
 				case Feature.Harvest: logsender = LogSender.Harvest; break;
 				default: logsender = LogSender.FleetScheduler; break;
 			}
-
-			// Handle Expedition slots separately and first.
-			int expeditionSlotsTotal = slots.ExpTotal;
-			int expeditionSlotsInUse = fleets.Count(fleet => fleet.Mission == Missions.Expedition);
-			int expeditionSlotsFree = expeditionSlotsTotal - expeditionSlotsInUse;
-
-			if (feature == Feature.Expeditions)
-			{
-				var expeditionFeature = rankSlotsPriority.SingleOrDefault(f => f.Feature == Feature.Expeditions);
-				int maxExpeditions = expeditionFeature?.MaxSlots ?? 0;
-				int availableForExpedition = Math.Min(expeditionSlotsFree, maxExpeditions - expeditionSlotsInUse);
-				_logger.WriteLog(LogLevel.Information, logsender, $"Expedition slots: {expeditionSlotsInUse}/{expeditionSlotsTotal} used. Can send {availableForExpedition} more.");
-				return Math.Max(0, availableForExpedition); // Ensure it doesn't return negative
-			}
-
-			// Calculation for normal fleet slots
-			// Normal slots are total slots MINUS expedition slots.
-			int normalSlotsTotal = slots.Total - expeditionSlotsTotal;
-			
-			// Update slots used for each feature based on current fleets
-			rankSlotsPriority.SingleOrDefault(f => f.Feature == Feature.BrainAutoMine || f.Feature == Feature.BrainAutoResearch || f.Feature == Feature.BrainLifeformAutoMine || f.Feature == Feature.BrainLifeformAutoResearch).SlotsUsed = fleets.Count(fleet => fleet.Mission == Missions.Transport);
-			rankSlotsPriority.SingleOrDefault(f => f.Feature == Feature.AutoFarm).SlotsUsed = fleets.Count(fleet => fleet.Mission == Missions.Attack);
-			rankSlotsPriority.SingleOrDefault(f => f.Feature == Feature.Colonize).SlotsUsed = fleets.Count(fleet => fleet.Mission == Missions.Colonize);
-			rankSlotsPriority.SingleOrDefault(f => f.Feature == Feature.AutoDiscovery).SlotsUsed = fleets.Count(fleet => fleet.Mission == Missions.Discovery);
-			rankSlotsPriority.SingleOrDefault(f => f.Feature == Feature.Expeditions).SlotsUsed = expeditionSlotsInUse; // Keep this updated for other parts of the bot
-
-			// Slots used by fleets not managed by an active feature (excluding expeditions)
+			RankSlotsPriority actualFeature = rankSlotsPriority.Single(f => f.Feature == feature);
+			int slotsAvailable = 0;
+			int reservedSlots = 0;
+			int usedSlots = 0;
 			int otherSlots = fleets.Count(fleet =>
 				fleet.Mission != Missions.Transport &&
 				fleet.Mission != Missions.Expedition &&
-				fleet.Mission != Missions.Attack &&
 				fleet.Mission != Missions.Spy &&
+				fleet.Mission != Missions.Attack &&
 				fleet.Mission != Missions.Colonize &&
-				fleet.Mission != Missions.Discovery);
-
-			// Sum of slots currently in use by active features (excluding expeditions)
-			int usedSlotsByActiveFeatures = rankSlotsPriority.Where(f => f.Active && f.Feature != Feature.Expeditions).Sum(f => f.SlotsUsed);
-
-			// Calculate available slots for normal fleets
-			int slotsAvailable = normalSlotsTotal - usedSlotsByActiveFeatures - otherSlots - slotsToLeaveFree;
-
-			_logger.WriteLog(LogLevel.Information, logsender, $"Normal Slots: {normalSlotsTotal} total. Used by features: {usedSlotsByActiveFeatures}. Used by other: {otherSlots}. To leave free: {slotsToLeaveFree}. Available: {slotsAvailable}.");
-
-			if (slotsAvailable <= 0)
-			{
-				_logger.WriteLog(LogLevel.Information, logsender, "No normal fleet slots available.");
+				fleet.Mission != Missions.Discovery &&
+				fleet.Mission != Missions.Harvest);
+				
+			if (actualFeature.MaxSlots - actualFeature.SlotsUsed <= 0) {
+				_logger.WriteLog(LogLevel.Information, logsender, $"All slots for feature {feature} are already used ({actualFeature.SlotsUsed}/{actualFeature.MaxSlots}).");
 				return 0;
 			}
 
-			// Check if the current feature can use the available slots
-			var actualFeature = rankSlotsPriority.SingleOrDefault(f => f.Feature == feature);
-			if (actualFeature != null && actualFeature.Active)
-			{
-				int canBeUsedByFeature = actualFeature.MaxSlots - actualFeature.SlotsUsed;
-				int result = Math.Min(slotsAvailable, canBeUsedByFeature);
-				_logger.WriteLog(LogLevel.Information, logsender, $"Feature {feature} can use up to {canBeUsedByFeature} slots. Granting: {result}");
-				return Math.Max(0, result);
+			if (actualFeature.Rank > 0) {
+				reservedSlots = rankSlotsPriority.Where(fp => fp.Active)
+														.Where(fp => fp.Rank > 0)
+														.Where(fp => fp.Rank < actualFeature.Rank)
+														.Sum(fp => fp.MaxSlots);
+				usedSlots = rankSlotsPriority.Where(fp => fp.Active)
+														.Where(fp => fp.Rank > actualFeature.Rank)
+														.Sum(fp => fp.SlotsUsed);
+				otherSlots += rankSlotsPriority.Where(fp => !fp.Active)
+														.Sum(fp => fp.SlotsUsed);
+				slotsAvailable = slots.Total - slotsToLeaveFree - reservedSlots - usedSlots - otherSlots < 0 ? 0 : slots.Total - slotsToLeaveFree - reservedSlots - usedSlots - otherSlots;
+			} else {
+				slotsAvailable = slots.Free - slotsToLeaveFree < 0 ? 0 : slots.Free - slotsToLeaveFree;
+			}
+			if (slotsAvailable <= 0) {
+				_logger.WriteLog(LogLevel.Information, logsender, $"No slots available for feature {feature}. Slots available: {slotsAvailable}.");
+				return 0;
+			} else {
+				if (actualFeature.Rank > 0) {
+					_logger.WriteLog(LogLevel.Information, logsender, $"Slots Total: {slots.Total}, Reserved: {reservedSlots + slotsToLeaveFree}, Other: {usedSlots + otherSlots}. Available: {slotsAvailable}.");
+					if (slotsAvailable < actualFeature.MaxSlots) {
+						_logger.WriteLog(LogLevel.Information, logsender, $"Less slots available ({slotsAvailable}) than maximum usable slots ({actualFeature.MaxSlots}). Stepping down to usable slots.");
+						actualFeature.MaxSlots = slotsAvailable;
+					}
+					slotsAvailable = Math.Min(slotsAvailable, actualFeature.MaxSlots - actualFeature.SlotsUsed);
+					_logger.WriteLog(LogLevel.Information, logsender, $"{feature} will use {slotsAvailable} slots ({actualFeature.SlotsUsed}/{actualFeature.MaxSlots} already used).");
+				} else {
+					_logger.WriteLog(LogLevel.Information, logsender, $"{feature} has no rank and can use all available slots: {slotsAvailable}.");
+				}
 			}
 
-			// Default return for features not in priority list or inactive
-			return Math.Max(0, slotsAvailable);
+			return slotsAvailable;
 		}
 
 		public List<Dictionary<Celestial, Resources>> CalcMultipleOrigin(Celestial celestialToBuild, List<Celestial> allCelestials, Resources missingResources, TransportSettings transportSettings, List<Fleet> fleets, UserData userData) {
