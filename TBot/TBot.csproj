@@ -5,14 +5,14 @@
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>disable</Nullable>
     <Authors>TBot</Authors>
-    <Version>3.3.2</Version>
+    <Version>3.3.3</Version>
     <StartupObject>Tbot.Program</StartupObject>
     <Platforms>AnyCPU;x64;x86</Platforms>
     <Copyright>2025 © TBot</Copyright>
     <PackageLicenseExpression>https://licenses.nuget.org/MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://www.ogame-tbot.net</PackageProjectUrl>
     <RepositoryUrl>https://github.com/ogame-tbot/TBot</RepositoryUrl>
-    <AssemblyVersion>3.3.2</AssemblyVersion>
+    <AssemblyVersion>3.3.3</AssemblyVersion>
     <FileVersion>3.3.2</FileVersion>
     <Description>OGame Bot</Description>
     <SignAssembly>False</SignAssembly>
@@ -42,12 +42,12 @@
   </ItemGroup>
 
   <ItemGroup>
-	<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.5" />
-	<PackageReference Include="Microsoft.Extensions.FileProviders.Physical" Version="9.0.5" />
+	<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.8" />
+	<PackageReference Include="Microsoft.Extensions.FileProviders.Physical" Version="9.0.8" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="RestSharp" Version="112.1.0" />
-    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.8" />
-    <PackageReference Include="Telegram.Bot" Version="22.5.1" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
+    <PackageReference Include="Telegram.Bot" Version="22.6.0" />
     <PackageReference Include="Telegram.Bot.Extensions.Polling" Version="1.0.2" />
   </ItemGroup>
 
