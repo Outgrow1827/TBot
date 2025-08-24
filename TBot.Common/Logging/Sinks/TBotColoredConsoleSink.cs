@@ -37,6 +37,7 @@ namespace TBot.Common.Logging.Sinks {
 			ConsoleColor consoleColor = sender switch {
 				LogSender.Brain => ConsoleColor.Blue,
 				LogSender.AutoCargo => ConsoleColor.Blue,
+				LogSender.AutoDefence => ConsoleColor.Blue,
 				LogSender.AutoMine => ConsoleColor.Blue,
 				LogSender.AutoRepatriate => ConsoleColor.Blue,
 				LogSender.AutoResearch => ConsoleColor.Blue,

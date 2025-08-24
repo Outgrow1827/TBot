@@ -375,6 +375,7 @@ namespace Tbot.Services {
 			long dueTime = feat switch {
 				Feature.Defender => RandomizeHelper.CalcRandomInterval(IntervalType.AFewSeconds),
 				Feature.BrainAutobuildCargo => RandomizeHelper.CalcRandomInterval(IntervalType.AMinuteOrTwo),
+				Feature.BrainAutobuildDefence => RandomizeHelper.CalcRandomInterval(IntervalType.AMinuteOrTwo),
 				Feature.BrainAutoRepatriate => RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds),
 				Feature.BrainAutoMine => RandomizeHelper.CalcRandomInterval(IntervalType.AFewSeconds),
 				Feature.BrainLifeformAutoMine => RandomizeHelper.CalcRandomInterval(IntervalType.AFewSeconds),

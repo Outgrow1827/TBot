@@ -304,6 +304,29 @@
 			"CheckIntervalMin": 60,
 			"CheckIntervalMax": 240
 		},
+		"AutoDefence": {
+			"Active": false,
+			"ExcludeMoons": true,
+			"RandomOrder": true,
+			"DefenceToReach": {
+				"RocketLauncher": 100000,
+				"HeavyLaser": 10000,
+				"GaussCannon": 1000,
+				"PlasmaTurret": 1000,
+				"SmallShieldDome": true,
+				"LargeShieldDome": true
+			},
+			"Exclude": [
+				{
+					"Galaxy": 3,
+					"System": 333,
+					"Position": 15,
+					"Type": "Moon"
+				}
+			],
+			"CheckIntervalMin": 60,
+			"CheckIntervalMax": 240
+		},
 		"AutoRepatriate": {
 			"Active": true,
 			"ExcludeMoons": false,
@@ -322,24 +345,12 @@
 			],
 			"TargetAssociateMoon": false,
 			"CargoType": "LargeCargo",
-			"RandomOrder": true,
+			"RandomOrder": false,
 			"SkipIfIncomingTransport": true,
-			"Exclude": [
-				{
-					"Galaxy": 3,
-					"System": 482,
-					"Position": 7,
-					"Type": "Planet"
-				}
-			],
-            "TargetAssociateMoon": true,
-            "CargoType": "SmallCargo",
-            "RandomOrder": false,
-            "SkipIfIncomingTransport": true,
-            "Exclude": [],
-            "CheckIntervalMin": 3000,
-            "CheckIntervalMax": 6000
-        },
+			"Exclude": [],
+			"CheckIntervalMin": 3000,
+			"CheckIntervalMax": 6000
+		},
         "BuyOfferOfTheDay": {
             "Active": false,
             "CheckIntervalMin": 240,
@@ -501,6 +512,7 @@
 		},
 		"MaxSlots": 5,
 		"MaxFailures": 5,
+		"RandomizeDestination": false,
 		"CheckIntervalMin": 30,
 		"CheckIntervalMax": 60
 	}

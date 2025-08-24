@@ -13,6 +13,7 @@ namespace TBot.Common.Logging {
 		Brain,
 		//Brain Features
 		AutoCargo,
+		AutoDefence,
 		AutoMine,
 		AutoRepatriate,
 		AutoResearch,

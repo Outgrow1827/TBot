@@ -38,6 +38,7 @@ namespace Tbot.Includes {
 		Ships CalcFullExpeditionShips(Ships fleet, Buildables primaryShip, int expeditionsNumber, ServerData serverdata, Researches researches, LFBonuses LFBonuses, CharacterClass playerClass = CharacterClass.NoClass, int probeCargo = 0);
 		Ships CalcIdealExpeditionShips(Buildables buildable, int hyperspaceTech, float expeditionResourcesBonus, Dictionary<int, LFBonusesShip> shipsBonus, ServerData serverData, CharacterClass playerClass = CharacterClass.NoClass, int probeCargo = 0);
 		long CalcMaxBuildableNumber(Buildables buildable, Resources resources);
+		Defences CalcmaxDefencesBuildable(Defences defences, Resources resources);
 		int CalcMaxCrawlers(Planet planet, CharacterClass userClass, bool hasGeologist);
 		int CalcMaxExpeditions(int astrophysics, bool isDiscoverer, bool hasAdmiral);
 		int CalcMaxExpeditions(Researches researches, CharacterClass playerClass, Staff staff);
