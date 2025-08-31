@@ -155,7 +155,7 @@ namespace Tbot.Includes {
 				default:
 					return 0;
 			}
-			double totalBonus = Math.Round(Math.Round((double) bonus / 100, 2, MidpointRounding.ToZero) + Math.Round((double) buildableCargoBonus / 100, 2, MidpointRounding.ToZero), 2, MidpointRounding.ToZero) - 0.01;
+			double totalBonus = Math.Round(Math.Round((double) bonus / 100, 2, MidpointRounding.ToZero) + Math.Round((double) buildableCargoBonus, 2, MidpointRounding.ToZero), 2, MidpointRounding.ToZero) - 0.01;
 			int output = (int) Math.Floor((double) baseCargo + (double) (baseCargo * totalBonus));
 			return output;
 		}
@@ -311,7 +311,7 @@ namespace Tbot.Includes {
 				default:
 					return 0;
 			}
-			var output = ((float) baseSpeed * (lfBonus / 100)) + ((float) baseSpeed * ((float) bonus + 10) / 10);
+			var output = ((float) baseSpeed * (lfBonus)) + ((float) baseSpeed * ((float) bonus + 10) / 10);
 			return (int) Math.Round(output, MidpointRounding.ToZero);
 		}
 
@@ -422,7 +422,7 @@ namespace Tbot.Includes {
 				default:
 					return 0;
 			}
-			double fuelConsumption = (double) deuteriumSaveFactor * (double) baseConsumption * (1 - lfBonus / 100);
+			double fuelConsumption = (double) deuteriumSaveFactor * (double) baseConsumption * (1 - lfBonus);
 			if (playerClass == CharacterClass.General)
 				fuelConsumption /= 2;
 			fuelConsumption = Math.Round(fuelConsumption);
@@ -595,7 +595,7 @@ namespace Tbot.Includes {
 			float topOnePoints = serverData.TopScore;
 			float buildableCargoBonus = 0;
 			if (shipBonus != null && shipBonus.Count > 0 && shipBonus.ContainsKey((int) buildable)) {
-				buildableCargoBonus = shipBonus.GetValueOrDefault((int) buildable).Cargo;
+				buildableCargoBonus = shipBonus.GetValueOrDefault((int) buildable).CargoCapacity;
 			}
 			int freightCap;
 			if (topOnePoints < 10000)
@@ -623,7 +623,7 @@ namespace Tbot.Includes {
 				freightCap *= 2;
 
 			if(expeditionResourcesBonus > 0)
-				freightCap += (int) Math.Round((float) freightCap * expeditionResourcesBonus / 100, MidpointRounding.ToPositiveInfinity);
+				freightCap += (int) Math.Round((float) freightCap * expeditionResourcesBonus, MidpointRounding.ToPositiveInfinity);
 
 			int oneCargoCapacity = CalcShipCapacity(buildable, hyperspaceTech, serverData, buildableCargoBonus, playerClass, probeCargo);
 			int cargoNumber = (int) Math.Round((float) freightCap / (float) oneCargoCapacity, MidpointRounding.ToPositiveInfinity);
@@ -673,7 +673,7 @@ namespace Tbot.Includes {
 		}
 
 		public Ships CalcExpeditionShips(Ships fleet, Buildables primaryShip, int expeditionsNumber, ServerData serverdata, Researches researches, LFBonuses LFBonuses, CharacterClass playerClass = CharacterClass.NoClass, int probeCargo = 0) {
-			return CalcExpeditionShips(fleet, primaryShip, expeditionsNumber, researches.HyperspaceTechnology, LFBonuses.Expeditions.Resources, LFBonuses.Ships, serverdata, playerClass, probeCargo);
+			return CalcExpeditionShips(fleet, primaryShip, expeditionsNumber, researches.HyperspaceTechnology, LFBonuses.LfResourceBonuses.ResourcesExpedition, LFBonuses.LfShipBonusesInt, serverdata, playerClass, probeCargo);
 		}
 
 		public bool MayAddShipToExpedition(Ships fleet, Buildables buildable, int expeditionsNumber) {
@@ -1228,12 +1228,12 @@ namespace Tbot.Includes {
 			}
 
 			if (lfBonuses != null) {
-				float reduction = 0; 
-				if (lfBonuses.Buildings.Keys.Any(b => b == (int) buildable)) {
-					reduction = lfBonuses.Buildings[(int) buildable].Cost;
+				float reduction = 0;
+				if (lfBonuses.CostTimeBonusesInt.Keys.Any(b => b == (int) buildable)) {
+					reduction = lfBonuses.CostTimeBonusesInt[(int) buildable].Cost;
 				}
-				else if (lfBonuses.Researches.Keys.Any(b => b == (int) buildable)) {
-					reduction = lfBonuses.Researches[(int) buildable].Cost;
+				else if (lfBonuses.CostTimeBonusesInt.Keys.Any(b => b == (int) buildable)) {
+					reduction = lfBonuses.CostTimeBonusesInt[(int) buildable].Cost;
 				}
 				output.Metal = (long) (output.Metal - (output.Metal * reduction));
 				output.Crystal = (long) (output.Crystal - (output.Crystal * reduction));

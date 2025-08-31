@@ -165,7 +165,8 @@ namespace Tbot.Workers.Brain {
 				if (research != Buildables.Null) {
 					celestial = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.Resources) as Planet;
 					celestial = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.Ships) as Planet;
-					Resources cost = _calculationService.CalcPrice(research, level);
+					celestial = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.LFBonuses) as Planet;
+					Resources cost = _calculationService.CalcPrice(research, level, celestial.LFBonuses);
 					if (celestial.Resources.IsEnoughFor(cost)) {
 						try {
 							await _ogameService.BuildCancelable(celestial, research);

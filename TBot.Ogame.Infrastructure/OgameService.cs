@@ -441,7 +441,8 @@ namespace TBot.Ogame.Infrastructure {
 		}
 
 		public async Task<LFBonuses> GetLFBonuses(Celestial celestial) {
-			return await GetAsync<LFBonuses>($"/bot/planets/{celestial.ID}/lifeform-bonuses");
+			//return await GetAsync<LFBonuses>($"/bot/planets/{celestial.ID}/lifeform-bonuses");
+			return await GetAsync<LFBonuses>($"/bot/lfbonuses");
 		}
 
 		public async Task<LFTechs> GetLFTechs(Celestial celestial) {
