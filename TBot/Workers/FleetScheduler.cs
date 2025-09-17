@@ -1141,8 +1141,8 @@ namespace Tbot.Workers {
 			}
 		}
 
-		public async Task Collect() {
-			await CollectImpl(true);
+		public async Task Collect(bool noLimit = false) {
+			await CollectImpl(true, noLimit);
 		}
 
 		public async Task CollectDeut(long MinAmount = 0) {
@@ -1228,7 +1228,7 @@ namespace Tbot.Workers {
 			}
 		}
 
-		public async Task<RepatriateCode> CollectImpl(bool fromTelegram) {
+		public async Task<RepatriateCode> CollectImpl(bool fromTelegram, bool noLimit = false) {
 			try {
 				_tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler, "Repatriating resources...");
 
@@ -1314,7 +1314,7 @@ namespace Tbot.Workers {
 							}
 						}
 
-						if (payload.TotalResources < (long) _tbotInstance.InstanceSettings.Brain.AutoRepatriate.MinimumResources || payload.IsEmpty()) {
+						if ((payload.TotalResources < (long) _tbotInstance.InstanceSettings.Brain.AutoRepatriate.MinimumResources || payload.IsEmpty()) && !noLimit) {
 							_tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler, $"Skipping {tempCelestial.ToString()}: resources under set limit");
 							continue;
 						}

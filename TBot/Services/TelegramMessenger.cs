@@ -240,6 +240,7 @@ namespace Tbot.Services {
 				"/wakeup",
 				"/build",
 				"/collect",
+				"/collectall",
 				"/collectdeut",
 				"/minexpecargo",
 				"/stopexpe",
@@ -425,6 +426,7 @@ namespace Tbot.Services {
 								"/spycrash - Create a debris field by crashing a probe on target or automatically selected planet. Format: <code>/spycrash 2:41:9/auto</code>\n" +
 								"/recall - Enable/disable fleet auto recall. Format: <code>/recall true/false</code>\n" +
 								"/collect - Collect planets resources to JSON setting celestial\n" +
+								"/collectall - Collect planets resources to JSON setting celestial with no MinimumResources\n" +
 								"/build - Try to build buildable on each planet. Build max possible if no number value sent <code>/build LightFighter [100]</code>\n" +
 								"/collectdeut - Collect planets only deut resources -> to JSON repatriate setting celestial\n" +
 								"/msg - Send a message to current attacker. Format: <code>/msg hello dude</code>\n" +
@@ -915,6 +917,16 @@ namespace Tbot.Services {
 								}
 
 								currInstance.TelegramCollect();
+								return;
+
+
+							case "/collectall":
+								if (message.Text.Split(' ').Length != 1) {
+									await SendMessage(botClient, message.Chat, "No argument accepted with this command!");
+									return;
+								}
+
+								currInstance.TelegramCollect(true);
 								return;
 
 

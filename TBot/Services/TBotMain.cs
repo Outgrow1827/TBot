@@ -841,9 +841,8 @@ namespace Tbot.Services {
 			}
 		}
 
-		public void TelegramCollect() {
-			_fleetScheduler.Collect();
-
+		public void TelegramCollect(bool noLimit = false) {
+			_fleetScheduler.Collect(noLimit);
 			return;
 		}
 
