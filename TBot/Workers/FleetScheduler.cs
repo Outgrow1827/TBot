@@ -1314,7 +1314,7 @@ namespace Tbot.Workers {
 							}
 						}
 
-						if ((payload.TotalResources < (long) _tbotInstance.InstanceSettings.Brain.AutoRepatriate.MinimumResources || payload.IsEmpty()) && !noLimit) {
+						if ((!noLimit && payload.TotalResources < (long) _tbotInstance.InstanceSettings.Brain.AutoRepatriate.MinimumResources) || payload.IsEmpty()) {
 							_tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler, $"Skipping {tempCelestial.ToString()}: resources under set limit");
 							continue;
 						}
