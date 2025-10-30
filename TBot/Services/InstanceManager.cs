@@ -149,6 +149,11 @@ namespace Tbot.Services {
 				string alias = instanceToBeInited.Alias;
 				_logger.WriteLog(LogLevel.Information, LogSender.Main, $"Asynchronously initializing instance \"{alias}\" \"{cInstanceSettingPath}\"");
 				awaitingInstances.Add(StartTBotMain(cInstanceSettingPath, alias));
+				//Generate random sleeptime
+				Random waitTime = new Random();
+				int millisecondsTimeout	 = waitTime.Next(3, 6) * 1000;
+				//Put the thread to sleep
+				System.Threading.Thread.Sleep(millisecondsTimeout);
 			}
 
 			// Await initialization and add initialized instances

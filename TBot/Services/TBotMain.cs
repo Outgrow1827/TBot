@@ -185,6 +185,7 @@ namespace Tbot.Services {
 
 
 			_ogameService.Initialize(GetCredentialsFromSettings(), GetDeviceFromSettings(), proxy, (string) host, int.Parse(port), (string) captchaKey);
+			await Task.Delay(RandomizeHelper.CalcRandomInterval(IntervalType.AFewSeconds));
 		}
 
 		private async Task ResolveCaptcha() {
