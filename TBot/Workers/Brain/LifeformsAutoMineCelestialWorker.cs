@@ -459,7 +459,9 @@ namespace Tbot.Workers.Brain {
 						interval = delayTime;
 					} else {
 						if (fleetId == (int) SendFleetCode.QuickerToWaitForProduction) {
-							var price = _calculationService.CalcPrice(buildable, level);
+							float costReduction = _calculationService.CalcLFBuildingsResourcesCostBonus(celestial);
+							float popReduction = _calculationService.CalcLFBuildingsPopulationCostBonus(celestial);
+							var price = _calculationService.CalcPrice(buildable, level, costReduction, 0, popReduction);
 							long productionTime = RandomizeHelper.CalcRandomInterval((int) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.CheckIntervalMin, (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.CheckIntervalMax);
 							celestial = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.ResourcesProduction);
 							DateTime now = await _tbotOgameBridge.GetDateTime();

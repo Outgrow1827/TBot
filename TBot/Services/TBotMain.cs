@@ -842,9 +842,8 @@ namespace Tbot.Services {
 			}
 		}
 
-		public void TelegramCollect() {
-			_fleetScheduler.Collect();
-
+		public void TelegramCollect(bool noLimit = false) {
+			_fleetScheduler.Collect(noLimit);
 			return;
 		}
 
@@ -900,7 +899,7 @@ namespace Tbot.Services {
 			if (mode.Equals("auto")) {
 				float cargoBonus = 0;
 				if (origin.LFBonuses != null && origin.LFBonuses.Ships != null && origin.LFBonuses.Ships.Count > 0 && origin.LFBonuses.Ships.ContainsKey((int) Buildables.SmallCargo)) {
-					cargoBonus = origin.LFBonuses.Ships.GetValueOrDefault((int) Buildables.SmallCargo).Cargo;
+					cargoBonus = origin.LFBonuses.Ships.GetValueOrDefault((int) Buildables.SmallCargo).CargoCapacity;
 				}
 				long idealSmallCargo = _helpersService.CalcShipNumberForPayload(payload, Buildables.SmallCargo, userData.researches.HyperspaceTechnology, userData.serverData, cargoBonus, userData.userInfo.Class, userData.serverData.ProbeCargo);
 
@@ -909,7 +908,7 @@ namespace Tbot.Services {
 				} else {
 					cargoBonus = 0;
 					if (origin.LFBonuses != null && origin.LFBonuses.Ships != null && origin.LFBonuses.Ships.Count > 0 && origin.LFBonuses.Ships.ContainsKey((int) Buildables.LargeCargo)) {
-						cargoBonus = origin.LFBonuses.Ships.GetValueOrDefault((int) Buildables.LargeCargo).Cargo;
+						cargoBonus = origin.LFBonuses.Ships.GetValueOrDefault((int) Buildables.LargeCargo).CargoCapacity;
 					}
 					long idealLargeCargo = _helpersService.CalcShipNumberForPayload(payload, Buildables.LargeCargo, userData.researches.HyperspaceTechnology, userData.serverData, cargoBonus, userData.userInfo.Class, userData.serverData.ProbeCargo);
 					if (idealLargeCargo <= origin.Ships.GetAmount(Buildables.LargeCargo)) {

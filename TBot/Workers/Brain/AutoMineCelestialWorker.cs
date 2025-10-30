@@ -204,7 +204,7 @@ namespace Tbot.Workers.Brain {
 						DoLog(LogLevel.Debug, $"Days of investment return: {Math.Round(DOIR, 2).ToString()} days.");
 					}
 
-					Resources xCostBuildable = _calculationService.CalcPrice(buildable, level);//, celestial.LFBonuses);
+					Resources xCostBuildable = _calculationService.CalcPrice(buildable, level, celestial.LFBonuses);
 					if (celestial is Moon)
 						xCostBuildable.Deuterium += (long) autoMinerSettings.DeutToLeaveOnMoons;
 
@@ -214,7 +214,7 @@ namespace Tbot.Workers.Brain {
 							if ((bool) _tbotInstance.InstanceSettings.Brain.AutoMine.BuildSolarSatellites) {
 								buildable = Buildables.SolarSatellite;
 								level = _calculationService.CalcNeededSolarSatellites(celestial as Planet, xCostBuildable.Energy - celestial.ResourcesProduction.Energy.CurrentProduction, _tbotInstance.UserData.userInfo.Class == CharacterClass.Collector, _tbotInstance.UserData.staff.Engineer, _tbotInstance.UserData.staff.IsFull);
-								xCostBuildable = _calculationService.CalcPrice(buildable, level);
+								xCostBuildable = _calculationService.CalcPrice(buildable, level, celestial.LFBonuses);
 							}
 							else {
 								DoLog(LogLevel.Information, $"Unable to build SolarSatellites for Terraformer. Stopping AutoMiner for celestial {celestial.ToString()}");
@@ -704,9 +704,10 @@ namespace Tbot.Workers.Brain {
 				} else {
 					celestial = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.Buildings);
 					celestial = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.Facilities);
+					celestial = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.LFBonuses);
 
 					if (buildable != Buildables.Null) {
-						var price = _calculationService.CalcPrice(buildable, level);
+						var price = _calculationService.CalcPrice(buildable, level, celestial.LFBonuses);
 						var productionTime = long.MaxValue;
 						var transportTime = long.MaxValue;
 						var returningExpoTime = long.MaxValue;
