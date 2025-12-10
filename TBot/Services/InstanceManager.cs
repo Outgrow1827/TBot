@@ -151,7 +151,7 @@ namespace Tbot.Services {
 				awaitingInstances.Add(StartTBotMain(cInstanceSettingPath, alias));
 				//Generate random sleeptime
 				Random waitTime = new Random();
-				int millisecondsTimeout	 = waitTime.Next(3, 6) * 1000;
+				int millisecondsTimeout	 = waitTime.Next(30, 60) * 1000;
 				//Put the thread to sleep
 				System.Threading.Thread.Sleep(millisecondsTimeout);
 			}
