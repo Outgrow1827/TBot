@@ -21,6 +21,8 @@ namespace Tbot.Workers {
 		private readonly IFleetScheduler _fleetScheduler;
 		private readonly ICalculationService _calculationService;
 		private readonly ITBotOgamedBridge _tbotOgameBridge;
+		private readonly AutoFarmBlacklist _blacklist;
+		private readonly AutoFarmSuccessfulTargets _successfulTargets;
 		public AutoFarmWorker(ITBotMain parentInstance,
 			IOgameService ogameService,
 			IFleetScheduler fleetScheduler,
@@ -31,6 +33,10 @@ namespace Tbot.Workers {
 			_fleetScheduler = fleetScheduler;
 			_calculationService = calculationService;
 			_tbotOgameBridge = tbotOgameBridge;
+		string blacklistPath = $"autofarm_blacklist_{_tbotInstance.InstanceAlias}.json";
+		_blacklist = new AutoFarmBlacklist(blacklistPath);
+		string successfulPath = $"autofarm_successful_{_tbotInstance.InstanceAlias}.json";
+		_successfulTargets = new AutoFarmSuccessfulTargets(successfulPath);
 		}
 		public override bool IsWorkerEnabledBySettings() {
 			try {
@@ -90,11 +96,61 @@ namespace Tbot.Workers {
 		}
 
 		private async Task<List<Celestial>> GetScannedTargetsFromGalaxy(int galaxy, int system) {
-			var galaxyInfo = await _ogameService.GetGalaxyInfo(galaxy, system);
+			GalaxyInfo galaxyInfo = null;
+			int retryCount = 0;
+			int maxRetries = 5;
+
+			while (retryCount < maxRetries) {
+				try {
+					galaxyInfo = await _ogameService.GetGalaxyInfo(galaxy, system);
+					break;
+				} catch (Exception e) when (e.Message.Contains("system must be within") || e.Message.Contains("503") || e.Message.Contains("Service Unavailable")) {
+					retryCount++;
+					int waitSeconds = retryCount * 3;
+
+					_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm, $"Exception details: {e.Message}");
+					_tbotInstance.log(LogLevel.Warning, LogSender.AutoFarm, $"Galaxy scan failed. Retry {retryCount}/{maxRetries} in {waitSeconds}s...");
+
+					if (retryCount < maxRetries) {
+						await Task.Delay(waitSeconds * 1000);
+
+						try {
+							_tbotInstance.UserData.serverData = await _ogameService.GetServerData();
+							_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm, $"ServerData after refresh: Systems={_tbotInstance.UserData.serverData.Systems}");
+						} catch (Exception serverDataEx) {
+							_tbotInstance.log(LogLevel.Error, LogSender.AutoFarm, $"Failed to refresh ServerData: {serverDataEx.Message}");
+						}
+
+						if (retryCount == 4 && _tbotInstance.UserData.serverData.Systems == 0) {
+							_tbotInstance.log(LogLevel.Warning, LogSender.AutoFarm, $"ServerData broken. Root cause: {e.Message}. Restarting ogamed...");
+
+							try {
+								_ogameService.KillOgamedExecutable();
+								await Task.Delay(5000);
+								_ogameService.RerunOgamed();
+								await Task.Delay(10000);
+
+								try {
+									_tbotInstance.UserData.serverData = await _ogameService.GetServerData();
+									_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"ServerData after restart: Systems={_tbotInstance.UserData.serverData.Systems}");
+								} catch (Exception restartEx) {
+									_tbotInstance.log(LogLevel.Error, LogSender.AutoFarm, $"Failed to get ServerData after ogamed restart: {restartEx.Message}");
+								}
+							} catch (Exception ogamedEx) {
+								_tbotInstance.log(LogLevel.Error, LogSender.AutoFarm, $"Failed to restart ogamed: {ogamedEx.Message}");
+								_tbotInstance.log(LogLevel.Warning, LogSender.AutoFarm, $"Stacktrace: {ogamedEx.StackTrace}");
+							}
+						}
+					} else {
+						_tbotInstance.log(LogLevel.Error, LogSender.AutoFarm, $"Galaxy scan failed after {maxRetries} retries.");
+						throw;
+					}
+				}
+			}
+
 			var planets = galaxyInfo.Planets.Where(p => p != null && p.Inactive && !p.Administrator && !p.Banned && !p.Vacation);
 			List<Celestial> scannedTargets = planets.Cast<Celestial>().ToList();
 			await _fleetScheduler.UpdateFleets();
-			//Remove all targets that are currently under attack (necessary if bot or instance is restarted)
 			scannedTargets.RemoveAll(t => _tbotInstance.UserData.fleets.Any(f => f.Destination.IsSame(t.Coordinate) && f.Mission == Missions.Attack));
 			return scannedTargets;
 		}
@@ -151,8 +207,6 @@ namespace Tbot.Workers {
 		private FarmTarget CheckDuplicatesAndGetExisting(Celestial planet) {
 			var exists = _tbotInstance.UserData.farmTargets.Where(t => t != null && t.Celestial.HasCoords(planet.Coordinate)).ToList();
 			if (exists.Count() > 1) {
-				// It can exist if was processed in a previous execution
-				//Remove all except the first to be able to continue
 				var firstExisting = exists.First();
 				_tbotInstance.UserData.farmTargets.RemoveAll(c => c.Celestial.HasCoords(planet.Coordinate));
 				_tbotInstance.UserData.farmTargets.Add(firstExisting);
@@ -165,27 +219,32 @@ namespace Tbot.Workers {
 		}
 
 		private FarmTarget GetFarmTarget(Celestial planet) {
-			// Check if planet with coordinates exists already in _tbotInstance.UserData.farmTargets list.
+		bool blacklistActive = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "Blacklist") &&
+			SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm.Blacklist, "Active") &&
+			(bool) _tbotInstance.InstanceSettings.AutoFarm.Blacklist.Active;
+
+		if (blacklistActive && _blacklist.IsBlacklisted(planet.Coordinate)) {
+			var blacklistedTarget = _blacklist.GetBlacklistedTarget(planet.Coordinate);
+			_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm, $"Target {planet.ToString()} is blacklisted (Reason: {blacklistedTarget.Reason}). Skipping...");
+			return null;
+		}
+
 			var target = CheckDuplicatesAndGetExisting(planet);
 
 			if (target == null) {
-				// Does not exist, add to _tbotInstance.UserData.farmTargets list, set state to probes pending.
 				target = new(planet, FarmState.ProbesPending);
 				_tbotInstance.UserData.farmTargets.Add(target);
 			} else {
-				// Already exists, update _tbotInstance.UserData.farmTargets list with updated planet.
 				target.Celestial = planet;
 
 				if (target.State == FarmState.Idle)
 					target.State = FarmState.ProbesPending;
 
-				// If target marked not suitable based on a non-expired espionage report, skip probing.
 				if (target.State == FarmState.NotSuitable && target.Report != null) {
 					_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm, $"Target {planet.ToString()} marked as Not Suitable. Skipping...");
 					return null;
 				}
 
-				// If probes are already sent or if an attack is pending, skip probing.
 				if (target.State == FarmState.ProbesSent || target.State == FarmState.AttackPending) {
 					_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm, $"Target {planet.ToString()} marked as {target.State.ToString()}. Skipping...");
 					return null;
@@ -226,25 +285,19 @@ namespace Tbot.Workers {
 			int neededProbes,
 			int slotsToLeaveFree,
 			int freeSlots) {
-			//Set first celestial as default best Origin
 			SpyOriginResult bestOrigin = new SpyOriginResult(closestCelestials.First(), int.MaxValue, freeSlots);
 			foreach (var closest in closestCelestials) {
-				// Update ships of the current planet
 				var tempCelestial = await _tbotOgameBridge.UpdatePlanet(closest, UpdateTypes.Ships);
 				celestialProbes.Remove(closest.ID);
 				celestialProbes.Add(closest.ID, tempCelestial.Ships.EspionageProbe);
 
 				if (celestialProbes[closest.ID] >= neededProbes) {
-					//There are enough probes so it's the best origin and we can stop searching
 					bestOrigin = new SpyOriginResult(closest, freeSlots);
 					break;
 				}
 
-				// No probes available in this celestial
 				_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
 
-				// If there are no free slots, update the minimum time to wait for current missions return.
-				// If there are no free slots, wait for probes to come back to current celestial.
 				if (freeSlots <= slotsToLeaveFree) {
 					var espionageMissions = _calculationService.GetMissionsInProgress(closest.Coordinate, Missions.Spy, _tbotInstance.UserData.fleets);
 					if (espionageMissions.Any()) {
@@ -263,12 +316,10 @@ namespace Tbot.Workers {
 						}
 					}
 				} else {
-					//If no bestOrigin detected, the total number of probes is not enough but there are free slots, then calculate if can be built from this celestial
 					_tbotInstance.log(LogLevel.Warning, LogSender.AutoFarm, $"Cannot spy {target.Celestial.Coordinate.ToString()} from {closest.Coordinate.ToString()}, insufficient probes ({celestialProbes[closest.ID]}/{neededProbes}).");
 					if (bestOrigin.BackIn < int.MaxValue)
 						continue;
 
-					//If there is no bestOrigin, check if can be a good origin (it has enough resources to build probes)
 					tempCelestial = await _tbotOgameBridge.UpdatePlanet(closest, UpdateTypes.Constructions);
 					if (tempCelestial.Constructions.BuildingID == (int) Buildables.Shipyard || tempCelestial.Constructions.BuildingID == (int) Buildables.NaniteFactory) {
 						Buildables buildingInProgress = (Buildables) tempCelestial.Constructions.BuildingID;
@@ -315,7 +366,6 @@ namespace Tbot.Workers {
 
 			_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
 			while (freeSlots <= slotsToLeaveFree) {
-				// No slots available, wait for first fleet of any mission type to return.
 				_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
 				if (_tbotInstance.UserData.fleets.Any()) {
 					int interval = (int) ((1000 * _tbotInstance.UserData.fleets.OrderBy(fleet => fleet.BackIn).First().BackIn) + RandomizeHelper.CalcRandomInterval(IntervalType.LessThanASecond));
@@ -325,7 +375,7 @@ namespace Tbot.Workers {
 					freeSlots = _tbotInstance.UserData.slots.Free;
 				} else {
 					_tbotInstance.log(LogLevel.Error, LogSender.AutoFarm, "Error: No fleet slots available and no fleets returning!");
-					throw new Exception("No fleet slots available and no fleets returning!"); //TODO: Create custom exception
+					throw new Exception("No fleet slots available and no fleets returning!");
 				}
 			}
 			return freeSlots;
@@ -333,10 +383,13 @@ namespace Tbot.Workers {
 
 		protected override async Task Execute() {
 			bool stop = false;
+			bool stopAfterFullScan = false;
+			bool finishedFullScan = false;
 			try {
 				_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, "Running autofarm...");
-				if ((bool) _tbotInstance.InstanceSettings.AutoFarm.Active) {
-					// If not enough slots are free, the farmer cannot run.					
+				stopAfterFullScan = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "StopAfterFullScan")
+					&& (bool)_tbotInstance.InstanceSettings.AutoFarm.StopAfterFullScan;
+				if ((bool) _tbotInstance.InstanceSettings.AutoFarm.Active) {				
 					_tbotInstance.UserData.slots = await _tbotOgameBridge.UpdateSlots();
 					
 					int freeSlots = _tbotInstance.UserData.slots.Free;
@@ -347,47 +400,141 @@ namespace Tbot.Workers {
 					}
 
 					try {
-						// Prune all reports older than KeepReportFor and all reports of state AttackSent: information no longer actual.
 						await PruneOldReports();
 
-						// Keep local record of _tbotInstance.UserData.celestials, to be updated by autofarmer itself, to reduce ogamed calls.
 						var celestialProbes = await GetCelestialProbes();
 
-						// Keep track of number of targets probed.
 						int numProbed = 0;
 
-						/// Galaxy scanning + target probing.
 						_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, "Detecting farm targets...");
 						bool stopAutoFarm = false;
 
-						foreach (var range in _tbotInstance.InstanceSettings.AutoFarm.ScanRange) {
+						var scanRanges = ((IEnumerable<dynamic>)_tbotInstance.InstanceSettings.AutoFarm.ScanRange).ToList();
+
+						var allScanRanges = ((IEnumerable<dynamic>)_tbotInstance.InstanceSettings.AutoFarm.ScanRange).ToList();
+						int totalSystemsAcrossAllGalaxies = allScanRanges.Sum(r => (int)r.EndSystem - (int)r.StartSystem + 1);
+						int instanceHash = Math.Abs(_tbotInstance.InstanceAlias.GetHashCode());
+						int minSpacing = 499;
+						int numSlotsGlobal = Math.Max(1, totalSystemsAcrossAllGalaxies / minSpacing);
+						int globalSlotIndex = instanceHash % numSlotsGlobal;
+						int globalOffset = globalSlotIndex * minSpacing;
+
+						int targetGalaxy = 1;
+						int targetSystem = 1;
+						int remainingOffset = globalOffset;
+						foreach (var r in allScanRanges) {
+							int systemsInRange = (int)r.EndSystem - (int)r.StartSystem + 1;
+							if (remainingOffset < systemsInRange) {
+								targetGalaxy = (int)r.Galaxy;
+								targetSystem = (int)r.StartSystem + remainingOffset;
+								break;
+							}
+							remainingOffset -= systemsInRange;
+						}
+
+						_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"[GLOBAL SPACING] Instance: {_tbotInstance.InstanceAlias}");
+						_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"[GLOBAL SPACING] Total systems across all galaxies: {totalSystemsAcrossAllGalaxies}");
+						_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"[GLOBAL SPACING] Num slots globally: {numSlotsGlobal}");
+						_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"[GLOBAL SPACING] Global slot index: {globalSlotIndex}");
+						_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"[GLOBAL SPACING] Global offset: {globalOffset} systems");
+						_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"[GLOBAL SPACING] Target Galaxy: {targetGalaxy}, Target System: {targetSystem}");
+
+						var orderedRanges = scanRanges
+							.OrderBy(r => (int)r.Galaxy)
+							.ThenBy(r => (int)r.StartSystem)
+							.ToList();
+
+						if (!orderedRanges.Any()) {
+							_tbotInstance.log(LogLevel.Warning, LogSender.AutoFarm, "No scan ranges match galaxies with planets. Skipping AutoFarm.");
+							stopAutoFarm = true;
+						}
+
+						int startRangeIndex = _tbotInstance.UserData.autoFarmLastRangeIndex;
+						if (startRangeIndex < 0 || startRangeIndex >= orderedRanges.Count) {
+							startRangeIndex = 0;
+						}
+						if (_tbotInstance.UserData.autoFarmLastGalaxy == 0 && _tbotInstance.UserData.autoFarmLastSystem == 0) {
+							int idx = orderedRanges.FindIndex(r => (int)r.Galaxy == targetGalaxy);
+							if (idx >= 0) startRangeIndex = idx;
+							_tbotInstance.UserData.autoFarmLastRangeIndex = startRangeIndex;
+						}
+
+						bool globalOffsetUsed = false;
+
+						for (int rangeIndex = startRangeIndex; rangeIndex < orderedRanges.Count; rangeIndex++) {
 							if (stopAutoFarm)
 								break;
-							if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "TargetsProbedBeforeAttack") && ((int) _tbotInstance.InstanceSettings.AutoFarm.TargetsProbedBeforeAttack != 0) && numProbed >= (int) _tbotInstance.InstanceSettings.AutoFarm.TargetsProbedBeforeAttack) {
+							if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "TargetsProbedBeforeAttack") && ((int)_tbotInstance.InstanceSettings.AutoFarm.TargetsProbedBeforeAttack != 0) && numProbed >= (int)_tbotInstance.InstanceSettings.AutoFarm.TargetsProbedBeforeAttack) {
 								break;
 							}
 
-							int galaxy = (int) range.Galaxy;
-							int startSystem = (int) range.StartSystem;
-							int endSystem = (int) range.EndSystem;
+							var range = orderedRanges[rangeIndex];
 
-							// Loop from start to end system.
-							for (var system = startSystem; system <= endSystem; system++) {
+							int galaxy = (int) range.Galaxy;
+							int originalStartSystem = (int) range.StartSystem;
+							int endSystem = (int) range.EndSystem;
+							int startSystem = originalStartSystem;
+							bool isRandomStart = false;
+
+                                 if (_tbotInstance.UserData.autoFarmLastGalaxy == galaxy &&
+                                       _tbotInstance.UserData.autoFarmLastSystem >= originalStartSystem &&
+                                    _tbotInstance.UserData.autoFarmLastSystem <= endSystem) {
+
+                                startSystem = _tbotInstance.UserData.autoFarmLastSystem;
+                                   isRandomStart = false;
+                                       _tbotInstance.log(LogLevel.Information, LogSender.AutoFarm,
+                                       $"Resuming scan from Galaxy {galaxy} System {startSystem}");
+                           }
+                            else {
+                                         startSystem = originalStartSystem;
+                                        isRandomStart = false;
+
+                                  _tbotInstance.log(LogLevel.Information, LogSender.AutoFarm,
+                               $"[START] Galaxy {galaxy} - Ordered start at system {startSystem}");
+                              }
+
+							int systemsToScan = endSystem - originalStartSystem + 1;
+							int scannedCount = 0;
+
+							for (var offset = 0; offset < systemsToScan && scannedCount < systemsToScan; offset++) {
+								int system = startSystem + offset;
+								if (system > endSystem) {
+									break;
+								}
+								scannedCount++;
 
 								if (stopAutoFarm)
 									break;
 								if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "TargetsProbedBeforeAttack") && ((int) _tbotInstance.InstanceSettings.AutoFarm.TargetsProbedBeforeAttack != 0) && numProbed >= (int) _tbotInstance.InstanceSettings.AutoFarm.TargetsProbedBeforeAttack) {
 									_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, "Maximum number of targets to probe reached, proceeding to attack.");
+									int nextSystem = system + 1;
+									if (nextSystem <= endSystem) {
+										_tbotInstance.UserData.autoFarmLastRangeIndex = rangeIndex;
+										_tbotInstance.UserData.autoFarmLastGalaxy = galaxy;
+										_tbotInstance.UserData.autoFarmLastSystem = nextSystem;
+									} else {
+										int nextRangeIndex = rangeIndex + 1;
+										if (nextRangeIndex < orderedRanges.Count) {
+											var nextRange = orderedRanges[nextRangeIndex];
+											_tbotInstance.UserData.autoFarmLastRangeIndex = nextRangeIndex;
+											_tbotInstance.UserData.autoFarmLastGalaxy = (int)nextRange.Galaxy;
+											_tbotInstance.UserData.autoFarmLastSystem = (int)nextRange.StartSystem;
+										} else {
+											_tbotInstance.UserData.autoFarmLastRangeIndex = 0;
+											_tbotInstance.UserData.autoFarmLastGalaxy = 0;
+											_tbotInstance.UserData.autoFarmLastSystem = 0;
+											finishedFullScan = true;
+										}
+									}
+									stopAutoFarm = true;
 									break;
 								}
 
-								// Check excluded system.
 								bool excludeSystem = ShouldExcludeSystem(galaxy, system);
 								if (excludeSystem)
 									continue;
 
 								var scannedTargets = await GetScannedTargetsFromGalaxy(galaxy, system);
-
 								_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm, $"Found {scannedTargets.Count} targets on System {galaxy}:{system}");
 
 								if (!scannedTargets.Any())
@@ -397,11 +544,9 @@ namespace Tbot.Workers {
 									AddMoons(scannedTargets);
 								}
 
-								// Add each planet that has inactive status to _tbotInstance.UserData.farmTargets.
 								foreach (Celestial planet in scannedTargets) {
 									if (stopAutoFarm)
 										break;
-									// Check if target is below set minimum rank.
 									if (!IsTargetInMinimumRank(planet, scannedTargets)) {
 										continue;
 									}
@@ -412,20 +557,23 @@ namespace Tbot.Workers {
 										break;
 									}
 
-									// Check excluded planet.
 									if (ShouldExcludePlanet(planet))
 										continue;
 
-									// Manage existing Target or generate a new one. If should not be processed returns null
 									var target = GetFarmTarget(planet);
 									if (target == null)
 										continue;
 
-									// Send spy probe from closest celestial with available probes to the target.
 									List<Celestial> tempCelestials = (_tbotInstance.InstanceSettings.AutoFarm.Origin.Length > 0) ? _calculationService.ParseCelestialsList(_tbotInstance.InstanceSettings.AutoFarm.Origin, _tbotInstance.UserData.celestials) : _tbotInstance.UserData.celestials;
+
 									List<Celestial> closestCelestials = tempCelestials
 										.OrderByDescending(planet => planet.Coordinate.Type == Celestials.Moon)
 										.OrderBy(c => _calculationService.CalcDistance(c.Coordinate, target.Celestial.Coordinate, _tbotInstance.UserData.serverData)).ToList();
+
+									if (!closestCelestials.Any()) {
+										_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm, $"No origin celestials available. Skipping target {target.Celestial.ToString()}");
+										continue;
+									}
 
 
 									int neededProbes = GetNeededProbes(target);
@@ -435,7 +583,6 @@ namespace Tbot.Workers {
 									_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
 									var probesInMission = _tbotInstance.UserData.fleets.Select(c => c.Ships).Sum(c => c.EspionageProbe);
 
-									//Calculate best origin
 									var bestOrigin = await GetBestOrigin(closestCelestials,
 										celestialProbes,
 										target,
@@ -456,7 +603,6 @@ namespace Tbot.Workers {
 										continue;
 									}
 
-									// If local record indicate not enough espionage probes are available, update record to make sure this is correct.
 									if (celestialProbes[bestOrigin.Origin.ID] < neededProbes) {
 										var tempCelestial = await _tbotOgameBridge.UpdatePlanet(bestOrigin.Origin, UpdateTypes.Ships);
 										celestialProbes.Remove(bestOrigin.Origin.ID);
@@ -466,7 +612,7 @@ namespace Tbot.Workers {
 									if (celestialProbes[bestOrigin.Origin.ID] < neededProbes) {
 										_tbotInstance.log(LogLevel.Warning, LogSender.AutoFarm, $"Insufficient probes ({celestialProbes[bestOrigin.Origin.ID]}/{neededProbes}).");
 										if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "BuildProbes") && _tbotInstance.InstanceSettings.AutoFarm.BuildProbes == true) {
-											//Check if probes can be built
+
 											var tempCelestial = await _tbotOgameBridge.UpdatePlanet(bestOrigin.Origin, UpdateTypes.Constructions);
 											if (tempCelestial.Constructions.BuildingID == (int) Buildables.Shipyard || tempCelestial.Constructions.BuildingID == (int) Buildables.NaniteFactory) {
 												Buildables buildingInProgress = (Buildables) tempCelestial.Constructions.BuildingID;
@@ -527,6 +673,17 @@ namespace Tbot.Workers {
 											_tbotInstance.UserData.slots = await _tbotOgameBridge.UpdateSlots();
 											freeSlots = _tbotInstance.UserData.slots.Free;
 											freeSlots = await WaitForFreeSlots(freeSlots, slotsToLeaveFree);
+
+											bestOrigin.Origin = await _tbotOgameBridge.UpdatePlanet(bestOrigin.Origin, UpdateTypes.Ships);
+											var availableProbes = bestOrigin.Origin.Ships.EspionageProbe;
+
+											if (availableProbes < neededProbes) {
+												_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm,
+													$"Insufficient probes on {bestOrigin.Origin.ToString()} ({availableProbes}/{neededProbes}). Skipping {target.ToString()}.");
+												fleetId = (int) SendFleetCode.GenericError;
+												break;
+											}
+
 											fleetId = await _fleetScheduler.SendFleet(bestOrigin.Origin, ships, target.Celestial.Coordinate, Missions.Spy, Speeds.HundredPercent);
 											if (fleetId == (int)SendFleetCode.NotEnoughSlots) {
 												_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"Another worker took the slot, waiting again for a free slot... Retry count: {retryCount}/{maxRetryCount}");
@@ -560,13 +717,36 @@ namespace Tbot.Workers {
 								}
 							}
 						}
+                              if (!stopAutoFarm && (
+                                    !SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "TargetsProbedBeforeAttack") ||
+                                (int)_tbotInstance.InstanceSettings.AutoFarm.TargetsProbedBeforeAttack == 0 ||
+                             numProbed <= (int)_tbotInstance.InstanceSettings.AutoFarm.TargetsProbedBeforeAttack)
+                                  ) {
+                                 _tbotInstance.UserData.autoFarmLastGalaxy = 0;
+                        _tbotInstance.UserData.autoFarmLastSystem = 0;
+
+                              _tbotInstance.UserData.autoFarmLastRangeIndex = 0;
+
+                          _tbotInstance.log(LogLevel.Information, LogSender.AutoFarm,
+                                   "Full scan cycle completed, resetting scan position for next cycle");
+
+                              if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "StopAfterFullScan") &&
+                               (bool)_tbotInstance.InstanceSettings.AutoFarm.StopAfterFullScan) {
+
+                                   _tbotInstance.log(LogLevel.Information, LogSender.AutoFarm,
+                                "StopAfterFullScan=true -> Full scan completed. Stopping AutoFarm and waiting for /startautofarm.");
+
+                                 stop = true;
+                       return;
+                                }
+                        }
+
 					} catch (Exception e) {
 						_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm, $"Exception: {e.Message}");
 						_tbotInstance.log(LogLevel.Warning, LogSender.AutoFarm, $"Stacktrace: {e.StackTrace}");
 						_tbotInstance.log(LogLevel.Warning, LogSender.AutoFarm, "Unable to parse scan range");
 					}
 
-					// Wait for all espionage fleets to return.
 					_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
 					Fleet firstReturning = _calculationService.GetLastReturningEspionage(_tbotInstance.UserData.fleets);
 					if (firstReturning != null) {
@@ -577,7 +757,6 @@ namespace Tbot.Workers {
 
 					_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, "Processing espionage reports of found inactives...");
 
-					/// Process reports.
 					await AutoFarmProcessReports();
 
 					_tbotInstance.UserData.slots = await _tbotOgameBridge.UpdateSlots();
@@ -618,7 +797,6 @@ namespace Tbot.Workers {
 					};
 					int MaxSlots = _calculationService.CalcSlotsPriority(Feature.AutoFarm, rankSlotsPriority, _tbotInstance.UserData.slots, _tbotInstance.UserData.fleets, (int) _tbotInstance.InstanceSettings.General.SlotsToLeaveFree);
 
-					/// Send attacks.
 					List<FarmTarget> attackTargets;
 					if (_tbotInstance.InstanceSettings.AutoFarm.PreferedResource == "Metal")
 						attackTargets = _tbotInstance.UserData.farmTargets.Where(t => t.State == FarmState.AttackPending).OrderByDescending(t => t.Report.Loot(_tbotInstance.UserData.userInfo.Class).Metal).ToList();
@@ -682,9 +860,8 @@ namespace Tbot.Workers {
 							tempCelestial = await _tbotOgameBridge.UpdatePlanet(tempCelestial, UpdateTypes.Resources);
 							tempCelestial = await _tbotOgameBridge.UpdatePlanet(tempCelestial, UpdateTypes.LFBonuses);
 							if (tempCelestial.Ships != null && tempCelestial.Ships.GetAmount(cargoShip) >= (numCargo + _tbotInstance.InstanceSettings.AutoFarm.MinCargosToKeep)) {
-								// TODO Future: If fleet composition is changed, update ships passed to CalcFlightTime.
 								speed = 0;
-								if (/*cargoShip == Buildables.EspionageProbe &&*/ SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "MinLootFuelRatio") && _tbotInstance.InstanceSettings.AutoFarm.MinLootFuelRatio != 0) {
+								if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "MinLootFuelRatio") && _tbotInstance.InstanceSettings.AutoFarm.MinLootFuelRatio != 0) {
 									long maxFlightTime = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "MaxFlightTime") ? (long) _tbotInstance.InstanceSettings.AutoFarm.MaxFlightTime : 86400;
 									var optimalSpeed = _calculationService.CalcOptimalFarmSpeed(tempCelestial.Coordinate, target.Celestial.Coordinate, attackingShips, target.Report.Loot(_tbotInstance.UserData.userInfo.Class), lootFuelRatio, maxFlightTime, _tbotInstance.UserData.researches, _tbotInstance.UserData.serverData, tempCelestial.LFBonuses, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.allianceClass);
 									if (optimalSpeed == 0) {
@@ -724,13 +901,11 @@ namespace Tbot.Workers {
 
 						if (fromCelestial == null) {
 							_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"No origin celestial available near destination {target.Celestial.ToString()} with enough cargo ships.");
-							// TODO Future: If prefered cargo ship is not available or not sufficient capacity, combine with other cargo type.
 							foreach (var closest in closestCelestials) {
 								tempCelestial = closest;
 								tempCelestial = await _tbotOgameBridge.UpdatePlanet(tempCelestial, UpdateTypes.Ships);
 								tempCelestial = await _tbotOgameBridge.UpdatePlanet(tempCelestial, UpdateTypes.Resources);
 								tempCelestial = await _tbotOgameBridge.UpdatePlanet(tempCelestial, UpdateTypes.LFBonuses);
-								// TODO Future: If fleet composition is changed, update ships passed to CalcFlightTime.
 								speed = 0;
 								if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "FleetSpeed") && _tbotInstance.InstanceSettings.AutoFarm.FleetSpeed > 0) {
 									speed = (int) _tbotInstance.InstanceSettings.AutoFarm.FleetSpeed / 10;
@@ -740,7 +915,7 @@ namespace Tbot.Workers {
 									}
 								} else {
 									speed = 0;
-									if (/*cargoShip == Buildables.EspionageProbe &&*/ SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "MinLootFuelRatio") && _tbotInstance.InstanceSettings.AutoFarm.MinLootFuelRatio != 0) {
+									if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "MinLootFuelRatio") && _tbotInstance.InstanceSettings.AutoFarm.MinLootFuelRatio != 0) {
 										long maxFlightTime = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "MaxFlightTime") ? (long) _tbotInstance.InstanceSettings.AutoFarm.MaxFlightTime : 86400;
 										var optimalSpeed = _calculationService.CalcOptimalFarmSpeed(tempCelestial.Coordinate, target.Celestial.Coordinate, attackingShips, target.Report.Loot(_tbotInstance.UserData.userInfo.Class), lootFuelRatio, maxFlightTime, _tbotInstance.UserData.researches, _tbotInstance.UserData.serverData, tempCelestial.LFBonuses, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.allianceClass);
 										if (optimalSpeed == 0) {
@@ -813,7 +988,6 @@ namespace Tbot.Workers {
 							continue;
 						}
 
-						// Only execute update slots if our local copy indicates we have run out.
 						if (freeSlots <= slotsToLeaveFree) {
 							_tbotInstance.UserData.slots = await _tbotOgameBridge.UpdateSlots();
 							freeSlots = _tbotInstance.UserData.slots.Free;
@@ -821,7 +995,6 @@ namespace Tbot.Workers {
 
 						while (freeSlots <= slotsToLeaveFree) {
 							_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
-							// No slots free, wait for first fleet to come back.
 							if (_tbotInstance.UserData.fleets.Any()) {
 								int interval = (int) ((1000 * _tbotInstance.UserData.fleets.OrderBy(fleet => fleet.BackIn).First().BackIn) + RandomizeHelper.CalcRandomInterval(IntervalType.AFewSeconds));
 								if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "MaxWaitTime") && (int) _tbotInstance.InstanceSettings.AutoFarm.MaxWaitTime != 0 && interval > (int) _tbotInstance.InstanceSettings.AutoFarm.MaxWaitTime * 1000) {
@@ -845,12 +1018,36 @@ namespace Tbot.Workers {
 							.ToList();
 
 						if (_tbotInstance.UserData.slots.Free > slotsToLeaveFree && slotUsed.Count() < MaxSlots) {
+							fromCelestial = await _tbotOgameBridge.UpdatePlanet(fromCelestial, UpdateTypes.Ships);
+							var availableShips = fromCelestial.Ships.GetAmount(cargoShip) - (long) _tbotInstance.InstanceSettings.AutoFarm.MinCargosToKeep;
+							if (availableShips <= 0) {
+								_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"No {cargoShip.ToString()} available on {fromCelestial.ToString()} (all ships already in use). Skipping target.");
+								continue;
+							}
+							if (availableShips < numCargo) {
+								_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm, $"Only {availableShips} {cargoShip.ToString()} available (needed {numCargo}). Adjusting fleet size.");
+								numCargo = availableShips;
+								attackingShips = new Ships();
+								attackingShips.Add(cargoShip, numCargo);
+
+								var cargoCapacity = _calculationService.CalcFleetCapacity(
+									attackingShips, _tbotInstance.UserData.serverData, _tbotInstance.UserData.researches.HyperspaceTechnology,
+									fromCelestial.LFBonuses, _tbotInstance.UserData.userInfo.Class);
+								var totalLoot = target.Report.Loot(_tbotInstance.UserData.userInfo.Class).TotalResources;
+
+								if (cargoCapacity < totalLoot) {
+									_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm,
+										$"Insufficient cargo space after adjustment. {numCargo} {cargoShip.ToString()} can carry {cargoCapacity:N0} but need {totalLoot:N0}. Skipping target.");
+									continue;
+								}
+							}
+
 							_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"Attacking {target.ToString()} from {fromCelestial} with {numCargo} {cargoShip.ToString()}.");
 							Ships ships = new();
 							fromCelestial = await _tbotOgameBridge.UpdatePlanet(fromCelestial, UpdateTypes.LFBonuses);
 
 							speed = 0;
-							if (/*cargoShip == Buildables.EspionageProbe &&*/ SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "MinLootFuelRatio") && _tbotInstance.InstanceSettings.AutoFarm.MinLootFuelRatio != 0) {
+							if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "MinLootFuelRatio") && _tbotInstance.InstanceSettings.AutoFarm.MinLootFuelRatio != 0) {
 								long maxFlightTime = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "MaxFlightTime") ? (long) _tbotInstance.InstanceSettings.AutoFarm.MaxFlightTime : 86400;
 								var optimalSpeed = _calculationService.CalcOptimalFarmSpeed(fromCelestial.Coordinate, target.Celestial.Coordinate, attackingShips, target.Report.Loot(_tbotInstance.UserData.userInfo.Class), lootFuelRatio, maxFlightTime, _tbotInstance.UserData.researches, _tbotInstance.UserData.serverData, fromCelestial.LFBonuses, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.allianceClass);
 								if (optimalSpeed == 0) {
@@ -877,6 +1074,8 @@ namespace Tbot.Workers {
 
 							if (fleetId > (int) SendFleetCode.GenericError) {
 								freeSlots--;
+
+								_successfulTargets.RecordAttack(target.Celestial.Coordinate, loot);
 							} else if (fleetId == (int) SendFleetCode.AfterSleepTime) {
 								stop = true;
 								return;
@@ -895,8 +1094,12 @@ namespace Tbot.Workers {
 				_tbotInstance.log(LogLevel.Error, LogSender.AutoFarm, $"AutoFarm Exception: {e.Message}");
 				_tbotInstance.log(LogLevel.Warning, LogSender.AutoFarm, $"Stacktrace: {e.StackTrace}");
 			} finally {
+				if (stopAfterFullScan && finishedFullScan) {
+					stop = true;
+				}
+
 				_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"Attacked targets: {_tbotInstance.UserData.farmTargets.Where(t => t.State == FarmState.AttackSent).Count()}");
-				_tbotInstance.UserData.farmTargets.RemoveAll(t => t.State == FarmState.ProbesSent); //At this point no ProbesSent should remain in farmTargets
+				_tbotInstance.UserData.farmTargets.RemoveAll(t => t.State == FarmState.ProbesSent);
 				if (!_tbotInstance.UserData.isSleeping) {
 					if (stop) {
 						_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"Stopping feature.");
@@ -927,12 +1130,7 @@ namespace Tbot.Workers {
 			}
 		}
 
-		/// <summary>
-		/// Checks all received espionage reports and updates _tbotInstance.UserData.farmTargets to reflect latest data retrieved from reports.
-		/// </summary>
 		private async Task AutoFarmProcessReports() {
-			// TODO Future: Read espionage reports in separate thread (concurently with probing itself).
-			// TODO Future: Check if probes were destroyed, blacklist target if so to avoid additional kills.
 			List<EspionageReportSummary> summaryReports = await _ogameService.GetEspionageReports();
 			foreach (var summary in summaryReports) {
 				if (summary.Type == EspionageReportType.Action)
@@ -949,10 +1147,8 @@ namespace Tbot.Workers {
 						FarmTarget target;
 						var matchingTarget = _tbotInstance.UserData.farmTargets.Where(t => t.HasCoords(report.Coordinate));
 						if (matchingTarget.Count() == 0) {
-							// Report received of planet not in _tbotInstance.UserData.farmTargets. If inactive: add, otherwise: ignore.
 							if (!report.IsInactive)
 								continue;
-							//Get corresponding planet. Add to target list.
 							var galaxyInfo = await _ogameService.GetGalaxyInfo(report.Coordinate.Galaxy, report.Coordinate.System);
 							var planet = galaxyInfo.Planets.FirstOrDefault(p => p != null && p.Inactive && !p.Administrator && !p.Banned && !p.Vacation && p.HasCoords(report.Coordinate));
 							if (planet != null) {
@@ -968,7 +1164,6 @@ namespace Tbot.Workers {
 						var newFarmTarget = target;
 
 						if (target.Report != null && DateTime.Compare(report.Date, target.Report.Date) < 0) {
-							// Target has a more recent report. Delete report.
 							await _ogameService.DeleteReport(report.ID);
 							continue;
 						}
@@ -996,16 +1191,87 @@ namespace Tbot.Workers {
 							} else {
 								newFarmTarget.State = FarmState.NotSuitable;
 								_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"Target {report.Coordinate} not suitable - defences present.");
+							bool blacklistActive = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "Blacklist") &&
+								SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm.Blacklist, "Active") &&
+								(bool) _tbotInstance.InstanceSettings.AutoFarm.Blacklist.Active;
+							if (blacklistActive) {
+								int hoursUntilReset = SettingsService.GetSetting(_tbotInstance.InstanceSettings.AutoFarm.Blacklist, "ResetAfterHours", 48);
+								_blacklist.AddTarget(report.Coordinate, BlacklistReason.HasDefense, hoursUntilReset);
+								_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"Target {report.Coordinate} blacklisted for {hoursUntilReset}h (defenses present).");
+							}
 							}
 						} else {
 							newFarmTarget.State = FarmState.NotSuitable;
 							_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"Target {report.Coordinate} not suitable - insufficient loot ({report.Loot(_tbotInstance.UserData.userInfo.Class)})");
+							bool blacklistActiveLowRes = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "Blacklist") &&
+								SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm.Blacklist, "Active") &&
+								(bool) _tbotInstance.InstanceSettings.AutoFarm.Blacklist.Active;
+							if (blacklistActiveLowRes) {
+								long minResources = SettingsService.GetSetting(_tbotInstance.InstanceSettings.AutoFarm.Blacklist, "MinimumResourcesToNotBlacklist", (long)500000);
+								if (report.Loot(_tbotInstance.UserData.userInfo.Class).TotalResources < minResources) {
+									int hoursUntilReset = SettingsService.GetSetting(_tbotInstance.InstanceSettings.AutoFarm.Blacklist, "ResetAfterHours", 48);
+									_blacklist.AddTarget(report.Coordinate, BlacklistReason.LowResources, hoursUntilReset);
+									_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"Target {report.Coordinate} blacklisted for {hoursUntilReset}h (low resources: {report.Loot(_tbotInstance.UserData.userInfo.Class)}).");
+								}
+							}
 						}
 
 						_tbotInstance.UserData.farmTargets.Remove(target);
 						_tbotInstance.UserData.farmTargets.Add(newFarmTarget);
 					} else {
+					bool processAllReports = (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "ProcessAllReports") &&
+						(bool) _tbotInstance.InstanceSettings.AutoFarm.ProcessAllReports) ||
+						(SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "Blacklist") &&
+						SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm.Blacklist, "ProcessAllReports") &&
+						(bool) _tbotInstance.InstanceSettings.AutoFarm.Blacklist.ProcessAllReports);
+					if (processAllReports && report.IsInactive) {
+						_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"Processing report for {report.Coordinate} not scanned by TBot (ProcessAllReports enabled)...");
+						var galaxyInfo = await _ogameService.GetGalaxyInfo(report.Coordinate.Galaxy, report.Coordinate.System);
+						var planet = galaxyInfo.Planets.FirstOrDefault(p => p != null && p.Inactive && !p.Administrator && !p.Banned && !p.Vacation && p.HasCoords(report.Coordinate));
+						if (planet != null) {
+							var target = GetFarmTarget(planet);
+							if (target != null) {
+								var newFarmTarget = target;
+								Buildables cargoShip;
+								Enum.TryParse<Buildables>((string) _tbotInstance.InstanceSettings.AutoFarm.CargoType, true, out cargoShip);
+								bool isUsingProbes = cargoShip == Buildables.EspionageProbe && _tbotInstance.UserData.serverData.ProbeCargo == 1 ? true : false;
+								newFarmTarget.Report = report;
+								if (report.Loot(_tbotInstance.UserData.userInfo.Class).TotalResources > _tbotInstance.InstanceSettings.AutoFarm.MinimumResources) {
+									if (report.HasFleetInformation && report.HasDefensesInformation) {
+										if (report.IsDefenceless(isUsingProbes)) {
+											newFarmTarget.State = FarmState.AttackPending;
+											_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"Attack pending on {report.Coordinate}. Loot: {report.Loot(_tbotInstance.UserData.userInfo.Class)}");
+										} else {
+											newFarmTarget.State = FarmState.NotSuitable;
+											bool blacklistActiveDefense2 = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "Blacklist") &&
+												(bool) _tbotInstance.InstanceSettings.AutoFarm.Blacklist.Active;
+											if (blacklistActiveDefense2) {
+												int hoursUntilReset = SettingsService.GetSetting(_tbotInstance.InstanceSettings.AutoFarm.Blacklist, "ResetAfterHours", 48);
+												_blacklist.AddTarget(report.Coordinate, BlacklistReason.HasDefense, hoursUntilReset);
+												_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"Target {report.Coordinate} blacklisted for {hoursUntilReset}h (defenses present).");
+											}
+										}
+									}
+								} else {
+									newFarmTarget.State = FarmState.NotSuitable;
+									bool blacklistActiveLowRes2 = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "Blacklist") &&
+										(bool) _tbotInstance.InstanceSettings.AutoFarm.Blacklist.Active;
+									if (blacklistActiveLowRes2) {
+										long minResources = SettingsService.GetSetting(_tbotInstance.InstanceSettings.AutoFarm.Blacklist, "MinimumResourcesToNotBlacklist", (long)500000);
+										if (report.Loot(_tbotInstance.UserData.userInfo.Class).TotalResources < minResources) {
+											int hoursUntilReset = SettingsService.GetSetting(_tbotInstance.InstanceSettings.AutoFarm.Blacklist, "ResetAfterHours", 48);
+											_blacklist.AddTarget(report.Coordinate, BlacklistReason.LowResources, hoursUntilReset);
+											_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"Target {report.Coordinate} blacklisted for {hoursUntilReset}h (low resources: {report.Loot(_tbotInstance.UserData.userInfo.Class)}).");
+										}
+									}
+								}
+								_tbotInstance.UserData.farmTargets.Remove(target);
+								_tbotInstance.UserData.farmTargets.Add(newFarmTarget);
+							}
+						}
+					} else {
 						_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"Target {report.Coordinate} not scanned by TBot, ignoring...");
+					}
 					}
 				} catch (Exception e) {
 					_tbotInstance.log(LogLevel.Error, LogSender.AutoFarm, $"AutoFarmProcessReports Exception: {e.Message}");
@@ -1014,7 +1280,20 @@ namespace Tbot.Workers {
 				}
 			}
 
-			await _ogameService.DeleteAllEspionageReports();
+			int deleteRetries = 3;
+			for (int i = 0; i < deleteRetries; i++) {
+				try {
+					await _ogameService.DeleteAllEspionageReports();
+					break;
+				} catch (Exception e) when (e.Message.Contains("503") || e.Message.Contains("Service Unavailable") || e.Message.Contains("Unable to delete")) {
+					if (i < deleteRetries - 1) {
+						_tbotInstance.log(LogLevel.Warning, LogSender.AutoFarm, $"Failed to delete espionage reports (503 error), retry {i + 1}/{deleteRetries}...");
+						await Task.Delay(3000);
+					} else {
+						_tbotInstance.log(LogLevel.Warning, LogSender.AutoFarm, $"Could not delete espionage reports after {deleteRetries} attempts. Will try next cycle.");
+					}
+				}
+			}
 
 		}
 	}
