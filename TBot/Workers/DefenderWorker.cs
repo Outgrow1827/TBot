@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -18,6 +19,9 @@ using Tbot.Common.Settings;
 
 namespace Tbot.Workers {
 	internal class DefenderWorker : WorkerBase {
+		private static readonly ConcurrentDictionary<int, DateTime> _handledAttackIds = new();
+		private static readonly TimeSpan _handledAttackTtl = TimeSpan.FromMinutes(60);
+
 		private readonly IFleetScheduler _fleetScheduler;
 		private readonly IOgameService _ogameService;
 		private readonly ITBotOgamedBridge _tbotOgameBridge;
@@ -41,12 +45,11 @@ namespace Tbot.Workers {
 				DateTime time = await _tbotOgameBridge.GetDateTime();
 				if (isUnderAttack) {
 					if ((bool) _tbotInstance.InstanceSettings.Defender.Alarm.Active)
-						await Task.Factory.StartNew(() => ConsoleHelpers.PlayAlarm(), _ct);
-					// UpdateTitle(false, true);
+						await Task.Run(() => ConsoleHelpers.PlayAlarm(), _ct);
 					DoLog(LogLevel.Warning, "ENEMY ACTIVITY!!!");
 					_tbotInstance.UserData.attacks = await _ogameService.GetAttacks();
 					foreach (AttackerFleet attack in _tbotInstance.UserData.attacks) {
-						HandleAttack(attack);
+						await HandleAttack(attack);
 					}
 				} else {
 					DoLog(LogLevel.Information, "Your empire is safe");
@@ -55,7 +58,6 @@ namespace Tbot.Workers {
 				if (interval <= 0)
 					interval = RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
 
-				// Display dateTime for logging 
 				DateTime newTime = time.AddMilliseconds(interval);
 				ChangeWorkerPeriod(TimeSpan.FromMilliseconds(interval));
 				DoLog(LogLevel.Information, $"Next check at {newTime.ToString()}");
@@ -93,8 +95,6 @@ namespace Tbot.Workers {
 
 
 		private async Task FakeActivity() {
-			//checking if under attack by making activity on planet/moon configured in settings (otherwise make acti on latest activated planet)
-			// And make activity on one more random planet to fake real player
 
 			Celestial celestial;
 			Celestial randomCelestial;
@@ -124,7 +124,23 @@ namespace Tbot.Workers {
 			return;
 		}
 
-		private async void HandleAttack(AttackerFleet attack) {
+		private async Task HandleAttack(AttackerFleet attack) {
+			try {
+				var nowUtc = DateTime.UtcNow;
+				foreach (var kv in _handledAttackIds.ToArray()) {
+					if (nowUtc - kv.Value > _handledAttackTtl)
+						_handledAttackIds.TryRemove(kv.Key, out _);
+				}
+				if (attack != null && attack.ID != 0 &&
+					_handledAttackIds.TryGetValue(attack.ID, out var seenAt) &&
+					(nowUtc - seenAt) <= _handledAttackTtl) {
+					DoLog(LogLevel.Information, $"Attack {attack.ID} already handled recently; skipping duplicate actions.");
+					return;
+				}
+				if (attack != null && attack.ID != 0) {
+					_handledAttackIds[attack.ID] = nowUtc;
+				}
+
 			if (_tbotInstance.UserData.celestials.Count() == 0) {
 				DateTime time = await _tbotOgameBridge.GetDateTime();
 				long interval = RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
@@ -135,20 +151,42 @@ namespace Tbot.Workers {
 				return;
 			}
 
-			Celestial attackedCelestial = _tbotInstance.UserData.celestials.Unique().SingleOrDefault(planet => planet.HasCoords(attack.Destination));
+			Celestial attackedCelestial = _tbotInstance.UserData.celestials.Unique().FirstOrDefault(planet => planet.HasCoords(attack.Destination));
+			if (attackedCelestial == null) {
+				DoLog(LogLevel.Warning, $"Unable to handle attack {attack.ID}: attacked celestial not found in account data.");
+				return;
+			}
 			attackedCelestial = await _tbotOgameBridge.UpdatePlanet(attackedCelestial, UpdateTypes.Ships);
-
 			try {
-				if ((_tbotInstance.InstanceSettings.Defender.WhiteList as long[]).Any()) {
-					foreach (int playerID in (long[]) _tbotInstance.InstanceSettings.Defender.WhiteList) {
-						if (attack.AttackerID == playerID) {
-							DoLog(LogLevel.Information, $"Attack {attack.ID.ToString()} skipped: attacker {attack.AttackerName} whitelisted.");
-							return;
-						}
-					}
+				if ((bool)_tbotInstance.InstanceSettings.Defender.IgnoreAttackIfIHave.Active) {
+					attackedCelestial = await _tbotOgameBridge.UpdatePlanet(attackedCelestial, UpdateTypes.Resources);
 				}
 			} catch {
-				DoLog(LogLevel.Warning, "An error has occurred while checking Defender WhiteList");
+			}
+
+
+			try {
+				var wlObj = _tbotInstance.InstanceSettings.Defender.WhiteList;
+				IEnumerable<long> whiteListIds = wlObj switch {
+					long[] a => a,
+					int[] a => a.Select(x => (long)x),
+					IEnumerable<long> e => e,
+					IEnumerable<int> e => e.Select(x => (long)x),
+					_ => Enumerable.Empty<long>()
+				};
+
+				if (!whiteListIds.Any() && wlObj != null) {
+					DoLog(LogLevel.Debug, $"Defender WhiteList present but unsupported type: {wlObj.GetType().FullName}");
+				}
+
+				foreach (var playerId in whiteListIds) {
+					if (attack.AttackerID == playerId) {
+						DoLog(LogLevel.Information, $"Attack {attack.ID.ToString()} skipped: attacker {attack.AttackerName} whitelisted.");
+						return;
+					}
+				}
+			} catch (Exception ex) {
+				DoLog(LogLevel.Warning, $"An error has occurred while checking Defender WhiteList: {ex.Message}");
 			}
 
 			try {
@@ -170,13 +208,17 @@ namespace Tbot.Workers {
 								 Type = Celestials.Planet
 							}));
 						}
-						defenderCelestial = await _tbotOgameBridge.UpdatePlanet(attackedCelestial, UpdateTypes.Facilities);
+						if (defenderCelestial == null) {
+							DoLog(LogLevel.Warning, $"Missile attack detected on {attack.Destination.ToString()} but planet celestial was not found in account data. Skipping missile defence.");
+							return;
+						}
+						defenderCelestial = await _tbotOgameBridge.UpdatePlanet(defenderCelestial, UpdateTypes.Facilities);
 						if (defenderCelestial.Facilities.MissileSilo >= 2) {
-							defenderCelestial = await _tbotOgameBridge.UpdatePlanet(attackedCelestial, UpdateTypes.Defences);
-							defenderCelestial = await _tbotOgameBridge.UpdatePlanet(attackedCelestial, UpdateTypes.Productions);
+							defenderCelestial = await _tbotOgameBridge.UpdatePlanet(defenderCelestial, UpdateTypes.Defences);
+							defenderCelestial = await _tbotOgameBridge.UpdatePlanet(defenderCelestial, UpdateTypes.Productions);
 							if (defenderCelestial.Productions.Count == 0) {
 								var availableSpace = defenderCelestial.Facilities.MissileSilo - defenderCelestial.Defences.AntiBallisticMissiles - (2 * defenderCelestial.Defences.InterplanetaryMissiles);
-								defenderCelestial = await _tbotOgameBridge.UpdatePlanet(attackedCelestial, UpdateTypes.Resources);
+								defenderCelestial = await _tbotOgameBridge.UpdatePlanet(defenderCelestial, UpdateTypes.Resources);
 								if (availableSpace > 0) {
 									DoLog(LogLevel.Information, $"Building {availableSpace} AntiBallisticMissiles on {defenderCelestial.ToString()}");
 									await _ogameService.BuildDefences(defenderCelestial, Buildables.AntiBallisticMissiles, availableSpace);
@@ -214,10 +256,14 @@ namespace Tbot.Workers {
 				} else {
 					DoLog(LogLevel.Information, "Unable to detect fleet composition.");
 				}
+				var ignoreAttackIfIHaveActive = (bool) _tbotInstance.InstanceSettings.Defender.IgnoreAttackIfIHave.Active;
+				var totalResources = attackedCelestial.Resources?.TotalResources ?? 0;
+				var fleetPoints = attackedCelestial.Ships?.GetFleetPoints() ?? 0;
+
 				if (
-					(bool) _tbotInstance.InstanceSettings.Defender.IgnoreAttackIfIHave.Active &&
-					attackedCelestial.Resources.TotalResources < (long) _tbotInstance.InstanceSettings.Defender.IgnoreAttackIfIHave.MinResourcesToSave &&
-					(attackedCelestial.Ships.GetFleetPoints() *1000) < (long) _tbotInstance.InstanceSettings.Defender.IgnoreAttackIfIHave.MinFleetToSave
+					ignoreAttackIfIHaveActive &&
+					totalResources < (long) _tbotInstance.InstanceSettings.Defender.IgnoreAttackIfIHave.MinResourcesToSave &&
+					(fleetPoints * 1000) < (long) _tbotInstance.InstanceSettings.Defender.IgnoreAttackIfIHave.MinFleetToSave
 				) {
 					DoLog(LogLevel.Information, $"Attack {attack.ID.ToString()} skipped: it's not worth it.");
 					return;
@@ -248,8 +294,12 @@ namespace Tbot.Workers {
 						Coordinate destination = attack.Origin;
 						Ships ships = new() { EspionageProbe = (int) _tbotInstance.InstanceSettings.Defender.SpyAttacker.Probes };
 						int fleetId = await _fleetScheduler.SendFleet(attackedCelestial, ships, destination, Missions.Spy, Speeds.HundredPercent, new Resources(), _tbotInstance.UserData.userInfo.Class);
-						Fleet fleet = _tbotInstance.UserData.fleets.Single(fleet => fleet.ID == fleetId);
-						DoLog(LogLevel.Information, $"Spying attacker from {attackedCelestial.ToString()} to {destination.ToString()} with {_tbotInstance.InstanceSettings.Defender.SpyAttacker.Probes} probes. Arrival at {fleet.ArrivalTime.ToString()}");
+						var fleet = _tbotInstance.UserData.fleets.SingleOrDefault(f => f.ID == fleetId);
+						if (fleet == null) {
+							DoLog(LogLevel.Warning, $"SpyAttacker: SendFleet returned id={fleetId}, but fleet was not found in current fleet list (send may have failed or list not updated yet).");
+						} else {
+							DoLog(LogLevel.Information, $"Spying attacker from {attackedCelestial.ToString()} to {destination.ToString()} with {_tbotInstance.InstanceSettings.Defender.SpyAttacker.Probes} probes. Arrival at {fleet.ArrivalTime.ToString()}");
+						}
 					} catch (Exception e) {
 						DoLog(LogLevel.Error, $"Could not spy attacker: an exception has occurred: {e.Message}");
 						DoLog(LogLevel.Warning, $"Stacktrace: {e.StackTrace}");
@@ -288,6 +338,10 @@ namespace Tbot.Workers {
 					DoLog(LogLevel.Error, $"Could not fleetsave: an exception has occurred: {e.Message}");
 					DoLog(LogLevel.Warning, $"Stacktrace: {e.StackTrace}");
 				}
+			}
+			} catch (Exception e) {
+				DoLog(LogLevel.Error, $"HandleAttack error for attack {attack?.ID}: {e.Message}");
+				DoLog(LogLevel.Warning, $"Stacktrace: {e.StackTrace}");
 			}
 		}
 	}
