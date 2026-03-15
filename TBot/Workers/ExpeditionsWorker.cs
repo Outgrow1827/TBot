@@ -257,7 +257,7 @@ namespace Tbot.Workers {
 
                                     var originExps = origins.ToDictionary(o => o, o => 0);
 
-                                   int remaining = Math.Min(expsToSend, capacity.Values.Sum());
+                                    Int64 remaining = Math.Min(expsToSend, capacity.Values.Sum());
 
                                      while (remaining > 0) {
                                      bool progressed = false;
