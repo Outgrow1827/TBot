@@ -135,7 +135,7 @@ namespace Tbot.Services {
 
 		private Device GetDeviceFromSettings() {
 			return new() {
-				Name = ((string) InstanceSettings.Credentials.DeviceConf.Name).ToUpper(),
+				Name = ((string) InstanceSettings.Credentials.DeviceConf.Name),
 				System = (string) InstanceSettings.Credentials.DeviceConf.System ?? "",
 				Browser = (string) InstanceSettings.Credentials.DeviceConf.Browser ?? "",
 				UserAgent = (string) InstanceSettings.Credentials.DeviceConf.UserAgent ?? "",
@@ -185,7 +185,7 @@ namespace Tbot.Services {
 
 
 			_ogameService.Initialize(GetCredentialsFromSettings(), GetDeviceFromSettings(), proxy, (string) host, int.Parse(port), (string) captchaKey);
-			await _ogameService.SetUserAgent((string) InstanceSettings.Credentials.DeviceConf.UserAgent);
+			await Task.Delay(RandomizeHelper.CalcRandomInterval(IntervalType.AFewSeconds));
 		}
 
 		private async Task ResolveCaptcha() {
@@ -376,6 +376,7 @@ namespace Tbot.Services {
 			long dueTime = feat switch {
 				Feature.Defender => RandomizeHelper.CalcRandomInterval(IntervalType.AFewSeconds),
 				Feature.BrainAutobuildCargo => RandomizeHelper.CalcRandomInterval(IntervalType.AMinuteOrTwo),
+				Feature.BrainAutobuildDefence => RandomizeHelper.CalcRandomInterval(IntervalType.AMinuteOrTwo),
 				Feature.BrainAutoRepatriate => RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds),
 				Feature.BrainAutoMine => RandomizeHelper.CalcRandomInterval(IntervalType.AFewSeconds),
 				Feature.BrainLifeformAutoMine => RandomizeHelper.CalcRandomInterval(IntervalType.AFewSeconds),
@@ -461,10 +462,10 @@ namespace Tbot.Services {
 				}
 
 				if (feature == Feature.BrainAutoRepatriate || feature == Feature.Null) {
-					jsonObj["Brain"]["AutoRepatriate"]["Target"]["Galaxy"] = (int) celestial.Coordinate.Galaxy;
-					jsonObj["Brain"]["AutoRepatriate"]["Target"]["System"] = (int) celestial.Coordinate.System;
-					jsonObj["Brain"]["AutoRepatriate"]["Target"]["Position"] = (int) celestial.Coordinate.Position;
-					jsonObj["Brain"]["AutoRepatriate"]["Target"]["Type"] = type;
+					jsonObj["Brain"]["AutoRepatriate"]["Target"][0]["Galaxy"] = (int) celestial.Coordinate.Galaxy;
+					jsonObj["Brain"]["AutoRepatriate"]["Target"][0]["System"] = (int) celestial.Coordinate.System;
+					jsonObj["Brain"]["AutoRepatriate"]["Target"][0]["Position"] = (int) celestial.Coordinate.Position;
+					jsonObj["Brain"]["AutoRepatriate"]["Target"][0]["Type"] = type;
 				}
 
 				if (feature == Feature.Expeditions || feature == Feature.Null) {
@@ -841,9 +842,8 @@ namespace Tbot.Services {
 			}
 		}
 
-		public void TelegramCollect() {
-			_fleetScheduler.Collect();
-
+		public void TelegramCollect(bool noLimit = false) {
+			_fleetScheduler.Collect(noLimit);
 			return;
 		}
 
@@ -899,7 +899,7 @@ namespace Tbot.Services {
 			if (mode.Equals("auto")) {
 				float cargoBonus = 0;
 				if (origin.LFBonuses != null && origin.LFBonuses.Ships != null && origin.LFBonuses.Ships.Count > 0 && origin.LFBonuses.Ships.ContainsKey((int) Buildables.SmallCargo)) {
-					cargoBonus = origin.LFBonuses.Ships.GetValueOrDefault((int) Buildables.SmallCargo).Cargo;
+					cargoBonus = origin.LFBonuses.Ships.GetValueOrDefault((int) Buildables.SmallCargo).CargoCapacity;
 				}
 				long idealSmallCargo = _helpersService.CalcShipNumberForPayload(payload, Buildables.SmallCargo, userData.researches.HyperspaceTechnology, userData.serverData, cargoBonus, userData.userInfo.Class, userData.serverData.ProbeCargo);
 
@@ -908,7 +908,7 @@ namespace Tbot.Services {
 				} else {
 					cargoBonus = 0;
 					if (origin.LFBonuses != null && origin.LFBonuses.Ships != null && origin.LFBonuses.Ships.Count > 0 && origin.LFBonuses.Ships.ContainsKey((int) Buildables.LargeCargo)) {
-						cargoBonus = origin.LFBonuses.Ships.GetValueOrDefault((int) Buildables.LargeCargo).Cargo;
+						cargoBonus = origin.LFBonuses.Ships.GetValueOrDefault((int) Buildables.LargeCargo).CargoCapacity;
 					}
 					long idealLargeCargo = _helpersService.CalcShipNumberForPayload(payload, Buildables.LargeCargo, userData.researches.HyperspaceTechnology, userData.serverData, cargoBonus, userData.userInfo.Class, userData.serverData.ProbeCargo);
 					if (idealLargeCargo <= origin.Ships.GetAmount(Buildables.LargeCargo)) {
@@ -1444,6 +1444,17 @@ namespace Tbot.Services {
 				return;
 			}
 			_fleetScheduler.RetireFleet(ToRecallFleet);
+		}
+		public async Task TelegramRetireFleetM(Missions mission) {
+			userData.fleets = await _fleetScheduler.UpdateFleets();
+			List<Fleet> ToRecallFleet = userData.fleets.Where(f => f.Mission == mission).ToList();
+			if (ToRecallFleet.Count == 0) {
+				await SendTelegramMessage($"Unable to recall fleet ! No mission ?");
+				return;
+			}
+			foreach (var fleet in ToRecallFleet) {
+				_fleetScheduler.RetireFleet(fleet);
+			}
 		}
 
 		public async Task TelegramMesgAttacker(string message) {

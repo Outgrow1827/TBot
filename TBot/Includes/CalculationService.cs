@@ -18,6 +18,7 @@ using Microsoft.CodeAnalysis.Text;
 using Microsoft.CodeAnalysis.Operations;
 using System.Reflection.Emit;
 using System.Data;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace Tbot.Includes {
 
@@ -154,7 +155,7 @@ namespace Tbot.Includes {
 				default:
 					return 0;
 			}
-			double totalBonus = Math.Round(Math.Round((double) bonus / 100, 2, MidpointRounding.ToZero) + Math.Round((double) buildableCargoBonus / 100, 2, MidpointRounding.ToZero), 2, MidpointRounding.ToZero) - 0.01;
+			double totalBonus = Math.Round(Math.Round((double) bonus / 100, 2, MidpointRounding.ToZero) + Math.Round((double) buildableCargoBonus, 2, MidpointRounding.ToZero), 2, MidpointRounding.ToZero) - 0.01;
 			int output = (int) Math.Floor((double) baseCargo + (double) (baseCargo * totalBonus));
 			return output;
 		}
@@ -310,7 +311,7 @@ namespace Tbot.Includes {
 				default:
 					return 0;
 			}
-			var output = ((float) baseSpeed * (lfBonus / 100)) + ((float) baseSpeed * ((float) bonus + 10) / 10);
+			var output = ((float) baseSpeed * (lfBonus)) + ((float) baseSpeed * ((float) bonus + 10) / 10);
 			return (int) Math.Round(output, MidpointRounding.ToZero);
 		}
 
@@ -366,7 +367,7 @@ namespace Tbot.Includes {
 			int baseConsumption;
 			switch (buildable) {
 				case Buildables.SmallCargo:
-					baseConsumption = 20;
+					baseConsumption = 10;
 					if (impulseDrive >= 5)
 						baseConsumption *= 2;
 					break;
@@ -389,7 +390,7 @@ namespace Tbot.Includes {
 					baseConsumption = 1000;
 					break;
 				case Buildables.Recycler:
-					baseConsumption = 2000;
+					baseConsumption = 300;
 					if (hyperspaceDrive >= 15)
 						baseConsumption *= 3;
 					else if (impulseDrive >= 17)
@@ -421,7 +422,7 @@ namespace Tbot.Includes {
 				default:
 					return 0;
 			}
-			double fuelConsumption = (double) deuteriumSaveFactor * (double) baseConsumption * (1 - lfBonus / 100);
+			double fuelConsumption = (double) deuteriumSaveFactor * (double) baseConsumption * (1 - lfBonus);
 			if (playerClass == CharacterClass.General)
 				fuelConsumption /= 2;
 			fuelConsumption = Math.Round(fuelConsumption);
@@ -594,7 +595,7 @@ namespace Tbot.Includes {
 			float topOnePoints = serverData.TopScore;
 			float buildableCargoBonus = 0;
 			if (shipBonus != null && shipBonus.Count > 0 && shipBonus.ContainsKey((int) buildable)) {
-				buildableCargoBonus = shipBonus.GetValueOrDefault((int) buildable).Cargo;
+				buildableCargoBonus = shipBonus.GetValueOrDefault((int) buildable).CargoCapacity;
 			}
 			int freightCap;
 			if (topOnePoints < 10000)
@@ -622,7 +623,7 @@ namespace Tbot.Includes {
 				freightCap *= 2;
 
 			if(expeditionResourcesBonus > 0)
-				freightCap += (int) Math.Round((float) freightCap * expeditionResourcesBonus / 100, MidpointRounding.ToPositiveInfinity);
+				freightCap += (int) Math.Round((float) freightCap * expeditionResourcesBonus, MidpointRounding.ToPositiveInfinity);
 
 			int oneCargoCapacity = CalcShipCapacity(buildable, hyperspaceTech, serverData, buildableCargoBonus, playerClass, probeCargo);
 			int cargoNumber = (int) Math.Round((float) freightCap / (float) oneCargoCapacity, MidpointRounding.ToPositiveInfinity);
@@ -662,7 +663,8 @@ namespace Tbot.Includes {
 					long availableVal = (long) prop.GetValue(fleet);
 					long idealVal = (long) prop.GetValue(ideal);
 					if (availableVal < idealVal * expeditionsNumber) {
-						long realVal = (long) Math.Round(((float) availableVal / (float) expeditionsNumber), MidpointRounding.AwayFromZero);
+						//long realVal = (long) Math.Round(((float) availableVal / (float) expeditionsNumber), MidpointRounding.AwayFromZero);
+						long realVal = (long) Math.Floor(((float) availableVal / (float) expeditionsNumber));
 						prop.SetValue(ideal, realVal);
 					}
 				}
@@ -671,7 +673,7 @@ namespace Tbot.Includes {
 		}
 
 		public Ships CalcExpeditionShips(Ships fleet, Buildables primaryShip, int expeditionsNumber, ServerData serverdata, Researches researches, LFBonuses LFBonuses, CharacterClass playerClass = CharacterClass.NoClass, int probeCargo = 0) {
-			return CalcExpeditionShips(fleet, primaryShip, expeditionsNumber, researches.HyperspaceTechnology, LFBonuses.Expeditions.Resources, LFBonuses.Ships, serverdata, playerClass, probeCargo);
+			return CalcExpeditionShips(fleet, primaryShip, expeditionsNumber, researches.HyperspaceTechnology, LFBonuses.LfResourceBonuses.ResourcesExpedition, LFBonuses.LfShipBonusesInt, serverdata, playerClass, probeCargo);
 		}
 
 		public bool MayAddShipToExpedition(Ships fleet, Buildables buildable, int expeditionsNumber) {
@@ -1226,12 +1228,12 @@ namespace Tbot.Includes {
 			}
 
 			if (lfBonuses != null) {
-				float reduction = 0; 
-				if (lfBonuses.Buildings.Keys.Any(b => b == (int) buildable)) {
-					reduction = lfBonuses.Buildings[(int) buildable].Cost;
+				float reduction = 0;
+				if (lfBonuses.CostTimeBonusesInt.Keys.Any(b => b == (int) buildable)) {
+					reduction = lfBonuses.CostTimeBonusesInt[(int) buildable].Cost;
 				}
-				else if (lfBonuses.Researches.Keys.Any(b => b == (int) buildable)) {
-					reduction = lfBonuses.Researches[(int) buildable].Cost;
+				else if (lfBonuses.CostTimeBonusesInt.Keys.Any(b => b == (int) buildable)) {
+					reduction = lfBonuses.CostTimeBonusesInt[(int) buildable].Cost;
 				}
 				output.Metal = (long) (output.Metal - (output.Metal * reduction));
 				output.Crystal = (long) (output.Crystal - (output.Crystal * reduction));
@@ -1612,8 +1614,8 @@ namespace Tbot.Includes {
 					metalBaseCost = 6;
 					crystalbaseCost = 3;
 					energyBaseCost = 9;
-					metalFactor = 1.21;
-					crystalFactor = 1.21;
+					metalFactor = 1.20;
+					crystalFactor = 1.20;
 					energyFactor = 1.02;
 					break;
 				case LFBuildables.VortexChamber:
@@ -3027,6 +3029,29 @@ namespace Tbot.Includes {
 			return output;
 		}
 
+		public Defences CalcmaxDefencesBuildable(Defences defences, Resources resources) {
+			Defences output = new();
+			Dictionary<Buildables, long> defenceTypes = defences.GetDefenceTypesWithAmount();
+			Resources resourcesLeft = resources;
+
+			bool canBuild = true;
+			while (canBuild) {
+				canBuild = false;
+				foreach (var (defenceType, amountNeeded) in defenceTypes) {
+					if (amountNeeded <= 0)
+						continue;
+					Resources unitCost = CalcPrice(defenceType, 1);
+					if (resourcesLeft.IsEnoughFor(unitCost)) {
+						output.Add(defenceType.ToString(), 1);
+						resourcesLeft = resourcesLeft.Difference(unitCost);
+						defenceTypes[defenceType]--;
+						canBuild = true;
+					}
+				}
+			}
+			return output;
+		}
+
 		public long GetRequiredEnergyDelta(Buildables buildable, int level) {
 			if (buildable == Buildables.MetalMine || buildable == Buildables.CrystalMine || buildable == Buildables.DeuteriumSynthesizer) {
 				if (level > 1) {
@@ -3100,12 +3125,15 @@ namespace Tbot.Includes {
 
 		public int GetNextLevel(Celestial planet, LFTechno buildable) {
 			int output = 0;
-			if (planet is Planet) {
-				foreach (PropertyInfo prop in planet.LFTechs.GetType().GetProperties()) {
-					if (prop.Name == buildable.ToString()) {
-						output = (int) prop.GetValue(planet.LFTechs) + 1;
-					}
+			if (buildable is LFTechno.None) {
+				return output;
+			}
+			if (planet is Celestial) {
+				int? level = planet.LFTechs.GetLevel(buildable);
+				if (level is null) {
+					return output;
 				}
+				output = planet.LFTechs.GetLevel(buildable) + 1;
 			}
 			return output;
 		}
@@ -4041,15 +4069,16 @@ namespace Tbot.Includes {
 			//TODO
 			//As planets can have any lifeform techs, its complicated to find which techs are existing on a planet if the techs are not at least level 1
 			//Therefore, for the moment, up only techs that are minimum level 1, its a way to also allows player to chose which research to up
-			foreach (PropertyInfo prop in celestial.LFTechs.GetType().GetProperties()) {
-				foreach (LFTechno nextLFTech in Enum.GetValues<LFTechno>()) {
-					if ((int) prop.GetValue(celestial.LFTechs) > 0 && GetNextLevel(celestial, nextLFTech) <= MaxReasearchLevel.GetLevel(nextLFTech) && prop.Name == nextLFTech.ToString()) {
-						//Console.WriteLine($"-----------------------------> {nextLFTech}: {GetNextLevel(celestial, nextLFTech)} / {MaxReasearchLevel.GetLevel(nextLFTech)}");
-						return nextLFTech;
-					}
-
+			foreach (LFTechno nextLFTech in Enum.GetValues<LFTechno>()) {
+				int? level = celestial.LFTechs.GetLevel(nextLFTech);
+				if (level is null) {
+						continue;
 				}
 
+				if (level > 0 && GetNextLevel(celestial, nextLFTech) <= MaxReasearchLevel.GetLevel(nextLFTech)) {
+					//Console.WriteLine($"-----------------------------> {nextLFTech}: {GetNextLevel(celestial, nextLFTech)} / {MaxReasearchLevel.GetLevel(nextLFTech)}");
+					return nextLFTech;
+				}
 			}
 			return LFTechno.None;
 		}
@@ -4057,20 +4086,24 @@ namespace Tbot.Includes {
 		public LFTechno GetLessExpensiveLFTechToBuild(Celestial celestial, Resources currentcost, LFTechs MaxReasearchLevel, double costReduction = 0) {
 			LFTechno nextLFtech = LFTechno.None;
 			Resource nextLFtechcost = new();
-			foreach (PropertyInfo prop in celestial.LFTechs.GetType().GetProperties()) {
-				foreach (LFTechno next in Enum.GetValues<LFTechno>()) {
-					if ((int) prop.GetValue(celestial.LFTechs) > 0 && GetNextLevel(celestial, next) <= MaxReasearchLevel.GetLevel(next) && prop.Name == next.ToString()) {
-						//Console.WriteLine($"-----------------------------> {next}: {GetNextLevel(celestial, next)} / {MaxReasearchLevel.GetLevel(next)}");
-						var nextLFtechlvl = GetNextLevel(celestial, next);
-						Resources newcost = CalcPrice(next, nextLFtechlvl, costReduction);
-						if (newcost.ConvertedDeuterium < currentcost.ConvertedDeuterium) {
-							currentcost = newcost;
-							nextLFtech = next;
-						}
-					}
-
+			foreach (LFTechno next in Enum.GetValues<LFTechno>()) {
+				if (next is LFTechno.None) {
+					continue;
+				}
+				int? level = celestial.LFTechs.GetLevel(next);
+				if (level is null) {
+					continue;
 				}
 
+				if (level > 0 && GetNextLevel(celestial, next) <= MaxReasearchLevel.GetLevel(next)) {
+					//Console.WriteLine($"-----------------------------> {next}: {GetNextLevel(celestial, next)} / {MaxReasearchLevel.GetLevel(next)}");
+					var nextLFtechlvl = GetNextLevel(celestial, next);
+					Resources newcost = CalcPrice(next, nextLFtechlvl, costReduction);
+					if (newcost.ConvertedDeuterium < currentcost.ConvertedDeuterium) {
+						currentcost = newcost;
+						nextLFtech = next;
+					}
+				}
 			}
 			return nextLFtech;
 		}
@@ -4408,11 +4441,15 @@ namespace Tbot.Includes {
 			return ShouldResearchEnergyTech(planets, researches.EnergyTechnology, maxEnergyTech, playerClass, hasEngineer, hasStaff);
 		}
 
-		public Buildables GetNextResearchToBuild(Planet celestial, Researches researches, bool prioritizeRobotsAndNanitesOnNewPlanets = false, Slots slots = null, int maxEnergyTechnology = 20, int maxLaserTechnology = 12, int maxIonTechnology = 5, int maxHyperspaceTechnology = 20, int maxPlasmaTechnology = 20, int maxCombustionDrive = 19, int maxImpulseDrive = 17, int maxHyperspaceDrive = 15, int maxEspionageTechnology = 8, int maxComputerTechnology = 20, int maxAstrophysics = 23, int maxIntergalacticResearchNetwork = 12, int maxWeaponsTechnology = 25, int maxShieldingTechnology = 25, int maxArmourTechnology = 25, bool optimizeForStart = true, bool ensureExpoSlots = true, CharacterClass playerClass = CharacterClass.NoClass, bool hasGeologist = false, bool hasAdmiral = false) {
-			if (ShouldBuildResearchLab(celestial, 12, researches))
+		public Buildables GetNextResearchToBuild(Planet celestial, Researches researches, bool prioritizeRobotsAndNanitesOnNewPlanets = false, Slots slots = null, int maxEnergyTechnology = 20, int maxLaserTechnology = 12, int maxIonTechnology = 5, int maxHyperspaceTechnology = 20, int maxPlasmaTechnology = 20, int maxCombustionDrive = 19, int maxImpulseDrive = 17, int maxHyperspaceDrive = 15, int maxEspionageTechnology = 8, int maxComputerTechnology = 20, int maxAstrophysics = 23, int maxIntergalacticResearchNetwork = 12, int maxWeaponsTechnology = 25, int maxShieldingTechnology = 25, int maxArmourTechnology = 25, bool optimizeForStart = true, bool ensureExpoSlots = true, bool ForceResearchWhateverTheLabLevel = false, CharacterClass playerClass = CharacterClass.NoClass, bool hasGeologist = false, bool hasAdmiral = false) {
+			if (ShouldBuildResearchLab(celestial, 12, researches) && !ForceResearchWhateverTheLabLevel) {
+				_logger.WriteLog(LogLevel.Information, LogSender.Tbot, $"Skipping AutoResearch: Can't build any research, Research Lab need to be upgraded first (actually cheaper than the next mine).");
 				return Buildables.Null;
+			}
 
 			if (optimizeForStart) {
+				if (researches.ComputerTechnology < 6 && celestial.Facilities.ResearchLab >= 1 && researches.Astrophysics > 1 && researches.ComputerTechnology < maxComputerTechnology)
+					return Buildables.ComputerTechnology;
 				if (researches.EnergyTechnology == 0 && celestial.Facilities.ResearchLab > 0 && researches.EnergyTechnology < maxEnergyTechnology)
 					return Buildables.EnergyTechnology;
 				if (researches.CombustionDrive < 2 && celestial.Facilities.ResearchLab > 0 && researches.EnergyTechnology >= 1 && researches.CombustionDrive < maxCombustionDrive)
@@ -4740,11 +4777,13 @@ namespace Tbot.Includes {
 			return researches == null ? 1 : CalcMaxPlanets(researches.Astrophysics);
 		}
 
-		public bool CalcLimitAstro(int pos, Researches researches) {
-			return ((pos >= 4 && pos <= 13 && (int)researches.Astrophysics >= 4) ||
-				(pos >= 2 && pos <= 14 && (int)researches.Astrophysics >= 6) ||
-				(pos >= 1 && pos <= 15 && (int)researches.Astrophysics >= 8));
-		}
+		public bool IsAstrophysicsPositionValid(int pos, int astrophysics) => astrophysics switch {
+			8 => pos >= 1 && pos <= 15,
+			7 or 6 => pos >= 2 && pos <= 14,
+			5 or 4 => pos >= 3 && pos <= 13,
+			3 or 2 or 1 => pos >= 4 && pos <= 12,
+			_ => true
+		};
 
 		public int CalcMaxCrawlers(Planet planet, CharacterClass userClass, bool hasGeologist) {
 			if (userClass == CharacterClass.Collector && hasGeologist) {
@@ -4805,6 +4844,225 @@ namespace Tbot.Includes {
 				.Where(planet => planet.Fields.Total >= minSlots)
 				.Where(planet => (planet as Planet).Temperature.Max >= minTemperature && (planet as Planet).Temperature.Max <= maxTemperature)
 				.Count();
+		}
+
+		public bool	IsThereMoonHere(List<Celestial> planets, Celestial celestial) {
+			Celestial moon = planets.SingleOrDefault(
+				c => c.HasCoords(new(
+					(int) celestial.Coordinate.Galaxy,
+					(int) celestial.Coordinate.System,
+					(int) celestial.Coordinate.Position,
+					Celestials.Moon
+				)
+			)) ?? new() { ID = 0 };
+				/*.Where(c => c.Coordinate.Galaxy == (int) celestial.Coordinate.Galaxy)
+				.Where(c => c.Coordinate.System == (int) celestial.Coordinate.System)
+				.Where(c => c.Coordinate.Position == (int) celestial.Coordinate.Position)
+				.Where(c => c.Coordinate.Type == Celestials.Moon)
+				.SingleOrDefault() ?? new() { ID = 0 };*/
+
+			return moon.ID == 0 ? false: true;
+		}
+
+		public int CalcSlotsPriority(Feature feature, List<RankSlotsPriority> rankSlotsPriority, Slots slots, List<Fleet> fleets, int slotsToLeaveFree = 0) {
+			LogSender logsender;
+			switch (feature) {
+				case Feature.BrainAutoMine: logsender = LogSender.AutoMine; break;
+				case Feature.BrainAutoResearch: logsender = LogSender.AutoResearch; break;
+				case Feature.BrainLifeformAutoMine: logsender = LogSender.LifeformsAutoMine; break;
+				case Feature.BrainLifeformAutoResearch: logsender = LogSender.LifeformsAutoResearch; break;
+				case Feature.Expeditions: logsender = LogSender.Expeditions; break;
+				case Feature.AutoFarm: logsender = LogSender.AutoFarm; break;
+				case Feature.Colonize: logsender = LogSender.Colonize; break;
+				case Feature.AutoDiscovery: logsender = LogSender.AutoDiscovery; break;
+				case Feature.Harvest: logsender = LogSender.Harvest; break;
+				default: logsender = LogSender.FleetScheduler; break;
+			}
+			RankSlotsPriority actualFeature = rankSlotsPriority.Single(f => f.Feature == feature);
+			int slotsAvailable = 0;
+			int reservedSlots = 0;
+			int usedSlots = 0;
+			int otherSlots = fleets.Count(fleet =>
+				fleet.Mission != Missions.Transport &&
+				fleet.Mission != Missions.Expedition &&
+				fleet.Mission != Missions.Spy &&
+				fleet.Mission != Missions.Attack &&
+				fleet.Mission != Missions.Colonize &&
+				fleet.Mission != Missions.Discovery &&
+				fleet.Mission != Missions.Harvest);
+				
+			if (actualFeature.MaxSlots - actualFeature.SlotsUsed <= 0) {
+				_logger.WriteLog(LogLevel.Information, logsender, $"All slots for feature {feature} are already used ({actualFeature.SlotsUsed}/{actualFeature.MaxSlots}).");
+				return 0;
+			}
+
+			if (actualFeature.Rank > 0) {
+				reservedSlots = rankSlotsPriority.Where(fp => fp.Active)
+														.Where(fp => fp.Rank > 0)
+														.Where(fp => fp.Rank < actualFeature.Rank)
+														.Sum(fp => fp.MaxSlots);
+				usedSlots = rankSlotsPriority.Where(fp => fp.Active)
+														.Where(fp => fp.Rank > actualFeature.Rank)
+														.Sum(fp => fp.SlotsUsed);
+				otherSlots += rankSlotsPriority.Where(fp => !fp.Active)
+														.Sum(fp => fp.SlotsUsed);
+				slotsAvailable = slots.Total - slotsToLeaveFree - reservedSlots - usedSlots - otherSlots < 0 ? 0 : slots.Total - slotsToLeaveFree - reservedSlots - usedSlots - otherSlots;
+			} else {
+				slotsAvailable = slots.Free - slotsToLeaveFree < 0 ? 0 : slots.Free - slotsToLeaveFree;
+			}
+			if (slotsAvailable <= 0) {
+				_logger.WriteLog(LogLevel.Information, logsender, $"No slots available for feature {feature}. Slots available: {slotsAvailable}.");
+				return 0;
+			} else {
+				if (actualFeature.Rank > 0) {
+					_logger.WriteLog(LogLevel.Information, logsender, $"Slots Total: {slots.Total}, Reserved: {reservedSlots + slotsToLeaveFree}, Other: {usedSlots + otherSlots}. Available: {slotsAvailable}.");
+					if (slotsAvailable < actualFeature.MaxSlots) {
+						_logger.WriteLog(LogLevel.Information, logsender, $"Less slots available ({slotsAvailable}) than maximum usable slots ({actualFeature.MaxSlots}). Stepping down to usable slots.");
+						actualFeature.MaxSlots = slotsAvailable;
+					}
+					slotsAvailable = Math.Min(slotsAvailable, actualFeature.MaxSlots - actualFeature.SlotsUsed);
+					_logger.WriteLog(LogLevel.Information, logsender, $"{feature} will use {slotsAvailable} slots ({actualFeature.SlotsUsed}/{actualFeature.MaxSlots} already used).");
+				} else {
+					_logger.WriteLog(LogLevel.Information, logsender, $"{feature} has no rank and can use all available slots: {slotsAvailable}.");
+				}
+			}
+
+			return slotsAvailable;
+		}
+
+		public List<Dictionary<Celestial, Resources>> CalcMultipleOrigin(Celestial celestialToBuild, List<Celestial> allCelestials, Resources missingResources, TransportSettings transportSettings, List<Fleet> fleets, UserData userData) {
+			if (missingResources.TotalResources < transportSettings.MultipleOrigin.MinimumResourcesToSend) {
+				_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Skipping transport: missing resources {missingResources.TransportableResources} is less than minimum {transportSettings.MultipleOrigin.MinimumResourcesToSend}");
+				return new();
+			}
+			List<Dictionary<Celestial, Resources>> result = new();
+			bool roundRes = transportSettings.RoundResources;
+			Resources resources = new();
+			List<Celestial> closestCelestials = transportSettings.MultipleOrigin.OnlyFromMoons ?
+				allCelestials
+					.Where(planet => !transportSettings.MultipleOrigin.Exclude.Has(planet))
+					.Where(planet => planet.Resources.TotalResources > 0)
+					.Where(planet => planet.Coordinate.Type == Celestials.Moon)
+					.OrderByDescending(planet => planet.Coordinate.Type == Celestials.Moon)
+					.ToList():
+				allCelestials
+					.Where(c => !transportSettings.MultipleOrigin.Exclude.Has(c))
+					.Where(c => c.Resources.TotalResources > 0)
+					.ToList();
+
+			Resources TotalResources = closestCelestials.Aggregate(new Resources(), (total, celestial) => total.Sum(celestial.Resources.Difference(new Resources(0, 0, transportSettings.DeutToLeave))) );
+			if (!TotalResources.IsEnoughFor(missingResources)) {
+				_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Not enough resources available on all celestials: Needed: {missingResources.TransportableResources} - Available: {TotalResources.TransportableResources}");
+				return new();
+			} else {
+				_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Enough resources available on all celestials: Needed: {missingResources.TransportableResources} - Available: {TotalResources.TransportableResources}");
+			}
+
+			closestCelestials = transportSettings.MultipleOrigin.PriorityToProximityOverQuantity ? 
+				closestCelestials.OrderBy(c => CalcDistance(c.Coordinate, celestialToBuild.Coordinate, userData.serverData)).ToList() :
+				closestCelestials.OrderByDescending(c => c.Resources.TotalResources).ToList();
+
+			Celestial destination = celestialToBuild;
+			if ((bool) transportSettings.SendToTheMoonIfPossible && celestialToBuild.Coordinate.Type == Celestials.Planet && IsThereMoonHere(allCelestials, celestialToBuild) && (!celestialToBuild.Ships.IsEmpty() || celestialToBuild.Resources.TotalResources > 0)) {
+				destination = allCelestials.Unique()
+					.Single(c => c.HasCoords(new(
+							(int) celestialToBuild.Coordinate.Galaxy,
+							(int) celestialToBuild.Coordinate.System,
+							(int) celestialToBuild.Coordinate.Position,
+							Celestials.Moon
+						)
+					));
+				destination.Resources = roundRes ? destination.Resources.Round() : destination.Resources;
+				if (destination.Resources.IsEnoughFor(missingResources)) {
+					if (destination.Ships.GetAmount(transportSettings.CargoType) >= CalcShipNumberForPayload(missingResources, transportSettings.CargoType, userData.researches.HyperspaceTechnology, userData.serverData, destination.LFBonuses.GetShipCargoBonus(transportSettings.CargoType), userData.userInfo.Class, userData.serverData.ProbeCargo)) {
+						result.Add(new Dictionary<Celestial, Resources> { { destination, missingResources } } );
+						return result;
+					} else if (transportSettings.DoMultipleTransportIsNotEnoughShipButSamePosition) {
+						result.Add(new Dictionary<Celestial, Resources> { { destination, CalcMaxTransportableResources(destination.Ships, missingResources, userData.researches.HyperspaceTechnology, userData.serverData, destination.LFBonuses, userData.userInfo.Class, 0, userData.serverData.ProbeCargo) } } );
+						return result;
+					} else {
+						_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Enough Resources on {destination.ToString()}, but not enough transporters and \"DoMultipleTransportIsNotEnoughShipButSamePosition\" is false.");
+						return new();
+					}
+				} else {
+					missingResources = missingResources.Difference(destination.Resources);
+				}
+			} else {
+				destination = celestialToBuild;
+			}
+			closestCelestials = closestCelestials.Where(c => !c.Coordinate.IsSame(destination.Coordinate))
+				.Where(c => !IsThereTransportTowardsCelestial(c, fleets))
+				.ToList();
+			if (closestCelestials.Count() == 0) {
+				_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Skipping transport: no celestial available");
+				return new();
+			}
+			if (IsThereTransportTowardsCelestial(destination, fleets)) {
+				_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Skipping transport: there is already a transport incoming in {destination.ToString()}");
+				return new();
+			}
+			TotalResources = closestCelestials.Aggregate(new Resources(), (total, celestial) => {
+				if (celestial.Resources.TotalResources < transportSettings.MultipleOrigin.MinimumResourcesToSend || celestial.Resources.TotalResources == 0)
+					return total;
+				if (celestial.Ships.GetAmount(transportSettings.CargoType) >= CalcShipNumberForPayload(celestial.Resources.Difference(new Resources(0, 0, transportSettings.DeutToLeave)), transportSettings.CargoType, userData.researches.HyperspaceTechnology, userData.serverData, celestial.LFBonuses.GetShipCargoBonus(transportSettings.CargoType), userData.userInfo.Class, userData.serverData.ProbeCargo)) {
+					return total.Sum(celestial.Resources.Difference(new Resources(0, 0, transportSettings.DeutToLeave)));
+				} else {
+					Ships ships = new();
+					ships.Add(transportSettings.CargoType, celestial.Ships.GetAmount(transportSettings.CargoType));
+					Resources res = CalcMaxTransportableResources(ships, missingResources.Difference(total), userData.researches.HyperspaceTechnology, userData.serverData, celestial.LFBonuses, userData.userInfo.Class, 0, userData.serverData.ProbeCargo);
+					return total.Sum(res);
+				}
+			} );
+			if (!TotalResources.IsEnoughFor(missingResources)) {
+				_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Not enough resources available on all celestials: Needed: {missingResources.TransportableResources} - Available: {TotalResources.TransportableResources}");
+				return new();
+			}
+
+			for (int i = 0; i < closestCelestials.Count(); i++) {
+				Celestial cel = closestCelestials[i];
+				Resources celResources = cel.Resources.Difference(new Resources(0, 0, transportSettings.DeutToLeave));
+				if (resources.Sum(celResources).IsEnoughFor(missingResources)) {
+					celResources = roundRes ? missingResources.Difference(resources).Round() : missingResources.Difference(resources);
+				} else {
+					celResources = roundRes ?
+						celResources.Difference(celResources.Difference(missingResources.Difference(resources))).Round():
+						celResources.Difference(celResources.Difference(missingResources.Difference(resources)));
+				}
+				if (celResources.TotalResources < transportSettings.MultipleOrigin.MinimumResourcesToSend || celResources.TotalResources == 0) {
+					_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Skipping transport from {cel.ToString()}: resources under minimum threshold ({celResources.TotalResources} < {transportSettings.MultipleOrigin.MinimumResourcesToSend})");
+					continue;
+				}
+				if (cel.Ships.GetAmount(transportSettings.CargoType) >= CalcShipNumberForPayload(celResources, transportSettings.CargoType, userData.researches.HyperspaceTechnology, userData.serverData, cel.LFBonuses.GetShipCargoBonus(transportSettings.CargoType), userData.userInfo.Class, userData.serverData.ProbeCargo)) {
+					resources = resources.Sum(celResources);
+					result.Add(new Dictionary<Celestial, Resources> { { cel, celResources } } );
+				} else {
+					if (i < closestCelestials.Count() - 1) {
+						Ships ships = new();
+						ships.Add(transportSettings.CargoType, cel.Ships.GetAmount(transportSettings.CargoType));
+						Resources res = CalcMaxTransportableResources(ships, celResources, userData.researches.HyperspaceTechnology, userData.serverData, cel.LFBonuses, userData.userInfo.Class, 0, userData.serverData.ProbeCargo);
+						resources = resources.Sum(res);
+						celResources = res;
+						if (celResources.TotalResources == 0)
+							continue;
+						result.Add(new Dictionary<Celestial, Resources> { { cel, celResources } } );
+					} else {
+						_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Not enough resources transportable");
+						return new();
+					}
+				}
+				_logger.WriteLog(LogLevel.Information, LogSender.Tbot, $"Sending resources from: {cel.Coordinate.ToString()} to {destination.Coordinate.ToString()} - Resources: {celResources.TransportableResources}");
+				if (resources.IsEnoughFor(missingResources)) {
+					_logger.WriteLog(LogLevel.Information, LogSender.Tbot, $"{result.Count()} transports will be send to {destination.ToString()}");
+					return result;
+				}
+			}
+			if (resources.IsEnoughFor(missingResources)) {
+				_logger.WriteLog(LogLevel.Information, LogSender.Tbot, $"{result.Count()} transports will be send to {destination.ToString()}");
+				return result;
+			} else {
+				_logger.WriteLog(LogLevel.Information, LogSender.Tbot, $"Not enough resources transportable");
+				return new();
+			}
 		}
 	}
 }

@@ -141,9 +141,53 @@ namespace Tbot.Workers {
 						newCelestials.Add(tempCelestial);
 					}
 					_tbotInstance.UserData.celestials = newCelestials;
+					_tbotInstance.UserData.slots = await _tbotOgameBridge.UpdateSlots();
+					_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
+					List<RankSlotsPriority> rankSlotsPriority = new() {
+						new RankSlotsPriority(Feature.BrainAutoMine,
+							(int) _tbotInstance.InstanceSettings.General.SlotPriorityLevel.Brain,
+							((bool) _tbotInstance.InstanceSettings.Brain.Active && (bool) _tbotInstance.InstanceSettings.Brain.Transports.Active && ((bool) _tbotInstance.InstanceSettings.Brain.AutoMine.Active || (bool) _tbotInstance.InstanceSettings.Brain.AutoResearch.Active || (bool) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.Active || (bool) _tbotInstance.InstanceSettings.Brain.LifeformAutoResearch.Active)),
+							(int) _tbotInstance.InstanceSettings.Brain.Transports.MaxSlots,
+							(int) _tbotInstance.UserData.fleets.Count(f => f.Mission == Missions.Transport)),
+						new RankSlotsPriority(Feature.Expeditions,
+							(int) _tbotInstance.InstanceSettings.General.SlotPriorityLevel.Expeditions,
+							(bool) _tbotInstance.InstanceSettings.Expeditions.Active,
+							(int) _tbotInstance.UserData.slots.ExpTotal,
+							(int)_tbotInstance.UserData.slots.ExpInUse),
+						new RankSlotsPriority(Feature.AutoFarm,
+							(int) _tbotInstance.InstanceSettings.General.SlotPriorityLevel.AutoFarm,
+							(bool) _tbotInstance.InstanceSettings.AutoFarm.Active,
+							(int) _tbotInstance.InstanceSettings.AutoFarm.MaxSlots,
+							(int) _tbotInstance.UserData.fleets.Count(f => f.Mission == Missions.Attack)),
+						new RankSlotsPriority(Feature.Colonize,
+							(int) _tbotInstance.InstanceSettings.General.SlotPriorityLevel.Colonize,
+							(bool) _tbotInstance.InstanceSettings.AutoColonize.Active,
+							(bool) _tbotInstance.InstanceSettings.AutoColonize.IntensiveResearch.Active ?
+								(int) _tbotInstance.InstanceSettings.AutoColonize.IntensiveResearch.MaxSlots :
+								1,
+							(int) _tbotInstance.UserData.fleets.Count(f => f.Mission == Missions.Colonize)),
+						new RankSlotsPriority(Feature.AutoDiscovery,
+							(int) _tbotInstance.InstanceSettings.General.SlotPriorityLevel.AutoDiscovery,
+							(bool) _tbotInstance.InstanceSettings.AutoDiscovery.Active,
+							(int) _tbotInstance.InstanceSettings.AutoDiscovery.MaxSlots,
+							(int) _tbotInstance.UserData.fleets.Count(f => f.Mission == Missions.Discovery)),
+						new RankSlotsPriority(Feature.Harvest,
+							(int) _tbotInstance.InstanceSettings.General.SlotPriorityLevel.AutoHarvest,
+							(bool) _tbotInstance.InstanceSettings.AutoHarvest.Active,
+							(int) _tbotInstance.InstanceSettings.AutoHarvest.MaxSlots,
+							(int) _tbotInstance.UserData.fleets.Count(f => f.Mission == Missions.Harvest))
+					};
+					int MaxSlots = _calculationService.CalcSlotsPriority(Feature.Harvest, rankSlotsPriority, _tbotInstance.UserData.slots, _tbotInstance.UserData.fleets, (int) _tbotInstance.InstanceSettings.General.SlotsToLeaveFree);
 
 					if (dic.Count() == 0)
 						DoLog(LogLevel.Information, "Skipping harvest: there are no fields to harvest.");
+
+					if (dic.Count() > MaxSlots) {
+						var pairsToRemove = dic.Take(dic.Count() - MaxSlots);
+						foreach (var pair in pairsToRemove) {
+							dic.Remove(pair.Key);
+						}
+					}
 
 					foreach (Coordinate destination in dic.Keys) {
 						var fleetId = (int) SendFleetCode.GenericError;

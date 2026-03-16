@@ -10,10 +10,10 @@ namespace TBot.Ogame.Infrastructure.Models {
 		public float Size { get; set; }
         public float Chance { get; set; }
 
-		public LFBonusesMoons() {
-			Fields = 0;
-			Size = 0;
-			Chance = 0;
+		public LFBonusesMoons(float fields = 0, float size = 0, float chance = 0) {
+			Fields = fields;
+			Size = size;
+			Chance = chance;
 		}
     }
 }

@@ -130,7 +130,7 @@ namespace Tbot.Workers
 
 		public async Task<List<Celestial>> UpdatePlanets(UpdateTypes UpdateTypes = UpdateTypes.Full) {
 			// log(LogLevel.Information, LogSender.Tbot, $"Updating userData.celestials... Mode: {UpdateTypes.ToString()}");
-			List<Celestial> localPlanets = await GetPlanets();
+			List<Celestial> localPlanets = (await GetPlanets()).ToList();
 			List<Celestial> newPlanets = new();
 			try {
 				foreach (Celestial planet in localPlanets) {
@@ -239,7 +239,7 @@ namespace Tbot.Workers
 
 		public async Task<List<Celestial>> UpdateCelestials() {
 			try {
-				return await _ogameService.GetCelestials();
+				return (await _ogameService.GetCelestials()).ToList();
 			} catch (Exception e) {
 				_tbotInstance.log(LogLevel.Debug, LogSender.Tbot, $"UpdateCelestials() Exception: {e.Message}");
 				_tbotInstance.log(LogLevel.Warning, LogSender.Tbot, $"Stacktrace: {e.StackTrace}");

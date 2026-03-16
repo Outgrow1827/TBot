@@ -42,6 +42,7 @@ namespace Tbot.Workers {
 			ITBotWorker newWorker = feat switch {
 				Feature.Defender => new DefenderWorker(tbotMainInstance, _ogameService, _fleetScheduler, tbotOgameBridge),
 				Feature.BrainAutobuildCargo => new AutoCargoWorker(tbotMainInstance, _ogameService, _fleetScheduler, _calculationService, tbotOgameBridge),
+				Feature.BrainAutobuildDefence => new AutoDefenceWorker(tbotMainInstance, _ogameService, _fleetScheduler, _calculationService, tbotOgameBridge),
 				Feature.BrainAutoRepatriate => new AutoRepatriateWorker(tbotMainInstance, _fleetScheduler, _calculationService, tbotOgameBridge),
 				Feature.BrainAutoMine => new AutoMineWorker(tbotMainInstance, _ogameService, _fleetScheduler, _calculationService, tbotOgameBridge, this),
 				Feature.BrainOfferOfTheDay => new BuyOfferOfTheDayWorker(tbotMainInstance, _ogameService, tbotOgameBridge),
@@ -105,6 +106,7 @@ namespace Tbot.Workers {
 		private bool IsBrain(Feature feat) {
 			switch (feat) {
 				case Feature.BrainAutobuildCargo:
+				case Feature.BrainAutobuildDefence:
 				case Feature.BrainAutoRepatriate:
 				case Feature.BrainAutoMine:
 				case Feature.BrainOfferOfTheDay:
