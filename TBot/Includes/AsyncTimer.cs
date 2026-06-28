@@ -127,7 +127,14 @@ namespace Tbot.Includes {
 					if (_cts != null) {
 						_cts.Cancel();
 					}
-					await _scheduledAction;
+					try {
+						await _scheduledAction;
+					} catch (OperationCanceledException) {
+						// Expected: we just requested this cancellation above. If the scheduled
+						// Task.Run hadn't started executing yet, it can transition straight to
+						// Canceled without ever reaching the callback's own try/catch, so this
+						// needs to be caught here too instead of bubbling up as an unhandled error.
+					}
 					_cts = null;
 					_scheduledAction = null;
 				}

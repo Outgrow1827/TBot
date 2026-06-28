@@ -389,6 +389,9 @@
 		"Active": true,
 		"SlotPriorityLevel": 0,
 		"ExcludeMoons": true,
+		"FastFarmMode": false,
+		"FastFarmMaxCacheAge": 1440,
+		"FastFarmIncludeMoons": true,
 		"ScanRange": [
 			{
 				"Galaxy": 2,

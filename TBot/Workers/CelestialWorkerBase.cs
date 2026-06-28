@@ -83,9 +83,15 @@ namespace Tbot.Workers {
 		public async Task StopWorker() {
 			// Stop also all the timers
 			RemoveAllTimers();
-			if (_timer != null) {
+			// Capture into a local before the null-check: StopWorker() can be called concurrently
+			// (e.g. from WorkerBase.RestartWorker and from this same worker's own StartWorker at
+			// the same time), and re-reading the _timer field between the check and the
+			// DisposeAsync() call below could otherwise observe null if another caller already
+			// finished and cleared it - throwing NRE.
+			var timer = _timer;
+			if (timer != null) {
 				DoLog(LogLevel.Information, $"Closing Worker \"{GetWorkerName()}\"..");
-				await _timer.DisposeAsync();
+				await timer.DisposeAsync();
 				DoLog(LogLevel.Information, $"Worker \"{GetWorkerName()}\" closed!");
 				_timer = null;
 			}

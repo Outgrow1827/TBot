@@ -57,7 +57,7 @@ namespace Tbot.Services {
 		public event EventHandler OnError;
 
 		public dynamic InstanceSettings { get; private set; }
-		private string InstanceSettingsPath { get; set; }
+		public string InstanceSettingsPath { get; private set; }
 		public string InstanceAlias { get; private set; }
 		public UserData UserData {
 			set {
@@ -190,7 +190,7 @@ namespace Tbot.Services {
 		private async Task ResolveCaptcha() {
 
 			var captchaChallenge = await _ogameService.GetCaptchaChallenge();
-			if (captchaChallenge.Id.Length == 0) {
+			if (string.IsNullOrEmpty(captchaChallenge.Id)) {
 				log(LogLevel.Warning, LogSender.Tbot, "No captcha found. Unable to login.");
 				log(LogLevel.Warning, LogSender.Tbot, "Please check your credentials, language and universe name.");
 				log(LogLevel.Warning, LogSender.Tbot, "If your credentials are correct try refreshing your IP address.");
@@ -247,7 +247,12 @@ namespace Tbot.Services {
 				await _ogameService.Login();
 			} catch (OgamedException oe) {
 				log(LogLevel.Warning, LogSender.Tbot, $"Unable to login (\"{oe.Message}\"). Checking captcha...");
-				await ResolveCaptcha();
+				try {
+					await ResolveCaptcha();
+				} catch (Exception ex) {
+					log(LogLevel.Error, LogSender.Tbot, $"Unable to login after captcha. (\"{ex.Message}\")");
+					throw new UnableToLoginException("Unable to login", ex);
+				}
 			} catch (System.Net.Http.HttpRequestException) {
 				try {
 					await ResolveCaptcha();
@@ -545,11 +550,17 @@ namespace Tbot.Services {
 				// If wakeUp, then all features will be restored
 				await HandleSleepModeAsync(null);
 				_lastReloadFinished = DateTime.Now;
+			} catch (Exception e) {
+				// OnSettingsChanged is "async void" (required by the file watcher callback signature):
+				// any exception that escapes here is unhandled and crashes the whole process instead
+				// of just failing this one reload. Log and swallow instead.
+				log(LogLevel.Error, LogSender.Tbot, $"Error while reloading settings: {e.Message}");
+				log(LogLevel.Warning, LogSender.Tbot, $"Stacktrace: {e.StackTrace}");
 			}
 			finally {
 				_settingsReloadSemaphore.Release();
 			}
-			
+
 		}
 
 		private void InitializeSleepMode() {
