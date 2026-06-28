@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Telegram.Bot;
@@ -266,10 +267,11 @@ namespace Tbot.Services {
 				"/getcurrentauction",
 				"/bidauction",
 				"/subscribeauction",
-				"/stopautofarm",
-				"/startautofarm",
-				"/stopautodiscovery",
-				"/startautodiscovery"
+			"/stopautofarm",
+			"/startautofarm",
+			"/clearcache",
+			"/stopautodiscovery",
+			"/startautodiscovery"
 			};
 
 			if (update.Type != UpdateType.Message) {
@@ -1041,11 +1043,26 @@ namespace Tbot.Services {
 									return;
 								}
 
-								await currInstance.InitializeFeature(Feature.AutoFarm);
-								await SendMessage(botClient, message.Chat, "Autofarm started!");
-								return;
+							await currInstance.InitializeFeature(Feature.AutoFarm);
+							await SendMessage(botClient, message.Chat, "Autofarm started!");
+							return;
 
-							case "/stopautodiscovery":
+						case "/clearcache":
+							if (message.Text.Split(' ').Length != 1) {
+								await SendMessage(botClient, message.Chat, "No argument accepted with this command!");
+								return;
+							}
+
+							var cachePath = FarmTargetCache.GetCacheFilePath(currInstance.InstanceSettingsPath, currInstance.InstanceAlias);
+							if (System.IO.File.Exists(cachePath)) {
+								System.IO.File.Delete(cachePath);
+								await SendMessage(botClient, message.Chat, "FastFarm cache cleared!");
+							} else {
+								await SendMessage(botClient, message.Chat, "No FastFarm cache file found.");
+							}
+							return;
+
+						case "/stopautodiscovery":
 								if (message.Text.Split(' ').Length != 1) {
 									await SendMessage(botClient, message.Chat, "No argument accepted with this command!");
 									return;

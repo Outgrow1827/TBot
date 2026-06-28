@@ -103,6 +103,7 @@ Here follows a short explanation of each of them, read the [Wiki](https://github
   * AutoResearchLF: TBot will research the LifeForms techs you selected up to the given level. Only researches with lv 1 or more will be researched. You must manually select the desired researches and upgrade them to lv 1 or more in order to TBot to account for them.
   * BuyOfferOfTheDay: TBot can buy the daily item from the Trader (check intervals are implemented so you can configure shorter check times when there is the specific event)
 * AutoFarm: TBot will scan one or more ranges of systems spying inactive players and attacking them with the specified type of ship if they are profitable above a given amount.
+  * FastFarmMode: TBot keeps a persistent cache of discovered targets (coordinates, last known buildings/resources, inactivity, defenses) so it can skip re-scanning/re-probing recently seen targets and extrapolate their current resources from elapsed time instead. Configure `FastFarmMode`, `FastFarmMaxCacheAge` (minutes) and `FastFarmIncludeMoons` in the instance settings.
 * AutoHarvest: TBot will harvest expedition debris in your celestials' systems as well as your own DFs
 * AutoColonize: TBot will make new colonies. Input the list of coordinates of your desired colonies and TBot will do the rest.
 * SleepMode: TBot will not interact with your account between the hours specified in settings

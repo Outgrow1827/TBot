@@ -21,6 +21,7 @@ namespace Tbot.Services {
 
 		dynamic InstanceSettings { get; }
 		string InstanceAlias { get; }
+		string InstanceSettingsPath { get; }
 		UserData UserData { get; set; }
 		TelegramUserData TelegramUserData { get; }
 		long SleepDuration { get; set; }

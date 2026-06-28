@@ -877,7 +877,7 @@ namespace Tbot.Includes {
 			if (level == 0)
 				return 0;
 			int baseProd = 10 * speedFactor;
-			int prod = (int) Math.Round((float) (baseProd * level * Math.Pow(1.1, level) * ((-0.004 * temp) + 1.36)));
+			int prod = (int) Math.Round((float) (baseProd * level * Math.Pow(1.1, level) * ((-0.004 * temp) + 1.44)));
 			int plasmaProd = (int) Math.Round(prod * 0.0033 * plasma);
 			int geologistProd = 0;
 			if (hasGeologist) {
@@ -907,15 +907,15 @@ namespace Tbot.Includes {
 				researches = new Researches() { PlasmaTechnology = 0 };
 			if (lfBonuses == null)
 				lfBonuses = new() { Production = new() { Deuterium = 0 } };
-			return CalcDeuteriumProduction(buildings.CrystalMine, temp.Average, speedFactor, ratio, researches.PlasmaTechnology, lfBonuses.Production.Deuterium, playerClass, hasGeologist, hasStaff, crawlers, crawlerRatio);
-		}
+		return CalcDeuteriumProduction(buildings.DeuteriumSynthesizer, temp.Average, speedFactor, ratio, researches.PlasmaTechnology, lfBonuses.Production.Deuterium, playerClass, hasGeologist, hasStaff, crawlers, crawlerRatio);
+	}
 
-		public long CalcDeuteriumProduction(Planet planet, int speedFactor, float ratio = 1, Researches researches = null, CharacterClass playerClass = CharacterClass.NoClass, bool hasGeologist = false, bool hasStaff = false, int crawlers = 0, float crawlerRatio = 1) {
-			if (researches == null)
-				researches = new Researches() { PlasmaTechnology = 0 };
-			if (planet.LFBonuses == null)
-				planet.LFBonuses = new() { Production = new() { Deuterium = 0 } };
-			return CalcDeuteriumProduction(planet.Buildings.CrystalMine, planet.Temperature.Average, speedFactor, ratio, researches.PlasmaTechnology, planet.LFBonuses.Production.Deuterium, playerClass, hasGeologist, hasStaff, crawlers, crawlerRatio);
+	public long CalcDeuteriumProduction(Planet planet, int speedFactor, float ratio = 1, Researches researches = null, CharacterClass playerClass = CharacterClass.NoClass, bool hasGeologist = false, bool hasStaff = false, int crawlers = 0, float crawlerRatio = 1) {
+		if (researches == null)
+			researches = new Researches() { PlasmaTechnology = 0 };
+		if (planet.LFBonuses == null)
+			planet.LFBonuses = new() { Production = new() { Deuterium = 0 } };
+		return CalcDeuteriumProduction(planet.Buildings.DeuteriumSynthesizer, planet.Temperature.Average, speedFactor, ratio, researches.PlasmaTechnology, planet.LFBonuses.Production.Deuterium, playerClass, hasGeologist, hasStaff, crawlers, crawlerRatio);
 		}
 
 		public Resources CalcPlanetHourlyProduction(Planet planet, int speedFactor, float ratio = 1, Researches researches = null, CharacterClass playerClass = CharacterClass.NoClass, bool hasGeologist = false, bool hasStaff = false, int crawlers = 0, float crawlerRatio = 1) {

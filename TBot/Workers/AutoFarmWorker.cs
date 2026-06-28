@@ -21,6 +21,7 @@ namespace Tbot.Workers {
 		private readonly IFleetScheduler _fleetScheduler;
 		private readonly ICalculationService _calculationService;
 		private readonly ITBotOgamedBridge _tbotOgameBridge;
+		private FarmTargetCache _farmTargetCache;
 		public AutoFarmWorker(ITBotMain parentInstance,
 			IOgameService ogameService,
 			IFleetScheduler fleetScheduler,
@@ -99,8 +100,137 @@ namespace Tbot.Workers {
 			return scannedTargets;
 		}
 
+		/// <summary>
+		/// Backward-compatible read of AutoFarm.FastFarmIncludeMoons: defaults to true (the shipped
+		/// settings default) when the key is missing from an older instance_settings.json.
+		/// </summary>
+		private bool GetFastFarmIncludeMoons() {
+			return SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "FastFarmIncludeMoons")
+				? (bool) _tbotInstance.InstanceSettings.AutoFarm.FastFarmIncludeMoons
+				: true;
+		}
+
+		/// <summary>
+		/// Records/updates a target discovered via a live galaxy scan into the FastFarm cache,
+		/// so future FastFarmMode runs can reuse it without re-scanning.
+		/// </summary>
+		private async Task CacheUpsertFromScan(Celestial celestial) {
+			var planet = celestial as Planet;
+			if (planet == null)
+				return;
+			var entry = _farmTargetCache.Get(planet.Coordinate) ?? new FarmTargetCacheEntry { Coordinate = planet.Coordinate };
+			entry.PlayerName = planet.Player?.Name;
+			entry.PlayerRank = planet.Player?.Rank ?? entry.PlayerRank;
+			entry.IsInactive = planet.Inactive;
+			entry.LastSeenDate = DateTime.UtcNow;
+			entry.Temperature = planet.Temperature ?? entry.Temperature;
+			_farmTargetCache.Upsert(entry);
+
+			if (GetFastFarmIncludeMoons() && planet.Moon != null) {
+				var moonEntry = _farmTargetCache.Get(planet.Moon.Coordinate) ?? new FarmTargetCacheEntry { Coordinate = planet.Moon.Coordinate };
+				moonEntry.PlayerName = planet.Player?.Name;
+				moonEntry.PlayerRank = planet.Player?.Rank ?? moonEntry.PlayerRank;
+				moonEntry.IsInactive = planet.Inactive;
+				moonEntry.LastSeenDate = DateTime.UtcNow;
+				moonEntry.Temperature = planet.Temperature ?? moonEntry.Temperature;
+				_farmTargetCache.Upsert(moonEntry);
+			}
+		}
+
+		/// <summary>
+		/// Records/updates the building levels and resources known from a fresh espionage report,
+		/// keeping any previously-known Temperature/PlayerName already in the cache.
+		/// </summary>
+		private async Task CacheUpsertFromReport(EspionageReport report) {
+			var entry = _farmTargetCache.Get(report.Coordinate) ?? new FarmTargetCacheEntry { Coordinate = report.Coordinate };
+			entry.IsInactive = report.IsInactive;
+			entry.LastReportDate = report.Date;
+			entry.LastKnownResources = new Resources(report.Metal, report.Crystal, report.Deuterium);
+			if (report.HasBuildingsInformation) {
+				entry.Buildings = new Buildings {
+					MetalMine = report.MetalMine ?? 0,
+					CrystalMine = report.CrystalMine ?? 0,
+					DeuteriumSynthesizer = report.DeuteriumSynthesizer ?? 0
+				};
+			}
+			if (report.HasDefensesInformation && report.HasFleetInformation) {
+				entry.HasDefenses = !report.IsDefenceless();
+				entry.HasFleet = !report.IsDefenceless();
+			}
+			_farmTargetCache.Upsert(entry);
+			await _farmTargetCache.Save();
+		}
+
+		/// <summary>
+		/// Extrapolates a target's current resources from its last known buildings/resources and
+		/// elapsed time, avoiding a fresh probe when the cached data is recent enough (FastFarmMode).
+		/// </summary>
+		private Resources EstimateCurrentResources(FarmTargetCacheEntry entry, DateTime now) {
+			if (entry.Buildings == null || entry.LastReportDate == null || entry.LastKnownResources == null)
+				return entry.LastKnownResources ?? new Resources();
+
+			var elapsedHours = (now - entry.LastReportDate.Value).TotalHours;
+			if (elapsedHours <= 0)
+				return entry.LastKnownResources;
+
+			var planetStub = new Planet {
+				Coordinate = entry.Coordinate,
+				Buildings = entry.Buildings,
+				Temperature = entry.Temperature ?? new Temperature { Min = 20, Max = 40 }
+			};
+			var hourly = _calculationService.CalcPlanetHourlyProduction(
+				planetStub,
+				(int) _tbotInstance.UserData.serverData.Speed,
+				researches: _tbotInstance.UserData.researches,
+				playerClass: _tbotInstance.UserData.userInfo.Class);
+
+			return entry.LastKnownResources.Sum(new Resources(
+				metal: (long) (hourly.Metal * elapsedHours),
+				crystal: (long) (hourly.Crystal * elapsedHours),
+				deuterium: (long) (hourly.Deuterium * elapsedHours)));
+		}
+
+		/// <summary>
+		/// Builds a synthetic EspionageReport carrying extrapolated resources, so the existing
+		/// Loot()/IsDefenceless() logic can be reused unchanged for FastFarmMode targets.
+		/// </summary>
+		private EspionageReport BuildEstimatedReport(FarmTargetCacheEntry entry, Resources estimatedResources) {
+			return new EspionageReport {
+				Coordinate = entry.Coordinate,
+				Date = entry.LastReportDate ?? DateTime.UtcNow,
+				IsInactive = entry.IsInactive,
+				Metal = estimatedResources.Metal,
+				Crystal = estimatedResources.Crystal,
+				Deuterium = estimatedResources.Deuterium,
+				HasFleetInformation = true,
+				HasDefensesInformation = true,
+				HasBuildingsInformation = true
+				// Fleet/defense fields intentionally left null: only entries with HasDefenses == false
+				// (i.e. a confirmed defenceless target from a real report) take the fast path.
+			};
+		}
+
+		/// <summary>
+		/// Shared loot-threshold check used both for real espionage reports and for the
+		/// synthetic reports built from extrapolated FastFarm cache data.
+		/// </summary>
+		private bool MeetsLootThreshold(Resources loot) {
+			string prefered = (string) _tbotInstance.InstanceSettings.AutoFarm.PreferedResource;
+			long minimum = (long) _tbotInstance.InstanceSettings.AutoFarm.MinimumResources;
+			return prefered switch {
+				"Metal" => loot.Metal > minimum,
+				"Crystal" => loot.Crystal > minimum,
+				"Deuterium" => loot.Deuterium > minimum,
+				_ => loot.TotalResources > minimum
+			};
+		}
+
 		private bool IsTargetInMinimumRank(Celestial planet, List<Celestial> scannedTargets) {
 			if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "MinimumPlayerRank") && _tbotInstance.InstanceSettings.AutoFarm.MinimumPlayerRank != 0) {
+				// FastFarm cache-derived stubs are not Planet instances and were already rank-filtered
+				// when they were pulled from the cache, so skip re-checking here.
+				if (planet as Planet == null)
+					return true;
 				int rank = 1;
 				if (planet.Coordinate.Type == Celestials.Planet) {
 					rank = (planet as Planet).Player.Rank;
@@ -333,12 +463,19 @@ namespace Tbot.Workers {
 
 		protected override async Task Execute() {
 			bool stop = false;
+			_farmTargetCache = await FarmTargetCache.Load(_tbotInstance.InstanceSettingsPath, _tbotInstance.InstanceAlias);
 			try {
 				_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, "Running autofarm...");
 				if ((bool) _tbotInstance.InstanceSettings.AutoFarm.Active) {
-					// If not enough slots are free, the farmer cannot run.					
+					bool fastFarmMode = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "FastFarmMode") && (bool) _tbotInstance.InstanceSettings.AutoFarm.FastFarmMode;
+					int fastFarmMaxCacheAgeMinutes = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "FastFarmMaxCacheAge") ? (int) _tbotInstance.InstanceSettings.AutoFarm.FastFarmMaxCacheAge : 1440;
+					var now = await _tbotOgameBridge.GetDateTime();
+					if (fastFarmMode) {
+						_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, "FastFarm enabled: reusing cached targets instead of a live galaxy scan where possible.");
+					}
+					// If not enough slots are free, the farmer cannot run.
 					_tbotInstance.UserData.slots = await _tbotOgameBridge.UpdateSlots();
-					
+
 					int freeSlots = _tbotInstance.UserData.slots.Free;
 					int slotsToLeaveFree = (int) _tbotInstance.InstanceSettings.AutoFarm.SlotsToLeaveFree;
 					if (freeSlots <= slotsToLeaveFree) {
@@ -386,16 +523,33 @@ namespace Tbot.Workers {
 								if (excludeSystem)
 									continue;
 
-								var scannedTargets = await GetScannedTargetsFromGalaxy(galaxy, system);
-
-								_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm, $"Found {scannedTargets.Count} targets on System {galaxy}:{system}");
-
-								if (!scannedTargets.Any())
-									continue;
-
-								if ((bool) _tbotInstance.InstanceSettings.AutoFarm.ExcludeMoons == false) {
-									AddMoons(scannedTargets);
+							List<Celestial> scannedTargets;
+							List<FarmTargetCacheEntry> fastFarmEntries = null;
+							if (fastFarmMode) {
+								int minRank = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "MinimumPlayerRank") ? (int) _tbotInstance.InstanceSettings.AutoFarm.MinimumPlayerRank : 0;
+								fastFarmEntries = _farmTargetCache.GetInRange(galaxy, system, system)
+									.Where(e => e.IsInactive && (minRank == 0 || e.PlayerRank <= minRank))
+									.ToList();
+								if (!GetFastFarmIncludeMoons()) {
+									fastFarmEntries = fastFarmEntries.Where(e => e.Coordinate.Type == Celestials.Planet).ToList();
 								}
+								scannedTargets = fastFarmEntries.Select(e => new Celestial { Coordinate = e.Coordinate, Name = e.PlayerName ?? "" }).ToList();
+								_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
+								scannedTargets.RemoveAll(t => _tbotInstance.UserData.fleets.Any(f => f.Destination.IsSame(t.Coordinate) && f.Mission == Missions.Attack));
+							} else {
+								scannedTargets = await GetScannedTargetsFromGalaxy(galaxy, system);
+								foreach (var found in scannedTargets)
+									await CacheUpsertFromScan(found);
+							}
+
+							_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm, $"Found {scannedTargets.Count} targets on System {galaxy}:{system}{(fastFarmMode ? " (from FastFarm cache)" : "")}");
+
+							if (!scannedTargets.Any())
+								continue;
+
+							if (!fastFarmMode && (bool) _tbotInstance.InstanceSettings.AutoFarm.ExcludeMoons == false) {
+								AddMoons(scannedTargets);
+							}
 
 								// Add each planet that has inactive status to _tbotInstance.UserData.farmTargets.
 								foreach (Celestial planet in scannedTargets) {
@@ -420,6 +574,32 @@ namespace Tbot.Workers {
 									var target = GetFarmTarget(planet);
 									if (target == null)
 										continue;
+
+								if (fastFarmMode && target.State == FarmState.ProbesPending) {
+									var cacheEntry = fastFarmEntries?.FirstOrDefault(e => e.HasCoords(planet.Coordinate));
+									if (cacheEntry != null && cacheEntry.LastReportDate != null
+										&& (now - cacheEntry.LastReportDate.Value).TotalMinutes <= fastFarmMaxCacheAgeMinutes) {
+										if (cacheEntry.HasDefenses == true) {
+											_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm, $"FastFarm: skipping {target.ToString()} due to known defenses.");
+											continue;
+										}
+										var estimated = EstimateCurrentResources(cacheEntry, now);
+										var syntheticReport = BuildEstimatedReport(cacheEntry, estimated);
+										var loot = syntheticReport.Loot(_tbotInstance.UserData.userInfo.Class);
+										if (MeetsLootThreshold(loot)) {
+											if (cacheEntry.HasDefenses == null)
+												_tbotInstance.log(LogLevel.Warning, LogSender.AutoFarm, $"FastFarm: using unconfirmed no-defenses estimate for {target.ToString()}. Skipping probe based on extrapolation only.");
+											else
+												_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"FastFarm: using extrapolated data for {target.ToString()}, skipping probe. Estimated loot: {loot}");
+											_tbotInstance.UserData.farmTargets.Remove(target);
+											target.Report = syntheticReport;
+											target.State = FarmState.AttackPending;
+											_tbotInstance.UserData.farmTargets.Add(target);
+												continue;
+											}
+											_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm, $"FastFarm: cached estimate for {target.ToString()} below threshold, falling back to probing.");
+										}
+									}
 
 									// Send spy probe from closest celestial with available probes to the target.
 									List<Celestial> tempCelestials = (_tbotInstance.InstanceSettings.AutoFarm.Origin.Length > 0) ? _calculationService.ParseCelestialsList(_tbotInstance.InstanceSettings.AutoFarm.Origin, _tbotInstance.UserData.celestials) : _tbotInstance.UserData.celestials;
@@ -921,9 +1101,15 @@ namespace Tbot.Workers {
 								return;
 							}
 
-							_tbotInstance.UserData.farmTargets.Remove(target);
-							target.State = FarmState.AttackSent;
-							_tbotInstance.UserData.farmTargets.Add(target);
+						_tbotInstance.UserData.farmTargets.Remove(target);
+						target.State = FarmState.AttackSent;
+						_tbotInstance.UserData.farmTargets.Add(target);
+
+						var cacheEntry = _farmTargetCache.Get(target.Celestial.Coordinate);
+						if (cacheEntry != null) {
+							cacheEntry.LastKnownResources = null;
+							_farmTargetCache.Upsert(cacheEntry);
+						}
 						} else {
 							_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"Unable to attack {target.Celestial.Coordinate}: {slotUsed.Count()} slots used by AutoFarm, {MaxSlots} slots usable by AutoFarm, {_tbotInstance.UserData.slots.Free} slots free, {_tbotInstance.InstanceSettings.General.SlotsToLeaveFree} must remain free.");
 							return;
@@ -934,6 +1120,8 @@ namespace Tbot.Workers {
 				_tbotInstance.log(LogLevel.Error, LogSender.AutoFarm, $"AutoFarm Exception: {e.Message}");
 				_tbotInstance.log(LogLevel.Warning, LogSender.AutoFarm, $"Stacktrace: {e.StackTrace}");
 			} finally {
+				if (_farmTargetCache != null)
+					await _farmTargetCache.Save();
 				_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"Attacked targets: {_tbotInstance.UserData.farmTargets.Where(t => t.State == FarmState.AttackSent).Count()}");
 				_tbotInstance.UserData.farmTargets.RemoveAll(t => t.State == FarmState.ProbesSent); //At this point no ProbesSent should remain in farmTargets
 				if (!_tbotInstance.UserData.isSleeping) {
@@ -1016,10 +1204,10 @@ namespace Tbot.Workers {
 						Enum.TryParse<Buildables>((string) _tbotInstance.InstanceSettings.AutoFarm.CargoType, true, out cargoShip);
 						bool isUsingProbes = cargoShip == Buildables.EspionageProbe && _tbotInstance.UserData.serverData.ProbeCargo == 1 ? true : false;
 						newFarmTarget.Report = report;
-						if (_tbotInstance.InstanceSettings.AutoFarm.PreferedResource == "Metal" && report.Loot(_tbotInstance.UserData.userInfo.Class).Metal > _tbotInstance.InstanceSettings.AutoFarm.MinimumResources
-							|| _tbotInstance.InstanceSettings.AutoFarm.PreferedResource == "Crystal" && report.Loot(_tbotInstance.UserData.userInfo.Class).Crystal > _tbotInstance.InstanceSettings.AutoFarm.MinimumResources
-							|| _tbotInstance.InstanceSettings.AutoFarm.PreferedResource == "Deuterium" && report.Loot(_tbotInstance.UserData.userInfo.Class).Deuterium > _tbotInstance.InstanceSettings.AutoFarm.MinimumResources
-							|| (_tbotInstance.InstanceSettings.AutoFarm.PreferedResource == "" && report.Loot(_tbotInstance.UserData.userInfo.Class).TotalResources > _tbotInstance.InstanceSettings.AutoFarm.MinimumResources)) {
+						// Keep the FastFarm cache up to date with whatever this report just confirmed,
+						// regardless of the resulting state, so future FastFarmMode runs reflect it.
+						await CacheUpsertFromReport(report);
+						if (MeetsLootThreshold(report.Loot(_tbotInstance.UserData.userInfo.Class))) {
 							if (!report.HasFleetInformation || !report.HasDefensesInformation) {
 								if (target.State == FarmState.ProbesRequired)
 									newFarmTarget.State = FarmState.FailedProbesRequired;
