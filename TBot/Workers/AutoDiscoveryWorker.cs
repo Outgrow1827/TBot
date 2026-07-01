@@ -8,6 +8,7 @@ using System.Timers;
 using Microsoft.Extensions.Logging;
 using Tbot.Helpers;
 using Tbot.Includes;
+using Tbot.Common.Settings;
 using Tbot.Services;
 using TBot.Common.Logging;
 using TBot.Model;
@@ -49,9 +50,9 @@ namespace Tbot.Workers {
 					_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
 					List<RankSlotsPriority> rankSlotsPriority = new();
 					RankSlotsPriority BrainRank = new(Feature.BrainAutoMine,
-						(int) _tbotInstance.InstanceSettings.Brain.SlotPriorityLevel,
+						GetSlotPriority("Brain", 2),
 						((bool) _tbotInstance.InstanceSettings.Brain.Active &&
-							(bool) _tbotInstance.InstanceSettings.Brain.Transports.Active && 
+							(bool) _tbotInstance.InstanceSettings.Brain.Transports.Active &&
 							((bool) _tbotInstance.InstanceSettings.Brain.AutoMine.Active ||
 								(bool) _tbotInstance.InstanceSettings.Brain.AutoResearch.Active ||
 								(bool) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.Active ||
@@ -59,24 +60,24 @@ namespace Tbot.Workers {
 						(int) _tbotInstance.InstanceSettings.Brain.Transports.MaxSlots,
 						(int) _tbotInstance.UserData.fleets.Where(fleet => fleet.Mission == Missions.Transport).Count());
 					RankSlotsPriority ExpeditionsRank = new(Feature.Expeditions,
-						(int) _tbotInstance.InstanceSettings.Expeditions.SlotPriorityLevel,
+						GetSlotPriority("Expeditions", 3),
 						(bool) _tbotInstance.InstanceSettings.Expeditions.Active,
 						(int) _tbotInstance.UserData.slots.ExpTotal,
 						(int) _tbotInstance.UserData.fleets.Where(fleet => fleet.Mission == Missions.Expedition).Count());
 					RankSlotsPriority AutoFarmRank = new(Feature.AutoFarm,
-						(int) _tbotInstance.InstanceSettings.AutoFarm.SlotPriorityLevel,
+						GetSlotPriority("AutoFarm", 4),
 						(bool) _tbotInstance.InstanceSettings.AutoFarm.Active,
 						(int) _tbotInstance.InstanceSettings.AutoFarm.MaxSlots,
 						(int) _tbotInstance.UserData.fleets.Where(fleet => fleet.Mission == Missions.Attack).Count());
 					RankSlotsPriority ColonizeRank = new(Feature.Colonize,
-						(int) _tbotInstance.InstanceSettings.AutoColonize.SlotPriorityLevel,
+						GetSlotPriority("AutoColonize", 1),
 						(bool) _tbotInstance.InstanceSettings.AutoColonize.Active,
 						(bool) _tbotInstance.InstanceSettings.AutoColonize.IntensiveResearch.Active ?
 							(int) _tbotInstance.InstanceSettings.AutoColonize.IntensiveResearch.MaxSlots :
 							1,
 						(int) _tbotInstance.UserData.fleets.Where(fleet => fleet.Mission == Missions.Colonize).Count());
 					RankSlotsPriority AutoDiscoveryRank = new(Feature.AutoDiscovery,
-						(int) _tbotInstance.InstanceSettings.AutoDiscovery.SlotPriorityLevel,
+						GetSlotPriority("AutoDiscovery", 1),
 						(bool) _tbotInstance.InstanceSettings.AutoDiscovery.Active,
 						(int) _tbotInstance.InstanceSettings.AutoDiscovery.MaxSlots,
 						(int) _tbotInstance.UserData.fleets.Where(fleet => fleet.Mission == Missions.Discovery).Count());
@@ -123,12 +124,19 @@ namespace Tbot.Workers {
 					}
 
 
+					dynamic originConf = null;
+					try {
+						int len = (int) _tbotInstance.InstanceSettings.AutoDiscovery.Origin.Length;
+						if (len > 0) originConf = _tbotInstance.InstanceSettings.AutoDiscovery.Origin[0];
+					} catch {
+						originConf = _tbotInstance.InstanceSettings.AutoDiscovery.Origin;
+					}
 					Celestial origin = _tbotInstance.UserData.celestials
 						.Unique()
-						.Where(c => c.Coordinate.Galaxy == (int) _tbotInstance.InstanceSettings.AutoDiscovery.Origin.Galaxy)
-						.Where(c => c.Coordinate.System == (int) _tbotInstance.InstanceSettings.AutoDiscovery.Origin.System)
-						.Where(c => c.Coordinate.Position == (int) _tbotInstance.InstanceSettings.AutoDiscovery.Origin.Position)
-						.Where(c => c.Coordinate.Type == Enum.Parse<Celestials>((string) _tbotInstance.InstanceSettings.AutoDiscovery.Origin.Type))
+						.Where(c => c.Coordinate.Galaxy == (int) originConf.Galaxy)
+						.Where(c => c.Coordinate.System == (int) originConf.System)
+						.Where(c => c.Coordinate.Position == (int) originConf.Position)
+						.Where(c => c.Coordinate.Type == Enum.Parse<Celestials>((string) originConf.Type))
 						.SingleOrDefault() ?? new() { ID = 0 };
 					if (origin.ID == 0) {
 						stop = true;
@@ -157,12 +165,18 @@ namespace Tbot.Workers {
 							});
 						}
 					}
-					possibleDestinations = possibleDestinations
-						.Shuffle()
-						.OrderBy(c => c.Position)
-						.OrderBy(c => c.System)
-						.OrderBy(c => _calculationService.CalcDistance(origin.Coordinate, c, _tbotInstance.UserData.serverData))
-						.ToList();
+					bool randomizeDestination = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoDiscovery, "RandomizeDestination") &&
+						(bool) _tbotInstance.InstanceSettings.AutoDiscovery.RandomizeDestination;
+					if (randomizeDestination) {
+						possibleDestinations = possibleDestinations.Shuffle().ToList();
+					} else {
+						possibleDestinations = possibleDestinations
+							.Shuffle()
+							.OrderBy(c => c.Position)
+							.OrderBy(c => c.System)
+							.OrderBy(c => _calculationService.CalcDistance(origin.Coordinate, c, _tbotInstance.UserData.serverData))
+							.ToList();
+					}
 
 					while (possibleDestinations.Count > 0 && _tbotInstance.UserData.fleets.Where(s => s.Mission == Missions.Discovery).Count() < MaxSlots && _tbotInstance.UserData.slots.Free > (int) _tbotInstance.InstanceSettings.General.SlotsToLeaveFree) {
 						Coordinate dest = possibleDestinations.First();

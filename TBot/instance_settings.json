@@ -36,7 +36,15 @@
 		},
 		"CaptchaAPIKey": "",
 		"CustomTitle": "",
-		"SlotsToLeaveFree": 1
+		"SlotsToLeaveFree": 1,
+		"SlotPriorityLevel": {
+			"Brain": 2,
+			"Expeditions": 3,
+			"AutoFarm": 4,
+			"AutoColonize": 1,
+			"AutoDiscovery": 1,
+			"AutoHarvest": 99
+		}
 	},
 	"SleepMode": {
 		"Active": false,
@@ -107,7 +115,6 @@
 	},
 	"Brain": {
 		"Active": true,
-		"SlotPriorityLevel": 2,
 		"Transports": {
 			"Active": true,
 			"CargoType": "SmallCargo",
@@ -336,11 +343,60 @@
 			"Active": true,
 			"CheckIntervalMin": 240,
 			"CheckIntervalMax": 360
+		},
+		"AutoDefence": {
+			"Active": false,
+			"ExcludeMoons": true,
+			"RandomOrder": true,
+			"DefenceToReach": {
+				"RocketLauncher": 4876,
+				"LightLaser": 2438,
+				"HeavyLaser": 2812,
+				"GaussCannon": 727,
+				"PlasmaTurret": 399,
+				"AntiBallisticMissiles": 120,
+				"SmallShieldDome": true,
+				"LargeShieldDome": true
+			},
+			"Exclude": [],
+			"CheckIntervalMin": 60,
+			"CheckIntervalMax": 240
+		},
+		"AutoFleepJumpGate": {
+			"Active": false,
+			"CheckIntervalMin": 5,
+			"CheckIntervalMax": 10,
+			"Target": [
+				{
+					"Galaxy": 1,
+					"System": 1,
+					"Position": 1,
+					"Type": "Moon"
+				}
+			],
+			"MinimumAmountOfShipsToBeLeftOnMoon": {
+				"LightFighter": 0,
+				"HeavyFighter": 0,
+				"Cruiser": 0,
+				"Battleship": 0,
+				"Battlecruiser": 0,
+				"Bomber": 0,
+				"Destroyer": 0,
+				"Deathstar": 100000,
+				"SmallCargo": 0,
+				"LargeCargo": 0,
+				"ColonyShip": 0,
+				"Recycler": 0,
+				"EspionageProbe": 0,
+				"Reaper": 0,
+				"Pathfinder": 0
+			},
+			"MinimumAmountOfShipPointsToTeleport": 500000
 		}
 	},
 	"Expeditions": {
 		"Active": true,
-		"SlotPriorityLevel": 1,
+		"MaxExpeditionsPerOrigin": 10,
 		"IgnoreSleep": false,
 		"MinWaitNextFleet": 5,
 		"MaxWaitNextFleet": 15,
@@ -387,7 +443,12 @@
 	},
 	"AutoFarm": {
 		"Active": true,
-		"SlotPriorityLevel": 0,
+		"StopAfterFullScan": false,
+		"Blacklist": {
+			"Active": true,
+			"ResetAfterHours": 20,
+			"MinimumResourcesToNotBlacklist": 1000000
+		},
 		"ExcludeMoons": true,
 		"FastFarmMode": false,
 		"FastFarmMaxCacheAge": 1440,
@@ -437,6 +498,7 @@
 	},
 	"AutoHarvest": {
 		"Active": false,
+		"MaxSlots": 5,
 		"HarvestOwnDF": true,
 		"HarvestDeepSpace": true,
 		"MinimumResourcesOwnDF": 300,
@@ -446,7 +508,6 @@
 	},
 	"AutoColonize": {
 		"Active": true,
-		"SlotPriorityLevel": 0,
 		"Origin": {
 			"Galaxy": 5,
 			"System": 64,
@@ -490,13 +551,15 @@
 	},
 	"AutoDiscovery": {
 		"Active": true,
-		"SlotPriorityLevel": 0,
-		"Origin": {
-			"Galaxy": 5,
-			"System": 64,
-			"Position": 8,
-			"Type": "Planet"
-		},
+		"RandomizeDestination": false,
+		"Origin": [
+			{
+				"Galaxy": 5,
+				"System": 64,
+				"Position": 8,
+				"Type": "Planet"
+			}
+		],
 		"MaxSlots": 5,
 		"MaxFailures": 5,
 		"CheckIntervalMin": 30,
