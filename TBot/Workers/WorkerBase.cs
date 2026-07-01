@@ -12,6 +12,7 @@ using Tbot.Services;
 using TBot.Common.Logging;
 using TBot.Ogame.Infrastructure.Enums;
 using TBot.Ogame.Infrastructure.Models;
+using Tbot.Common.Settings;
 
 namespace Tbot.Workers {
 
@@ -145,6 +146,19 @@ namespace Tbot.Workers {
 		public abstract LogSender GetLogSender();
 
 
+
+		protected int GetSlotPriority(string featureSection, int defaultPriority = int.MaxValue) {
+			try {
+				if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings[featureSection], "SlotPriorityLevel"))
+					return (int) _tbotInstance.InstanceSettings[featureSection].SlotPriorityLevel;
+			} catch { }
+			try {
+				if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.General, "SlotPriorityLevel") &&
+					SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.General.SlotPriorityLevel, featureSection))
+					return (int) _tbotInstance.InstanceSettings.General.SlotPriorityLevel[featureSection];
+			} catch { }
+			return defaultPriority;
+		}
 
 		protected Task EndExecution() {
 			// This is meant to be called within the worker callback, so we can't await _timer to end

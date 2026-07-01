@@ -22,6 +22,7 @@ namespace Tbot.Workers {
 		private readonly ICalculationService _calculationService;
 		private readonly ITBotOgamedBridge _tbotOgameBridge;
 		private FarmTargetCache _farmTargetCache;
+		private Dictionary<string, DateTime> _farmBlacklist = new();
 		public AutoFarmWorker(ITBotMain parentInstance,
 			IOgameService ogameService,
 			IFleetScheduler fleetScheduler,
@@ -267,6 +268,22 @@ namespace Tbot.Workers {
 		}
 
 		private FarmTarget GetFarmTarget(Celestial planet) {
+			// Check blacklist
+			try {
+				if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "Blacklist") &&
+					SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm.Blacklist, "Active") &&
+					(bool) _tbotInstance.InstanceSettings.AutoFarm.Blacklist.Active) {
+					string coordKey = planet.Coordinate.ToString();
+					if (_farmBlacklist.TryGetValue(coordKey, out DateTime blacklistedUntil)) {
+						if (DateTime.Now < blacklistedUntil) {
+							_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm, $"Target {planet} is blacklisted until {blacklistedUntil}. Skipping...");
+							return null;
+						} else {
+							_farmBlacklist.Remove(coordKey);
+						}
+					}
+				}
+			} catch { }
 			// Check if planet with coordinates exists already in _tbotInstance.UserData.farmTargets list.
 			var target = CheckDuplicatesAndGetExisting(planet);
 
@@ -736,9 +753,9 @@ namespace Tbot.Workers {
 					_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
 					List<RankSlotsPriority> rankSlotsPriority = new();
 					RankSlotsPriority BrainRank = new(Feature.BrainAutoMine,
-						(int) _tbotInstance.InstanceSettings.Brain.SlotPriorityLevel,
+						GetSlotPriority("Brain", 2),
 						((bool) _tbotInstance.InstanceSettings.Brain.Active &&
-							(bool) _tbotInstance.InstanceSettings.Brain.Transports.Active && 
+							(bool) _tbotInstance.InstanceSettings.Brain.Transports.Active &&
 							((bool) _tbotInstance.InstanceSettings.Brain.AutoMine.Active ||
 								(bool) _tbotInstance.InstanceSettings.Brain.AutoResearch.Active ||
 								(bool) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.Active ||
@@ -746,24 +763,24 @@ namespace Tbot.Workers {
 						(int) _tbotInstance.InstanceSettings.Brain.Transports.MaxSlots,
 						(int) _tbotInstance.UserData.fleets.Where(fleet => fleet.Mission == Missions.Transport).Count());
 					RankSlotsPriority ExpeditionsRank = new(Feature.Expeditions,
-						(int) _tbotInstance.InstanceSettings.Expeditions.SlotPriorityLevel,
+						GetSlotPriority("Expeditions", 3),
 						(bool) _tbotInstance.InstanceSettings.Expeditions.Active,
 						(int) _tbotInstance.UserData.slots.ExpTotal,
 						(int) _tbotInstance.UserData.fleets.Where(fleet => fleet.Mission == Missions.Expedition).Count());
 					RankSlotsPriority AutoFarmRank = new(Feature.AutoFarm,
-						(int) _tbotInstance.InstanceSettings.AutoFarm.SlotPriorityLevel,
+						GetSlotPriority("AutoFarm", 4),
 						(bool) _tbotInstance.InstanceSettings.AutoFarm.Active,
 						(int) _tbotInstance.InstanceSettings.AutoFarm.MaxSlots,
 						(int) _tbotInstance.UserData.fleets.Where(fleet => fleet.Mission == Missions.Attack).Count());
 					RankSlotsPriority ColonizeRank = new(Feature.Colonize,
-						(int) _tbotInstance.InstanceSettings.AutoColonize.SlotPriorityLevel,
+						GetSlotPriority("AutoColonize", 1),
 						(bool) _tbotInstance.InstanceSettings.AutoColonize.Active,
 						(bool) _tbotInstance.InstanceSettings.AutoColonize.IntensiveResearch.Active ?
 							(int) _tbotInstance.InstanceSettings.AutoColonize.IntensiveResearch.MaxSlots :
 							1,
 						(int) _tbotInstance.UserData.fleets.Where(fleet => fleet.Mission == Missions.Colonize).Count());
 					RankSlotsPriority AutoDiscoveryRank = new(Feature.AutoDiscovery,
-						(int) _tbotInstance.InstanceSettings.AutoDiscovery.SlotPriorityLevel,
+						GetSlotPriority("AutoDiscovery", 1),
 						(bool) _tbotInstance.InstanceSettings.AutoDiscovery.Active,
 						(int) _tbotInstance.InstanceSettings.AutoDiscovery.MaxSlots,
 						(int) _tbotInstance.UserData.fleets.Where(fleet => fleet.Mission == Missions.Discovery).Count());
@@ -1087,6 +1104,11 @@ namespace Tbot.Workers {
 							return;
 						}
 					}
+					if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "StopAfterFullScan") &&
+						(bool) _tbotInstance.InstanceSettings.AutoFarm.StopAfterFullScan) {
+						_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, "StopAfterFullScan: full scan cycle completed, stopping.");
+						stop = true;
+					}
 				}
 			} catch (Exception e) {
 				_tbotInstance.log(LogLevel.Error, LogSender.AutoFarm, $"AutoFarm Exception: {e.Message}");
@@ -1199,6 +1221,20 @@ namespace Tbot.Workers {
 						} else {
 							newFarmTarget.State = FarmState.NotSuitable;
 							_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"Target {report.Coordinate} not suitable - insufficient loot ({report.Loot(_tbotInstance.UserData.userInfo.Class)})");
+							try {
+								if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "Blacklist") &&
+									SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm.Blacklist, "Active") &&
+									(bool) _tbotInstance.InstanceSettings.AutoFarm.Blacklist.Active) {
+									int resetHours = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm.Blacklist, "ResetAfterHours")
+										? (int) _tbotInstance.InstanceSettings.AutoFarm.Blacklist.ResetAfterHours : 20;
+									long minRes = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm.Blacklist, "MinimumResourcesToNotBlacklist")
+										? (long) _tbotInstance.InstanceSettings.AutoFarm.Blacklist.MinimumResourcesToNotBlacklist : 0;
+									if (report.Loot(_tbotInstance.UserData.userInfo.Class).TotalResources < minRes) {
+										_farmBlacklist[report.Coordinate.ToString()] = DateTime.Now.AddHours(resetHours);
+										_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"Blacklisting {report.Coordinate} for {resetHours}h (loot below threshold).");
+									}
+								}
+							} catch { }
 						}
 
 						_tbotInstance.UserData.farmTargets.Remove(target);
