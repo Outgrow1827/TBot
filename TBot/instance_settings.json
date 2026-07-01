@@ -491,7 +491,7 @@
 		"CheckIntervalMax": 60,
 		"Blacklist": {
 			"Active": true,
-			"ResetAfterHours": 20,
+			"ResetAfterDays": 1,
 			"MinimumResourcesToNotBlacklist": 1000000
 		},
 		"StopAfterFullScan": false
