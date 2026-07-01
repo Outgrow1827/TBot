@@ -8,6 +8,6 @@ namespace TBot.Ogame.Infrastructure.Models {
 	public class LoginResult
 	{
 		public bool Success { get; set; }
-		public string Error { get; set; }
+		public string Error { get; set; } = string.Empty;
 	}
 }

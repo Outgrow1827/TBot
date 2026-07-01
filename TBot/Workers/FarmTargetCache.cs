@@ -7,11 +7,6 @@ using Newtonsoft.Json;
 using TBot.Ogame.Infrastructure.Models;
 
 namespace Tbot.Workers {
-	/// <summary>
-	/// Simple JSON-file-backed persistence for FarmTargetCacheEntry, scoped to AutoFarmWorker.
-	/// Lets FastFarmMode reuse previously-discovered inactive targets across bot restarts
-	/// instead of always re-scanning the galaxy live.
-	/// </summary>
 	public class FarmTargetCache {
 		private readonly Dictionary<string, FarmTargetCacheEntry> _entries = new();
 		private readonly string _filePath;
@@ -40,7 +35,6 @@ namespace Tbot.Workers {
 						cache._entries[GetKey(entry.Coordinate)] = entry;
 					}
 				} catch {
-					// Corrupted or unreadable cache file: start fresh rather than crash the worker.
 				}
 			}
 			return cache;

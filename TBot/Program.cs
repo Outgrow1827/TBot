@@ -74,6 +74,14 @@ namespace Tbot {
 
 			SettingsService.LogsPath = logPath;
 
+			Directory.CreateDirectory("log");
+			Directory.CreateDirectory("logs");
+			Directory.CreateDirectory("data");
+			Directory.CreateDirectory("profiles");
+			if (!File.Exists(Path.Combine("data", "tbot_data.db"))) {
+				File.Create(Path.Combine("data", "tbot_data.db")).Close();
+			}
+
 			var serviceProvider = await WebApp.Build();
 
 			_logger = serviceProvider.GetRequiredService<ILoggerService<Program>>();
@@ -83,19 +91,12 @@ namespace Tbot {
 			_logger.ConfigureLogging(logPath);
 			_instanceManager.SettingsAbsoluteFilepath = settingsPath;
 
-			// Last-resort safety net: an unhandled exception on any thread (e.g. an "async void"
-			// callback, or a background Task) otherwise crashes the whole process with nothing
-			// written to TBot.log - it only ever showed up in the console window, which is lost
-			// once that window closes. Log it here before the process actually terminates.
 			AppDomain.CurrentDomain.UnhandledException += (sender, e) => {
 				var ex = e.ExceptionObject as Exception;
 				_logger.WriteLog(LogLevel.Critical, LogSender.Main, $"FATAL UNHANDLED EXCEPTION (IsTerminating={e.IsTerminating}): {ex?.Message}\n{ex?.StackTrace}");
 				Log.CloseAndFlush();
 			};
 
-			// A faulted Task that nobody awaited/observed used to crash the process on old .NET
-			// Framework; on modern .NET it no longer does by default, but it's still worth logging
-			// instead of silently losing the error, and SetObserved() keeps that behavior explicit.
 			TaskScheduler.UnobservedTaskException += (sender, e) => {
 				_logger.WriteLog(LogLevel.Error, LogSender.Main, $"Unobserved task exception: {e.Exception.Message}\n{e.Exception.StackTrace}");
 				e.SetObserved();

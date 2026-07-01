@@ -1,0 +1,37 @@
+{
+	"General": {
+		"SlotPriorityLevel": {
+			"AutoFarm": 0
+		}
+	},
+	"Brain": {
+		"Active": false
+    },
+	"Expeditions": {
+		"Active": false
+    },
+	"AutoFarm": {
+		"Active": true,
+		"ScanRange": [
+			{
+				"Galaxy": 3,
+				"StartSystem": 14,
+				"EndSystem": 114
+			}
+		],
+		"Origin": [
+			{
+				"Galaxy": 5,
+				"System": 64,
+				"Position": 8,
+				"Type": "Planet"
+			}
+		]
+	},
+	"AutoColonize": {
+		"Active": false
+	},
+	"AutoDiscovery": {
+		"Active": false
+	}
+}
