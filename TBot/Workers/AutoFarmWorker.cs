@@ -1225,13 +1225,13 @@ namespace Tbot.Workers {
 								if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "Blacklist") &&
 									SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm.Blacklist, "Active") &&
 									(bool) _tbotInstance.InstanceSettings.AutoFarm.Blacklist.Active) {
-									int resetHours = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm.Blacklist, "ResetAfterHours")
-										? (int) _tbotInstance.InstanceSettings.AutoFarm.Blacklist.ResetAfterHours : 20;
+									int resetDays = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm.Blacklist, "ResetAfterDays")
+										? (int) _tbotInstance.InstanceSettings.AutoFarm.Blacklist.ResetAfterDays : 1;
 									long minRes = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm.Blacklist, "MinimumResourcesToNotBlacklist")
 										? (long) _tbotInstance.InstanceSettings.AutoFarm.Blacklist.MinimumResourcesToNotBlacklist : 0;
 									if (report.Loot(_tbotInstance.UserData.userInfo.Class).TotalResources < minRes) {
-										_farmBlacklist[report.Coordinate.ToString()] = DateTime.Now.AddHours(resetHours);
-										_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"Blacklisting {report.Coordinate} for {resetHours}h (loot below threshold).");
+										_farmBlacklist[report.Coordinate.ToString()] = DateTime.Now.AddDays(resetDays);
+										_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"Blacklisting {report.Coordinate} for {resetDays}d (loot below threshold).");
 									}
 								}
 							} catch { }
