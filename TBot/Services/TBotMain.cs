@@ -551,9 +551,6 @@ namespace Tbot.Services {
 				await HandleSleepModeAsync(null);
 				_lastReloadFinished = DateTime.Now;
 			} catch (Exception e) {
-				// OnSettingsChanged is "async void" (required by the file watcher callback signature):
-				// any exception that escapes here is unhandled and crashes the whole process instead
-				// of just failing this one reload. Log and swallow instead.
 				log(LogLevel.Error, LogSender.Tbot, $"Error while reloading settings: {e.Message}");
 				log(LogLevel.Warning, LogSender.Tbot, $"Stacktrace: {e.StackTrace}");
 			}

@@ -279,6 +279,26 @@ Also, a proper documentation about how to deal with settings would no doubt be h
 We write and build TBot with Visual Studio 2022 Community Edition, thus .NET 6 SDK is enough for command line compilation.
 
 Releases are automated by GitHub Actions, take a look at the [workflows](https://github.com/ogame-tbot/TBot/tree/master/.github/workflows) if you are interested in the build process.
-  
+
+### Building locally (Windows x64)
+
+The project is configured for a clean single-file publish with no subfolders inside `bin\`:
+
+```
+dotnet publish TBot\TBot.csproj -c Release
+```
+
+Run from the solution root (`C:\github\TBot\`). Requires [.NET 6 SDK](https://dotnet.microsoft.com/download/dotnet/6.0) and .NET 6 runtime on the target machine.
+
+The output lands in `TBot\bin\` and contains only:
+- `TBot.exe` — single-file framework-dependent bundle
+- `TBot.Common.pdb`, `TBot.Ogame.Infrastructure.pdb`, `TBot.pdb`, `TBot.WebUI.pdb`
+- `appsettings.json`, `appsettings.Development.json`, `instance_settings.json`, `settings.json`
+- `ogamed.exe` — native Go binary (not produced by the .NET build; copy from the official release)
+- `profiles\` — example configuration profiles
+- `README.md`
+
+No separate DLLs are produced. Intermediate build files go to `%LOCALAPPDATA%\TBot-cache\` and no `obj\` folder is created inside the project directory.
+
 ## Portability
 TBot is currently developed and mantained for Windows 64bit, Windows 32bit, Linux x86_64, MacOS 64bit, MacOS ARM, Linux ARMv7 and Linux ARM64.

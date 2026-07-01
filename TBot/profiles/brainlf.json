@@ -1,0 +1,29 @@
+{
+	"Brain": {
+		"Active": true,
+		"AutoMine": {
+			"Active": false
+		},
+		"LifeformAutoMine": {
+			"Active": true
+		},
+		"LifeformAutoResearch": {
+			"Active": true
+		},
+		"AutoResearch": {
+			"Active": false
+		}
+    },
+	"Expeditions": {
+		"Active": false
+	},
+	"AutoFarm": {
+		"Active": false
+	},
+	"AutoColonize": {
+		"Active": false
+	},
+	"AutoDiscovery": {
+		"Active": false
+	}
+}

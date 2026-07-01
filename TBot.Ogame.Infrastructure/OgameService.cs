@@ -36,9 +36,8 @@ namespace TBot.Ogame.Infrastructure {
 		private int _port;
 		private string _captchaKey;
 		private ProxySettings _proxySettings;
-		private string _cookiesPath;
 
-		public event EventHandler OnError;
+		public event EventHandler? OnError;
 
 		bool _mustKill = false;	// used whenever we want to actually kill ogamed
 
@@ -720,9 +719,9 @@ namespace TBot.Ogame.Infrastructure {
 				success = await PostAsync<bool>($"/bot/planets/{origin.ID}/send-discovery", parameters.ToArray());
 			} catch (HttpRequestException e) when (e.StatusCode == HttpStatusCode.BadRequest) {
 				success = false;
-			} catch (OgamedException e) {
+			} catch (OgamedException) {
 				success = false;
-			} catch (Exception e) {
+			} catch (Exception) {
 				success = false;
 			}
 			return success;
@@ -739,9 +738,9 @@ namespace TBot.Ogame.Infrastructure {
 				}
 			} catch (HttpRequestException e) when (e.StatusCode == HttpStatusCode.BadRequest) {
 				success = false;
-			} catch (OgamedException e) {
+			} catch (OgamedException) {
 				success = false;
-			} catch (Exception e) {
+			} catch (Exception) {
 				success = false;
 			}
 			return success;
