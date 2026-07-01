@@ -142,7 +142,7 @@
 						"Position": 1,
 						"Type": "Planet"
 					}
-				]			
+				]
 			}
 		},
 		"AutoMine": {
@@ -310,6 +310,24 @@
 			"CheckIntervalMin": 60,
 			"CheckIntervalMax": 240
 		},
+		"AutoDefence": {
+			"Active": false,
+			"ExcludeMoons": true,
+			"RandomOrder": true,
+			"DefenceToReach": {
+				"RocketLauncher": 4876,
+				"LightLaser": 2438,
+				"HeavyLaser": 2812,
+				"GaussCannon": 727,
+				"PlasmaTurret": 399,
+				"AntiBallisticMissiles": 120,
+				"SmallShieldDome": true,
+				"LargeShieldDome": true
+			},
+			"Exclude": [],
+			"CheckIntervalMin": 60,
+			"CheckIntervalMax": 240
+		},
 		"AutoRepatriate": {
 			"Active": true,
 			"ExcludeMoons": false,
@@ -343,24 +361,6 @@
 			"Active": true,
 			"CheckIntervalMin": 240,
 			"CheckIntervalMax": 360
-		},
-		"AutoDefence": {
-			"Active": false,
-			"ExcludeMoons": true,
-			"RandomOrder": true,
-			"DefenceToReach": {
-				"RocketLauncher": 4876,
-				"LightLaser": 2438,
-				"HeavyLaser": 2812,
-				"GaussCannon": 727,
-				"PlasmaTurret": 399,
-				"AntiBallisticMissiles": 120,
-				"SmallShieldDome": true,
-				"LargeShieldDome": true
-			},
-			"Exclude": [],
-			"CheckIntervalMin": 60,
-			"CheckIntervalMax": 240
 		},
 		"AutoFleepJumpGate": {
 			"Active": false,
@@ -396,7 +396,6 @@
 	},
 	"Expeditions": {
 		"Active": true,
-		"MaxExpeditionsPerOrigin": 10,
 		"IgnoreSleep": false,
 		"MinWaitNextFleet": 5,
 		"MaxWaitNextFleet": 15,
@@ -426,6 +425,7 @@
 		},
 		"RandomizeOrder": true,
 		"FuelToCarry": 20000,
+		"MaxExpeditionsPerOrigin": 10,
 		"Origin": [
 			{
 				"Galaxy": 5,
@@ -443,12 +443,6 @@
 	},
 	"AutoFarm": {
 		"Active": true,
-		"StopAfterFullScan": false,
-		"Blacklist": {
-			"Active": true,
-			"ResetAfterHours": 20,
-			"MinimumResourcesToNotBlacklist": 1000000
-		},
 		"ExcludeMoons": true,
 		"FastFarmMode": false,
 		"FastFarmMaxCacheAge": 1440,
@@ -494,15 +488,21 @@
 		"MaxSlots": 18,
 		"SlotsToLeaveFree": 1,
 		"CheckIntervalMin": 30,
-		"CheckIntervalMax": 60
+		"CheckIntervalMax": 60,
+		"Blacklist": {
+			"Active": true,
+			"ResetAfterHours": 20,
+			"MinimumResourcesToNotBlacklist": 1000000
+		},
+		"StopAfterFullScan": false
 	},
 	"AutoHarvest": {
 		"Active": false,
-		"MaxSlots": 5,
 		"HarvestOwnDF": true,
 		"HarvestDeepSpace": true,
 		"MinimumResourcesOwnDF": 300,
 		"MinimumResourcesDeepSpace": 50000,
+		"MaxSlots": 5,
 		"CheckIntervalMin": 30,
 		"CheckIntervalMax": 60
 	},
@@ -551,7 +551,6 @@
 	},
 	"AutoDiscovery": {
 		"Active": true,
-		"RandomizeDestination": false,
 		"Origin": [
 			{
 				"Galaxy": 5,
@@ -562,6 +561,7 @@
 		],
 		"MaxSlots": 5,
 		"MaxFailures": 5,
+		"RandomizeDestination": false,
 		"CheckIntervalMin": 30,
 		"CheckIntervalMax": 60
 	}
