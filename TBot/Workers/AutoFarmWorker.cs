@@ -23,6 +23,7 @@ namespace Tbot.Workers {
 		private readonly ITBotOgamedBridge _tbotOgameBridge;
 		private FarmTargetCache _farmTargetCache;
 		private Dictionary<string, DateTime> _farmBlacklist = new();
+		private bool _waitingForLootThreshold = false;
 		public AutoFarmWorker(ITBotMain parentInstance,
 			IOgameService ogameService,
 			IFleetScheduler fleetScheduler,
@@ -834,7 +835,8 @@ namespace Tbot.Workers {
 						await PruneOldReports();
 
 						// Attack leftover AttackPending targets from previous cycle before starting a new scan.
-						if (_tbotInstance.UserData.farmTargets.Any(t => t.State == FarmState.AttackPending)) {
+						// Suppressed while ProbeUntilMinimumResources is accumulating loot across cycles.
+						if (!_waitingForLootThreshold && _tbotInstance.UserData.farmTargets.Any(t => t.State == FarmState.AttackPending)) {
 							_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, "Attacking leftover pending targets from previous cycle...");
 							bool earlyStop;
 							(earlyStop, freeSlots) = await AttackPendingTargets(freeSlots, slotsToLeaveFree, applyStopAfterScan: false);
@@ -1114,6 +1116,24 @@ namespace Tbot.Workers {
 					/// Process reports.
 					await AutoFarmProcessReports();
 
+					bool probeUntilMinRes = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "ProbeUntilMinimumResources")
+						&& (bool) _tbotInstance.InstanceSettings.AutoFarm.ProbeUntilMinimumResources;
+					if (probeUntilMinRes) {
+						long totalLoot = _tbotInstance.UserData.farmTargets
+							.Where(t => t.State == FarmState.AttackPending && t.Report != null)
+							.Sum(t => t.Report.Loot(_tbotInstance.UserData.userInfo.Class).TotalResources);
+						long minTotal = (long) _tbotInstance.InstanceSettings.AutoFarm.MinimumResources;
+						if (totalLoot < minTotal) {
+							_waitingForLootThreshold = true;
+							_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm,
+								$"ProbeUntilMinimumResources: {totalLoot:N0}/{minTotal:N0} recursos acumulados, continuando no próximo ciclo...");
+							return;
+						}
+						_waitingForLootThreshold = false;
+						_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm,
+							$"ProbeUntilMinimumResources: meta atingida ({totalLoot:N0}/{minTotal:N0}), atacando...");
+					}
+
 					bool didStop;
 					(didStop, freeSlots) = await AttackPendingTargets(freeSlots, slotsToLeaveFree, applyStopAfterScan: true);
 					if (didStop) stop = true;
@@ -1209,7 +1229,9 @@ namespace Tbot.Workers {
 						// Keep the FastFarm cache up to date with whatever this report just confirmed,
 						// regardless of the resulting state, so future FastFarmMode runs reflect it.
 						await CacheUpsertFromReport(report);
-						if (MeetsLootThreshold(report.Loot(_tbotInstance.UserData.userInfo.Class))) {
+						bool probeUntilMinRes = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "ProbeUntilMinimumResources")
+							&& (bool) _tbotInstance.InstanceSettings.AutoFarm.ProbeUntilMinimumResources;
+						if (probeUntilMinRes || MeetsLootThreshold(report.Loot(_tbotInstance.UserData.userInfo.Class))) {
 							if (!report.HasFleetInformation || !report.HasDefensesInformation) {
 								if (target.State == FarmState.ProbesRequired)
 									newFarmTarget.State = FarmState.FailedProbesRequired;
