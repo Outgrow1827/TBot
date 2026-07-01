@@ -152,7 +152,7 @@ You can control and get info for TBot through a Telegram Bot. In order to enable
     * /ghostsleep - Wait fleets return, ghost harvest for current celestial only, and sleep for 5hours <code>/ghostsleep 4h3m or 3m50s Harvest</code>
     * /ghostsleepall - Wait fleets return, ghost harvest for all celestial and sleep for 5hours <code>/ghostsleepall 4h3m or 3m50s Harvest</code>
     * /ghost - Ghost for the specified amount of hours on the specified mission. Format: <code>/ghost 4h3m or 3m50s Harvest</code>
-    * /ghostmoons - Ghost moons fleet for the specified amount of hours on the specified mission. Format: <code>/ghostto 4h30m Harvest</code>
+    * /ghostmoons - Ghost moons fleet for the specified amount of hours on the specified mission. Format: <code>/ghostmoons 4h30m Harvest</code>
     * /switch - Switch current celestial resources and fleets to its planet or moon at the specified speed. Format: <code>/switch 5</code>
     * /deploy - Deploy to celestial with full ships and resources. Format: <code>/deploy 3:41:9 moon/planet 10</code>
     * /jumpgate - jumpgate to moon with full ships [full], or keeps needed cargo amount for resources [auto]. Format: <code>/jumpgate 2:41:9 auto/full</code>
@@ -162,10 +162,10 @@ You can control and get info for TBot through a Telegram Bot. In order to enable
     * /recall - Enable/disable fleet auto recall. Format: <code>/recall true/false</code>
     * /collect - Collect planets resources to JSON setting celestial
     * /build - Try to build buildable on each planet. Build max possible if no number value sent <code>/build LightFighter [100]</code>
-    * /collectdeut - Collect planets only deut resources -> to JSON repatriate setting celestial
+    * /collectdeut - Collect planets deut resources above minimum amount to JSON repatriate setting celestial. Format: <code>/collectdeut 500000</code>
     * /msg - Send a message to current attacker. Format: <code>/msg hello dude</code>
     * /sleep - Stop bot for the specified amount of hours. Format: <code>/sleep 4h3m or 3m50s</code>
-    * /wakeup - Wakeup bot\n" +
+    * /wakeup - Wakeup bot
     * /cancel - Cancel fleet with specified ID. Format: <code>/cancel 65656</code>
     * /getcelestials - Return the list of your celestials
     * /attacked - check if you're (still) under attack
@@ -187,6 +187,9 @@ You can control and get info for TBot through a Telegram Bot. In order to enable
     * /startlifeformautoresearch - start brain Lifeform autoresearch
     * /stopautofarm - stop autofarm
     * /startautofarm - start autofarm
+    * /clearcache - Clear FastFarm target cache file for current instance
+    * /stopautodiscovery - stop autodiscovery
+    * /startautodiscovery - start autodiscovery
  
 ### Settings Hot Reload
 TBot supports the editing of instance settings even while it is running. It will take care of turning on and off features as well as the specific feature config settings.
