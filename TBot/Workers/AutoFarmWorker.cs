@@ -24,6 +24,8 @@ namespace Tbot.Workers {
 		private FarmTargetCache _farmTargetCache;
 		private Dictionary<string, DateTime> _farmBlacklist = new();
 		private bool _waitingForLootThreshold = false;
+		private record DefenseProbeInfo(int FleetId, DateTime SentAt, DateTime? ArrivalTime, bool SeenReturning);
+		private readonly Dictionary<string, DefenseProbeInfo> _defenseProbeFleets = new();
 		public AutoFarmWorker(ITBotMain parentInstance,
 			IOgameService ogameService,
 			IFleetScheduler fleetScheduler,
@@ -55,7 +57,7 @@ namespace Tbot.Workers {
 
 		private async Task PruneOldReports() {
 			var newTime = await _tbotOgameBridge.GetDateTime();
-			var removeReports = _tbotInstance.UserData.farmTargets.Where(t => t.State == FarmState.AttackSent || (t.Report != null && DateTime.Compare(t.Report.Date.AddMinutes((double) _tbotInstance.InstanceSettings.AutoFarm.KeepReportFor), newTime) < 0)).ToList();
+			var removeReports = _tbotInstance.UserData.farmTargets.Where(t => t.State != FarmState.DefenseProbing && (t.State == FarmState.AttackSent || (t.Report != null && DateTime.Compare(t.Report.Date.AddMinutes((double) _tbotInstance.InstanceSettings.AutoFarm.KeepReportFor), newTime) < 0))).ToList();
 			foreach (var remove in removeReports) {
 				var updateReport = remove;
 				updateReport.State = FarmState.ProbesPending;
@@ -305,8 +307,8 @@ namespace Tbot.Workers {
 					return null;
 				}
 
-				// If probes are already sent or if an attack is pending, skip probing.
-				if (target.State == FarmState.ProbesSent || target.State == FarmState.AttackPending) {
+				// If probes are already sent, an attack is pending, or a defense probe attack is in flight, skip probing.
+				if (target.State == FarmState.ProbesSent || target.State == FarmState.AttackPending || target.State == FarmState.DefenseProbing) {
 					_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm, $"Target {planet.ToString()} marked as {target.State.ToString()}. Skipping...");
 					return null;
 				}
@@ -321,6 +323,147 @@ namespace Tbot.Workers {
 			if (target.State == FarmState.FailedProbesRequired)
 				neededProbes *= 9;
 			return neededProbes;
+		}
+
+		private bool IsDefenseProbeEnabled() =>
+			SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "ProbeAttackForDefenseCheck")
+			&& (bool) _tbotInstance.InstanceSettings.AutoFarm.ProbeAttackForDefenseCheck;
+
+		private async Task<int> SendDefenseProbeAttacks(int freeSlots, int slotsToLeaveFree) {
+			if (!IsDefenseProbeEnabled()) return freeSlots;
+
+			var targets = _tbotInstance.UserData.farmTargets
+				.Where(t => t.State == FarmState.ProbesRequired || t.State == FarmState.FailedProbesRequired)
+				.ToList();
+			if (!targets.Any()) return freeSlots;
+
+			_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm,
+				$"ProbeAttack: sending 1 EP attack to {targets.Count} target(s) to check for defenses.");
+
+			List<Celestial> availCelestials = (_tbotInstance.InstanceSettings.AutoFarm.Origin.Length > 0)
+				? _calculationService.ParseCelestialsList(_tbotInstance.InstanceSettings.AutoFarm.Origin, _tbotInstance.UserData.celestials)
+				: _tbotInstance.UserData.celestials.ToList();
+
+			foreach (var target in targets) {
+				if (freeSlots <= slotsToLeaveFree) {
+					_tbotInstance.UserData.slots = await _tbotOgameBridge.UpdateSlots();
+					freeSlots = _tbotInstance.UserData.slots.Free;
+					if (freeSlots <= slotsToLeaveFree) break;
+				}
+
+				var ordered = availCelestials
+					.OrderBy(c => _calculationService.CalcDistance(c.Coordinate, target.Celestial.Coordinate, _tbotInstance.UserData.serverData))
+					.ToList();
+
+				Celestial origin = null;
+				foreach (var cel in ordered) {
+					var updated = await _tbotOgameBridge.UpdatePlanet(cel, UpdateTypes.Ships);
+					if (updated.Ships.EspionageProbe >= 1) {
+						origin = updated;
+						break;
+					}
+				}
+				if (origin == null) {
+					_tbotInstance.log(LogLevel.Warning, LogSender.AutoFarm,
+						$"ProbeAttack: no origin with probes for {target.Celestial.Coordinate}, skipping.");
+					continue;
+				}
+
+				Ships probeShip = new();
+				probeShip.Add(Buildables.EspionageProbe, 1);
+
+				_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm,
+					$"ProbeAttack: attacking {target.Celestial.Coordinate} with 1 EP from {origin.Coordinate}.");
+
+				var fleetId = await _fleetScheduler.SendFleet(origin, probeShip, target.Celestial.Coordinate, Missions.Attack, Speeds.HundredPercent);
+
+				if (fleetId > (int) SendFleetCode.GenericError) {
+					freeSlots--;
+					_defenseProbeFleets[target.Celestial.Coordinate.ToString()] = new DefenseProbeInfo(fleetId, DateTime.UtcNow, null, false);
+					_tbotInstance.UserData.farmTargets.Remove(target);
+					target.State = FarmState.DefenseProbing;
+					_tbotInstance.UserData.farmTargets.Add(target);
+				} else if (fleetId == (int) SendFleetCode.AfterSleepTime) {
+					break;
+				}
+
+				await Task.Delay(RandomizeHelper.CalcRandomInterval(IntervalType.LessThanFiveSeconds), _ct);
+			}
+			return freeSlots;
+		}
+
+		private async Task ProcessDefenseProbingResults() {
+			if (!IsDefenseProbeEnabled()) return;
+
+			var probingTargets = _tbotInstance.UserData.farmTargets
+				.Where(t => t.State == FarmState.DefenseProbing)
+				.ToList();
+			if (!probingTargets.Any()) return;
+
+			var now = await _tbotOgameBridge.GetDateTime();
+			_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
+
+			foreach (var target in probingTargets) {
+				string coordKey = target.Celestial.Coordinate.ToString();
+				if (!_defenseProbeFleets.TryGetValue(coordKey, out var info)) {
+					_tbotInstance.UserData.farmTargets.Remove(target);
+					target.State = FarmState.ProbesPending;
+					target.Report = null;
+					_tbotInstance.UserData.farmTargets.Add(target);
+					continue;
+				}
+
+				var fleet = _tbotInstance.UserData.fleets.FirstOrDefault(f => f.ID == info.FleetId);
+
+				if (fleet != null) {
+					if (fleet.ReturnFlight) {
+						// Probe is returning home — survived the attack, no defenses.
+						_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm,
+							$"ProbeAttack: EP returning from {coordKey} — no defenses, queuing attack.");
+						var cacheEntry = _farmTargetCache.Get(target.Celestial.Coordinate);
+						if (cacheEntry != null) {
+							cacheEntry.HasDefenses = false;
+							_farmTargetCache.Upsert(cacheEntry);
+						}
+						_tbotInstance.UserData.farmTargets.Remove(target);
+						target.State = FarmState.AttackPending;
+						_tbotInstance.UserData.farmTargets.Add(target);
+						_defenseProbeFleets.Remove(coordKey);
+					} else if (info.ArrivalTime == null) {
+						// First time seeing fleet outbound — record when it arrives at target.
+						_defenseProbeFleets[coordKey] = info with { ArrivalTime = fleet.ArrivalTime };
+					}
+				} else {
+					// Fleet gone from list (returned or destroyed).
+					if (info.SeenReturning) {
+						// Was seen returning on a previous cycle — already resolved.
+						_defenseProbeFleets.Remove(coordKey);
+					} else if (info.ArrivalTime.HasValue && info.ArrivalTime.Value.AddMinutes(5) < now) {
+						// Arrived at target >5min ago and never seen returning → probe destroyed → has defenses.
+						_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm,
+							$"ProbeAttack: EP not seen returning after arrival at {coordKey} — defenses present, blacklisting.");
+						var cacheEntry = _farmTargetCache.Get(target.Celestial.Coordinate);
+						if (cacheEntry != null) {
+							cacheEntry.HasDefenses = true;
+							_farmTargetCache.Upsert(cacheEntry);
+						}
+						try {
+							if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "Blacklist") &&
+								SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm.Blacklist, "Active") &&
+								(bool) _tbotInstance.InstanceSettings.AutoFarm.Blacklist.Active) {
+								int resetDays = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm.Blacklist, "ResetAfterDays")
+									? (int) _tbotInstance.InstanceSettings.AutoFarm.Blacklist.ResetAfterDays : 7;
+								_farmBlacklist[coordKey] = DateTime.Now.AddDays(resetDays);
+							}
+						} catch { }
+						_tbotInstance.UserData.farmTargets.Remove(target);
+						target.State = FarmState.NotSuitable;
+						_tbotInstance.UserData.farmTargets.Add(target);
+						_defenseProbeFleets.Remove(coordKey);
+					}
+					// else: fleet gone but ArrivalTime unknown or < 5min buffer — wait for next cycle.
+				}
+			}
 		}
 
 		private class SpyOriginResult {
@@ -834,6 +977,13 @@ namespace Tbot.Workers {
 						// Prune all reports older than KeepReportFor and all reports of state AttackSent: information no longer actual.
 						await PruneOldReports();
 
+						// Check if any defense probe attacks have resolved (probe returned = no defenses, probe gone = has defenses).
+						await ProcessDefenseProbingResults();
+
+						// Convert ProbesRequired/FailedProbesRequired targets to DefenseProbing BEFORE the spy loop,
+						// so the spy loop skips them and only one probe (the attack probe) is sent.
+						freeSlots = await SendDefenseProbeAttacks(freeSlots, slotsToLeaveFree);
+
 						// Attack leftover AttackPending targets from previous cycle before starting a new scan.
 						// Suppressed while ProbeUntilMinimumResources is accumulating loot across cycles.
 						if (!_waitingForLootThreshold && _tbotInstance.UserData.farmTargets.Any(t => t.State == FarmState.AttackPending)) {
@@ -1215,6 +1365,11 @@ namespace Tbot.Workers {
 							target = matchingTarget.First();
 						}
 						var newFarmTarget = target;
+
+						if (target.State == FarmState.DefenseProbing) {
+							await _ogameService.DeleteReport(report.ID);
+							continue;
+						}
 
 						if (target.Report != null && DateTime.Compare(report.Date, target.Report.Date) < 0) {
 							// Target has a more recent report. Delete report.
