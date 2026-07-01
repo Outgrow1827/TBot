@@ -267,22 +267,27 @@ namespace Tbot.Workers {
 		}
 
 		private FarmTarget GetFarmTarget(Celestial planet) {
+			// Check if planet with coordinates exists already in _tbotInstance.UserData.farmTargets list.
 			var target = CheckDuplicatesAndGetExisting(planet);
 
 			if (target == null) {
+				// Does not exist, add to _tbotInstance.UserData.farmTargets list, set state to probes pending.
 				target = new(planet, FarmState.ProbesPending);
 				_tbotInstance.UserData.farmTargets.Add(target);
 			} else {
+				// Already exists, update _tbotInstance.UserData.farmTargets list with updated planet.
 				target.Celestial = planet;
 
 				if (target.State == FarmState.Idle)
 					target.State = FarmState.ProbesPending;
 
+				// If target marked not suitable based on a non-expired espionage report, skip probing.
 				if (target.State == FarmState.NotSuitable && target.Report != null) {
 					_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm, $"Target {planet.ToString()} marked as Not Suitable. Skipping...");
 					return null;
 				}
 
+				// If probes are already sent or if an attack is pending, skip probing.
 				if (target.State == FarmState.ProbesSent || target.State == FarmState.AttackPending) {
 					_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm, $"Target {planet.ToString()} marked as {target.State.ToString()}. Skipping...");
 					return null;
@@ -337,8 +342,11 @@ namespace Tbot.Workers {
 					break;
 				}
 
+				// No probes available in this celestial
 				_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
 
+				// If there are no free slots, update the minimum time to wait for current missions return.
+				// If there are no free slots, wait for probes to come back to current celestial.
 				if (freeSlots <= slotsToLeaveFree) {
 					var espionageMissions = _calculationService.GetMissionsInProgress(closest.Coordinate, Missions.Spy, _tbotInstance.UserData.fleets);
 					if (espionageMissions.Any()) {
@@ -409,6 +417,7 @@ namespace Tbot.Workers {
 
 			_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
 			while (freeSlots <= slotsToLeaveFree) {
+				// No slots available, wait for first fleet of any mission type to return.
 				_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
 				if (_tbotInstance.UserData.fleets.Any()) {
 					int interval = (int) ((1000 * _tbotInstance.UserData.fleets.OrderBy(fleet => fleet.BackIn).First().BackIn) + RandomizeHelper.CalcRandomInterval(IntervalType.LessThanASecond));
@@ -447,9 +456,16 @@ namespace Tbot.Workers {
 					}
 
 					try {
+						// Prune all reports older than KeepReportFor and all reports of state AttackSent: information no longer actual.
 						await PruneOldReports();
+
+						// Keep local record of _tbotInstance.UserData.celestials, to be updated by autofarmer itself, to reduce ogamed calls.
 						var celestialProbes = await GetCelestialProbes();
+
+						// Keep track of number of targets probed.
 						int numProbed = 0;
+
+						/// Galaxy scanning + target probing.
 						_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, "Detecting farm targets...");
 						bool stopAutoFarm = false;
 
@@ -464,6 +480,7 @@ namespace Tbot.Workers {
 							int startSystem = (int) range.StartSystem;
 							int endSystem = (int) range.EndSystem;
 
+							// Loop from start to end system.
 							for (var system = startSystem; system <= endSystem; system++) {
 
 								if (stopAutoFarm)
@@ -473,6 +490,7 @@ namespace Tbot.Workers {
 									break;
 								}
 
+								// Check excluded system.
 								bool excludeSystem = ShouldExcludeSystem(galaxy, system);
 								if (excludeSystem)
 									continue;
@@ -505,9 +523,11 @@ namespace Tbot.Workers {
 								AddMoons(scannedTargets);
 							}
 
+								// Add each planet that has inactive status to _tbotInstance.UserData.farmTargets.
 								foreach (Celestial planet in scannedTargets) {
 									if (stopAutoFarm)
 										break;
+									// Check if target is below set minimum rank.
 									if (!IsTargetInMinimumRank(planet, scannedTargets)) {
 										continue;
 									}
@@ -518,9 +538,11 @@ namespace Tbot.Workers {
 										break;
 									}
 
+									// Check excluded planet.
 									if (ShouldExcludePlanet(planet))
 										continue;
 
+									// Manage existing Target or generate a new one. If should not be processed returns null
 									var target = GetFarmTarget(planet);
 									if (target == null)
 										continue;
@@ -586,6 +608,7 @@ namespace Tbot.Workers {
 										continue;
 									}
 
+									// If local record indicate not enough espionage probes are available, update record to make sure this is correct.
 									if (celestialProbes[bestOrigin.Origin.ID] < neededProbes) {
 										var tempCelestial = await _tbotOgameBridge.UpdatePlanet(bestOrigin.Origin, UpdateTypes.Ships);
 										celestialProbes.Remove(bestOrigin.Origin.ID);

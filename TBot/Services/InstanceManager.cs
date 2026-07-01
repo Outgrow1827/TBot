@@ -63,13 +63,20 @@ namespace Tbot.Services {
 			// Initialize TelegramMessenger if enabled on main settings
 			await InitializeTelegramMessenger();
 
-			List<TbotInstanceData> newInstances = new();
-			List<Task<TbotInstanceData>> awaitingInstances = new();
+			// Detect settings versioning by checking existence of "Instances" key
+			SettingsVersion settingVersion = SettingsVersion.Invalid;
+
+			List<TbotInstanceData> newInstances = new();				// Instances which settings were already present
+			// We are going to gather valid Instances to be inited. The execution will be like this:
+			//	Await deinit of any removed instances
+			//	Async init of good instances
+			List<Task<TbotInstanceData>> awaitingInstances = new();		// Instances to be awaited
 			List<Task> deinitingInstances = new();
-			List<InitInstanceData> instancesToBeInited = new();
+			List<InitInstanceData> instancesToBeInited = new();     // Key -> Alias, Value -> settings
 
 			if (SettingsService.IsSettingSet(_mainSettings, "Instances") == false) {
 				_logger.WriteLog(LogLevel.Information, LogSender.Main, "Single instance settings detected");
+				settingVersion = SettingsVersion.AllInOne;
 
 				// Check if FilePath is one of the already inited instances
 				if (instances.Any(c => c._botSettingsPath == SettingsAbsoluteFilepath) == true) {
@@ -81,8 +88,17 @@ namespace Tbot.Services {
 					instancesToBeInited.Add(new InitInstanceData("MAIN", SettingsAbsoluteFilepath));
 				}
 			} else {
+				// In this case we need a json formatted like follows:
+				//	"Instances": [
+				//		{
+				//			"Settings": "<relative to main settings path>",
+				//			"Alias": "<Custom name for this instance>"
+				//		}
+				// ]
 				_logger.WriteLog(LogLevel.Information, LogSender.Main, "Multiples instances settings detected");
+				settingVersion = SettingsVersion.MultipleInstances;
 
+				// Initialize all the instances of TBot found in main settings
 				ICollection json_instances = _mainSettings.Instances;
 				List<InitInstanceData> uniqueInstances = new();
 
