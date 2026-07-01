@@ -473,6 +473,7 @@
 		],
 		"TargetsProbedBeforeAttack": 30,
 		"ProbeUntilMinimumResources": false,
+		"ProbeAttackForDefenseCheck": false,
 		"CargoType": "LargeCargo",
 		"FleetSpeed": 100,
 		"MinCargosToKeep": 0,
