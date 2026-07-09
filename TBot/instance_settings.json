@@ -36,7 +36,6 @@
 		},
 		"CaptchaAPIKey": "",
 		"CustomTitle": "",
-		"HideAccountAndUniverseNameInLogs": false,
 		"HideSensitiveDataInLogs": false,
 		"ResourcePriority": ["Deuterium", "Crystal", "Metal"],
 		"SlotsToLeaveFree": 1,
@@ -461,7 +460,6 @@
 	},
 	"AutoFarm": {
 		"Active": true,
-		"ExcludeMoons": true,
 		"ScanRange": [
 			{
 				"Galaxy": 2,
@@ -478,6 +476,7 @@
 		],
 		"KeepReportFor": 180,
 		"NumProbes": 10,
+		"ExcludeMoons": true,
 		"Origin": [
 			{
 				"Galaxy": 2,
@@ -618,7 +617,7 @@
 		],
 		"MaxSlots": 5,
 		"MaxFailures": 5,
-			"PauseWhenArtifactsAbove": false,
+		"PauseWhenArtifactsAbove": false,
 		"RandomizeDestination": false,
 		"CheckIntervalMin": 30,
 		"CheckIntervalMax": 60
