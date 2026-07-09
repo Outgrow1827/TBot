@@ -186,11 +186,9 @@ namespace Tbot.Services {
 
 			bool hideAccountNameInLogs = false;
 			try {
-				hideAccountNameInLogs = SettingsService.IsSettingSet(InstanceSettings.General, "HideAccountAndUniverseNameInLogs") && (bool) InstanceSettings.General.HideAccountAndUniverseNameInLogs;
+				hideAccountNameInLogs = SettingsService.IsSettingSet(InstanceSettings.General, "HideSensitiveDataInLogs") && (bool) InstanceSettings.General.HideSensitiveDataInLogs;
 			} catch { }
-			try {
-				TBot.Ogame.Infrastructure.Models.LogPrivacy.HideCoordinates = SettingsService.IsSettingSet(InstanceSettings.General, "HideSensitiveDataInLogs") && (bool) InstanceSettings.General.HideSensitiveDataInLogs;
-			} catch { }
+			TBot.Ogame.Infrastructure.Models.LogPrivacy.HideCoordinates = hideAccountNameInLogs;
 			_ogameService.Initialize(GetCredentialsFromSettings(), GetDeviceFromSettings(), proxy, (string) host, int.Parse(port), (string) captchaKey, hideAccountNameInLogs);
 		}
 
@@ -366,7 +364,7 @@ namespace Tbot.Services {
 
 		public override string ToString() {
 			try {
-				if (SettingsService.IsSettingSet(InstanceSettings.General, "HideAccountAndUniverseNameInLogs") && (bool) InstanceSettings.General.HideAccountAndUniverseNameInLogs)
+				if (SettingsService.IsSettingSet(InstanceSettings.General, "HideSensitiveDataInLogs") && (bool) InstanceSettings.General.HideSensitiveDataInLogs)
 					return $"{InstanceAlias}";
 			} catch { }
 
