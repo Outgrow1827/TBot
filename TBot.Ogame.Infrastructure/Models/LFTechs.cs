@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
@@ -88,23 +89,34 @@ namespace TBot.Ogame.Infrastructure.Models {
 		public int PsionicShieldMatrix { get; set; }
 		public int KaeleshDiscovererEnhancement { get; set; }
 
-		public int GetLevel(LFTechno building) {
-			int output = 0;
-			foreach (PropertyInfo prop in GetType().GetProperties()) {
-				if (prop.Name == building.ToString()) {
-					output = (int) prop.GetValue(this);
-				}
+		// Built once from reflection at class-init time instead of on every GetLevel()/SetLevel() call - see
+		// Ships.cs for the same pattern applied to the (much hotter) ship-count accessors.
+		private static readonly Dictionary<LFTechno, (Func<LFTechs, int> Get, Action<LFTechs, int> Set)> _accessors = BuildAccessors();
+
+		private static Dictionary<LFTechno, (Func<LFTechs, int>, Action<LFTechs, int>)> BuildAccessors() {
+			var map = new Dictionary<LFTechno, (Func<LFTechs, int>, Action<LFTechs, int>)>();
+			foreach (PropertyInfo prop in typeof(LFTechs).GetProperties()) {
+				if (prop.PropertyType != typeof(int) || !Enum.TryParse<LFTechno>(prop.Name, out var building))
+					continue;
+
+				var instance = Expression.Parameter(typeof(LFTechs), "instance");
+				var getter = Expression.Lambda<Func<LFTechs, int>>(Expression.Property(instance, prop), instance).Compile();
+
+				var value = Expression.Parameter(typeof(int), "value");
+				var setter = Expression.Lambda<Action<LFTechs, int>>(Expression.Assign(Expression.Property(instance, prop), value), instance, value).Compile();
+
+				map[building] = (getter, setter);
 			}
-			return output;
+			return map;
+		}
+
+		public int GetLevel(LFTechno building) {
+			return _accessors.TryGetValue(building, out var accessor) ? accessor.Get(this) : 0;
 		}
 
 		public LFTechs SetLevel(LFTechno buildable, int level) {
-			foreach (PropertyInfo prop in this.GetType().GetProperties()) {
-				if (prop.Name == buildable.ToString()) {
-					prop.SetValue(this, level);
-				}
-			}
-
+			if (_accessors.TryGetValue(buildable, out var accessor))
+				accessor.Set(this, level);
 			return this;
 		}
 	}

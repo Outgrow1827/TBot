@@ -155,6 +155,22 @@ namespace Tbot.Workers {
 						}
 					}
 
+					// Artifacts (item fragments found by Discovery missions) have a storage cap - once
+					// full, further discoveries just waste the fleet slot until some are spent. Rather
+					// than the user having to toggle Active on/off manually, this pauses sending (without
+					// disabling the feature - stop stays false, so it's re-checked next cycle) once the
+					// collected count reaches the storage cap, and resumes automatically once it drops
+					// back below that (e.g. after crafting/using items). The threshold (3600) matches the
+					// current max artifact storage capacity in-game and isn't exposed as a setting.
+					if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoDiscovery, "PauseWhenArtifactsAbove") && (bool) _tbotInstance.InstanceSettings.AutoDiscovery.PauseWhenArtifactsAbove) {
+						const long ArtifactsStorageCap = 3600;
+						var artifacts = await _ogameService.GetArtifacts(origin);
+						if (artifacts.Collected >= ArtifactsStorageCap) {
+							DoLog(LogLevel.Information, $"Pausing: artifacts storage is at {artifacts.Collected}/{artifacts.Max}, at or above the {ArtifactsStorageCap} cap.");
+							return;
+						}
+					}
+
 					List<Coordinate> possibleDestinations = new();
 					for (int i = 1; i <= _tbotInstance.UserData.serverData.Systems; i++) {
 						for (int j = 1; j <= 15; j++) {
@@ -246,11 +262,13 @@ namespace Tbot.Workers {
 					DoLog(LogLevel.Information, $"Stopping feature.");
 					await EndExecution();
 				} else {
-					long interval = (_tbotInstance.UserData.fleets.Where(fleet => fleet.Mission == Missions.Discovery).OrderByDescending(f => f.BackIn).First().BackIn ?? 0) * 1000 + RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
+					var lastDiscoveryFleet = _tbotInstance.UserData.fleets.Where(fleet => fleet.Mission == Missions.Discovery).OrderByDescending(f => f.BackIn).FirstOrDefault();
+					long interval = (lastDiscoveryFleet?.BackIn ?? 0) * 1000 + RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
 					if (delay) {
 						DoLog(LogLevel.Information, $"Delaying...");
 						_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
-						interval = (_tbotInstance.UserData.fleets.Where(fleet => fleet.Mission == Missions.Discovery).OrderByDescending(f => f.BackIn).First().BackIn ?? 0) * 1000 + RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
+						lastDiscoveryFleet = _tbotInstance.UserData.fleets.Where(fleet => fleet.Mission == Missions.Discovery).OrderByDescending(f => f.BackIn).FirstOrDefault();
+						interval = (lastDiscoveryFleet?.BackIn ?? 0) * 1000 + RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
 					}
 					if (interval <= 0)
 						interval = RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);

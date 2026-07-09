@@ -1,4 +1,5 @@
 using System;
+using TBot.Ogame.Infrastructure.Enums;
 
 namespace TBot.Ogame.Infrastructure.Models {
 	/// <summary>
@@ -25,6 +26,12 @@ namespace TBot.Ogame.Infrastructure.Models {
 		public DateTime? LastReportDate { get; set; }
 		public bool? HasDefenses { get; set; }
 		public bool? HasFleet { get; set; }
+
+		/// Target's own character class (Collector/General/etc.), as last reported - affects their mine
+		/// production (Collector) so it must be used, not ours, when extrapolating resource growth
+		/// between reports. Updated on every fresh report, so a class switch (e.g. via item/premium reset)
+		/// self-corrects the next time this target is probed.
+		public CharacterClass? PlayerClass { get; set; }
 
 		public bool HasCoords(Coordinate coords) {
 			return coords.Galaxy == Coordinate.Galaxy

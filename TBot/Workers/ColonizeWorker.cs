@@ -45,6 +45,65 @@ namespace Tbot.Workers {
 			return Feature.Colonize;
 		}
 
+		// Each Exclude entry accepts two formats:
+		//  - single coordinate:  { Galaxy, System, Position? } (Position omitted = whole system)
+		//  - range (like Targets): { Galaxy, StartSystem, EndSystem, StartPosition?, EndPosition? }
+		//    (positions omitted = whole system range)
+		private static bool HasKey(dynamic entry, string key) {
+			foreach (var value in (IEnumerable<string>) entry.Keys)
+				if (value == key)
+					return true;
+			return false;
+		}
+
+		private bool ShouldExcludeSystem(int galaxy, int system) {
+			foreach (var exclude in _tbotInstance.InstanceSettings.AutoColonize.Exclude) {
+				if ((int) exclude.Galaxy != galaxy)
+					continue;
+
+				bool isRange = HasKey(exclude, "StartSystem") && HasKey(exclude, "EndSystem");
+				if (isRange) {
+					if (HasKey(exclude, "StartPosition") || HasKey(exclude, "EndPosition"))
+						continue; // a position range only excludes specific planets, not the whole system
+					if (system >= (int) exclude.StartSystem && system <= (int) exclude.EndSystem) {
+						DoLog(LogLevel.Information, $"Skipping system {system}: system in exclude range {(int) exclude.StartSystem}-{(int) exclude.EndSystem}.");
+						return true;
+					}
+				} else if (!HasKey(exclude, "Position") && (int) exclude.System == system) {
+					DoLog(LogLevel.Information, $"Skipping system {system}: system in exclude list.");
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private bool ShouldExcludeTarget(Coordinate coord) {
+			foreach (var exclude in _tbotInstance.InstanceSettings.AutoColonize.Exclude) {
+				if ((int) exclude.Galaxy != coord.Galaxy)
+					continue;
+
+				bool isRange = HasKey(exclude, "StartSystem") && HasKey(exclude, "EndSystem");
+				if (isRange) {
+					if (coord.System < (int) exclude.StartSystem || coord.System > (int) exclude.EndSystem)
+						continue;
+					bool hasPositionRange = HasKey(exclude, "StartPosition") && HasKey(exclude, "EndPosition");
+					if (hasPositionRange) {
+						if (coord.Position >= (int) exclude.StartPosition && coord.Position <= (int) exclude.EndPosition) {
+							DoLog(LogLevel.Information, $"Skipping {coord}: coordinate in exclude range.");
+							return true;
+						}
+					} else {
+						DoLog(LogLevel.Information, $"Skipping {coord}: coordinate in exclude range (whole system range, no position bounds).");
+						return true;
+					}
+				} else if (HasKey(exclude, "Position") && (int) exclude.System == coord.System && (int) exclude.Position == coord.Position) {
+					DoLog(LogLevel.Information, $"Skipping {coord}: coordinate in exclude list.");
+					return true;
+				}
+			}
+			return false;
+		}
+
 		public override LogSender GetLogSender() {
 			return LogSender.Colonize;
 		}
@@ -67,7 +126,7 @@ namespace Tbot.Workers {
 					List<Celestial> newCelestials = _tbotInstance.UserData.celestials.ToList();
 					var dic = new Dictionary<Coordinate, Celestial>();
 				
-					foreach (Planet planet in _tbotInstance.UserData.celestials.Where(c => c is Planet)) {
+					foreach (Planet planet in _tbotInstance.UserData.celestials.Where(c => c is Planet).ToList()) {
 						Planet tempCelestial = await _tbotOgameBridge.UpdatePlanet(planet, UpdateTypes.Fast) as Planet;						
 						if (tempCelestial.Coordinate.Type == Celestials.Planet && tempCelestial.Fields.Built == 0) {
 							if (_calculationService.ShouldAbandon(tempCelestial as Planet, tempCelestial.Fields.Total, tempCelestial.Temperature.Max, fieldsSettings, temperaturesSettings)) {
@@ -210,6 +269,9 @@ namespace Tbot.Workers {
 										continue;
 									}
 									for (int i = (int) t.StartSystem; i <= (int) t.EndSystem; i++) {
+										if (ShouldExcludeSystem((int) t.Galaxy, i)) {
+											continue;
+										}
 										for (int ii = (int) t.StartPosition; ii <= (int) t.EndPosition; ii++) {
 											Coordinate targetCoords = new(
 												(int) t.Galaxy,
@@ -217,6 +279,9 @@ namespace Tbot.Workers {
 												(int) ii,
 												Celestials.Planet
 											);
+											if (ShouldExcludeTarget(targetCoords)) {
+												continue;
+											}
 											if (_calculationService.CalcLimitAstro((int) targetCoords.Position, _tbotInstance.UserData.researches)) {
 												targets.Add(targetCoords);
 											}

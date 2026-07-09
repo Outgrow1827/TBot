@@ -52,9 +52,16 @@ namespace Tbot.Services {
 			_helpersService = helpersService;
 		}
 
-		public async void OnSettingsChanged() {
+		public async Task OnSettingsChanged() {
 			await instancesSem.WaitAsync();
+			try {
+				await OnSettingsChangedImpl();
+			} finally {
+				instancesSem.Release();
+			}
+		}
 
+		private async Task OnSettingsChangedImpl() {
 			_logger.WriteLog(LogLevel.Information, LogSender.Main, $"Reading settings \"{SettingsAbsoluteFilepath}\"");
 
 			// Read settings first
@@ -138,7 +145,7 @@ namespace Tbot.Services {
 				if (newInstances.Any(c => string.Compare(c._botSettingsPath, deInstance._botSettingsPath) == 0) == false) {
 					_logger.WriteLog(LogLevel.Information, LogSender.Main, $"Deinitializing instance \"{deInstance._alias}\" \"{deInstance._botSettingsPath}\"");
 
-					deinitingInstances.Add(deInstance._botMain.DisposeAsync().AsTask());
+					deinitingInstances.Add(deInstance.Deinitialize());
 				}
 			}
 			await Task.WhenAll(deinitingInstances);
@@ -179,18 +186,21 @@ namespace Tbot.Services {
 
 			_logger.WriteLog(LogLevel.Information, LogSender.Main, $"Instances stats: Initialized {instances.Count} - Deinitialized {deinitingInstances.Count}");
 
-			// Initialize settingsWatcher 
+			// Initialize settingsWatcher
 			if (settingsWatcher == null)
 				settingsWatcher = new SettingsFileWatcher(OnSettingsChanged, SettingsAbsoluteFilepath);
-
-			instancesSem.Release();
 		}
 
 		public async ValueTask DisposeAsync() {
+			await instancesSem.WaitAsync();
 			List<Task> deinitTasks = new();
-			foreach (var instance in instances) {
-				_logger.WriteLog(LogLevel.Information, LogSender.Main, $"Deinitializing instance \"{instance._alias}\" \"{instance._botSettingsPath}\"");
-				deinitTasks.Add(instance.Deinitialize());
+			try {
+				foreach (var instance in instances) {
+					_logger.WriteLog(LogLevel.Information, LogSender.Main, $"Deinitializing instance \"{instance._alias}\" \"{instance._botSettingsPath}\"");
+					deinitTasks.Add(instance.Deinitialize());
+				}
+			} finally {
+				instancesSem.Release();
 			}
 			await Task.WhenAll(deinitTasks);
 			instances.Clear();

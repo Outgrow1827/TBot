@@ -12,7 +12,7 @@
 		"DeviceConf": {
 			"Name": "Device-name",
 			"System": "Windows",
-			"Browser": "Chrome",
+			"Browser": "Firefox",
 			"UserAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
 			"Memory": 8,
 			"Concurrency": 16,
@@ -21,7 +21,7 @@
 			"Height": 1080,
 			"Timezone": "Europe/London",
 			"Lang": "en"
-		  }
+		}
 	},
 	"General": {
 		"Host": "localhost",
@@ -36,6 +36,9 @@
 		},
 		"CaptchaAPIKey": "",
 		"CustomTitle": "",
+		"HideAccountAndUniverseNameInLogs": false,
+		"HideSensitiveDataInLogs": false,
+		"ResourcePriority": ["Deuterium", "Crystal", "Metal"],
 		"SlotsToLeaveFree": 1,
 		"SlotPriorityLevel": {
 			"Brain": 2,
@@ -59,7 +62,8 @@
 			"OnlyMoons": true,
 			"DeutToLeave": 200000,
 			"Recall": true,
-			"DefaultMission": "Deploy"
+			"DefaultMission": "Deploy",
+			"WarnPhalanxExposure": true
 		}
 	},
 	"Defender": {
@@ -86,7 +90,8 @@
 			"Active": true,
 			"TelegramMessenger": {
 				"Active": false
-			}
+			},
+			"DelayFleetSaveIfImpactOccurLaterThanNextCheck": true
 		},
 		"WhiteList": [
 			0,
@@ -96,7 +101,13 @@
 		],
 		"SpyAttacker": {
 			"Active": true,
-			"Probes": 20
+			"Probes": 20,
+			"CooldownMinutes": 60,
+			"MaxKnownCoordinates": 5
+		},
+		"SpyWatch": {
+			"Active": false,
+			"CooldownMinutes": 30
 		},
 		"MessageAttacker": {
 			"Active": false,
@@ -118,8 +129,11 @@
 		"Transports": {
 			"Active": true,
 			"CargoType": "SmallCargo",
-			"DeutToLeave": 1000000,
-			"RoundResources": true,
+			"DeutToLeaveOnMoons": 1000000,
+			"RoundResources": {
+				"Active": true,
+				"RoundTo": 10000
+			},
 			"SendToTheMoonIfPossible": true,
 			"Origin": {
 				"Galaxy": 3,
@@ -287,6 +301,7 @@
 			"PrioritizePlasmaTechnology": true,
 			"PrioritizeEnergyTechnology": true,
 			"PrioritizeIntergalacticResearchNetwork": true,
+			"ForceResearchWhateverTheLabLevel": false,
 			"CheckIntervalMin": 10,
 			"CheckIntervalMax": 20
 		},
@@ -314,15 +329,18 @@
 			"Active": false,
 			"ExcludeMoons": true,
 			"RandomOrder": true,
+			"MaxConstructionTime": 2880,
+			"ProductionCoverageHours": 24,
+			"UseProductionBasedCalculation": false,
 			"DefenceToReach": {
 				"RocketLauncher": 4876,
-				"LightLaser": 2438,
 				"HeavyLaser": 2812,
 				"GaussCannon": 727,
 				"PlasmaTurret": 399,
-				"AntiBallisticMissiles": 120,
 				"SmallShieldDome": true,
-				"LargeShieldDome": true
+				"LargeShieldDome": true,
+				"LightLaser": 2438,
+				"AntiBallisticMissiles": 120
 			},
 			"Exclude": [],
 			"CheckIntervalMin": 60,
@@ -444,9 +462,6 @@
 	"AutoFarm": {
 		"Active": true,
 		"ExcludeMoons": true,
-		"FastFarmMode": false,
-		"FastFarmMaxCacheAge": 1440,
-		"FastFarmIncludeMoons": true,
 		"ScanRange": [
 			{
 				"Galaxy": 2,
@@ -458,7 +473,7 @@
 			{
 				"Galaxy": 3,
 				"System": 3,
-				"Planet": 3
+				"Position": 3
 			}
 		],
 		"KeepReportFor": 180,
@@ -472,8 +487,6 @@
 			}
 		],
 		"TargetsProbedBeforeAttack": 30,
-		"ProbeUntilMinimumResources": false,
-		"ProbeAttackForDefenseCheck": false,
 		"CargoType": "LargeCargo",
 		"FleetSpeed": 100,
 		"MinCargosToKeep": 0,
@@ -487,16 +500,49 @@
 		"MaxWaitTime": 7200,
 		"MinLootFuelRatio": 0.5,
 		"PreferedResource": "",
+		"SkipRecentlyActiveTargets": false,
+		"ScoreWeights": {
+			"Active": false,
+			"Metal": 1.0,
+			"Crystal": 1.0,
+			"Deuterium": 1.0
+		},
 		"MaxSlots": 18,
 		"SlotsToLeaveFree": 1,
 		"CheckIntervalMin": 30,
 		"CheckIntervalMax": 60,
 		"Blacklist": {
 			"Active": true,
-			"ResetAfterDays": 7,
-			"MinimumResourcesToNotBlacklist": 1000000
+			"ResetAfterHours": 168,
+			"MinimumResourcesToNotBlacklist": 1000000,
+			"ProcessAllReports": false
 		},
-		"StopAfterFullScan": false
+		"StopAfterFullScan": false,
+		"FastFarmMode": false,
+		"FastFarmMaxCacheAge": 1440,
+		"FastFarmIncludeMoons": true,
+		"ProbeUntilMinimumResources": false,
+		"ProbeAttackForDefenseCheck": false,
+		"AcceptableFleetLossPercentage": 0,
+		"MinLootToRiskRatio": 1.0,
+		"RecycleDebris": {
+			"Active": false,
+			"MinDebrisToRecycle": 50000
+		},
+		"Ships": {
+			"SmallCargo": true,
+			"LargeCargo": true,
+			"LightFighter": true,
+			"HeavyFighter": true,
+			"Cruiser": true,
+			"Battleship": true,
+			"Battlecruiser": true,
+			"Bomber": true,
+			"Destroyer": true,
+			"Deathstar": false,
+			"Reaper": true,
+			"Pathfinder": true
+		}
 	},
 	"AutoHarvest": {
 		"Active": false,
@@ -523,7 +569,7 @@
 			"MinTemperatureAcceptable": -130,
 			"MaxTemperatureAcceptable": 260
 		},
-		"IntensiveResearch" : {
+		"IntensiveResearch": {
 			"Active": false,
 			"MaxSlots": 10,
 			"MinWaitNextFleet": 25,
@@ -547,6 +593,15 @@
 				"MaxPlanets": 2
 			}
 		],
+		"Exclude": [
+			{
+				"Galaxy": 5,
+				"StartSystem": 1,
+				"EndSystem": 5,
+				"StartPosition": 1,
+				"EndPosition": 15
+			}
+		],
 		"RandomPosition": true,
 		"CheckIntervalMin": 30,
 		"CheckIntervalMax": 60
@@ -563,8 +618,15 @@
 		],
 		"MaxSlots": 5,
 		"MaxFailures": 5,
+			"PauseWhenArtifactsAbove": false,
 		"RandomizeDestination": false,
 		"CheckIntervalMin": 30,
 		"CheckIntervalMax": 60
+	},
+	"Watchdog": {
+		"Active": true,
+		"MaxStuckMinutes": 30,
+		"CheckIntervalMin": 1,
+		"CheckIntervalMax": 2
 	}
 }

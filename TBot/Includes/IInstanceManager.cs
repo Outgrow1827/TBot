@@ -8,6 +8,6 @@ using System.Threading.Tasks;
 namespace Tbot.Includes {
 	internal interface IInstanceManager : IAsyncDisposable {
 		string SettingsAbsoluteFilepath { get; set; }
-		void OnSettingsChanged();
+		Task OnSettingsChanged();
 	}
 }

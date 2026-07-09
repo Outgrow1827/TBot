@@ -7,6 +7,14 @@ using System.Threading.Tasks;
 using TBot.Ogame.Infrastructure.Enums;
 
 namespace TBot.Ogame.Infrastructure.Models {
+	/// <summary>Global switch, set once at startup from instance_settings.json
+	/// (General.HideSensitiveDataInLogs), that controls whether Coordinate.ToString()
+	/// masks galaxy/system/position. Applies everywhere a Coordinate is interpolated
+	/// into a log message, without needing to touch every log call site individually.</summary>
+	public static class LogPrivacy {
+		public static bool HideCoordinates = false;
+	}
+
 	public class Coordinate {
 		public Coordinate(int galaxy = 1, int system = 1, int position = 1, Celestials type = Celestials.Planet) {
 			Galaxy = galaxy;
@@ -20,6 +28,9 @@ namespace TBot.Ogame.Infrastructure.Models {
 		public Celestials Type { get; set; }
 
 		public override string ToString() {
+			if (LogPrivacy.HideCoordinates) {
+				return $"[{GetCelestialCode()}:hidden]";
+			}
 			return $"[{GetCelestialCode()}:{Galaxy}:{System}:{Position}]";
 		}
 
@@ -52,6 +63,26 @@ namespace TBot.Ogame.Infrastructure.Models {
 				Celestials.DeepSpace => "DS",
 				_ => "",
 			};
+		}
+
+		/// <summary>Parses the bracketed form produced by ToString() (e.g. "[P:1:2:3]", "[M:1:2:3]") -
+		/// unlike FromString(), which expects a different "1:2:3 moon"-style format used elsewhere.</summary>
+		static public bool TryParse(string arg, out Coordinate coordinate) {
+			coordinate = null;
+			if (string.IsNullOrEmpty(arg))
+				return false;
+			var m = Regex.Match(arg, @"\[(P|M|DF|DS):(\d+):(\d+):(\d+)\]");
+			if (!m.Success)
+				return false;
+			Celestials type = m.Groups[1].Value switch {
+				"P" => Celestials.Planet,
+				"M" => Celestials.Moon,
+				"DF" => Celestials.Debris,
+				"DS" => Celestials.DeepSpace,
+				_ => Celestials.Planet,
+			};
+			coordinate = new Coordinate(int.Parse(m.Groups[2].Value), int.Parse(m.Groups[3].Value), int.Parse(m.Groups[4].Value), type);
+			return true;
 		}
 
 		public bool IsSame(Coordinate otherCoord) {

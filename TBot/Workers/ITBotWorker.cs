@@ -15,6 +15,8 @@ namespace Tbot.Workers {
 
 		TimeSpan DueTime { get; }
 		TimeSpan Period { get;  }
+		DateTime? LastExecutionStart { get; }
+		DateTime? LastExecutionEnd { get; }
 
 		void DoLog(LogLevel level, string format);
 

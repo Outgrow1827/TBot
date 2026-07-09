@@ -63,7 +63,7 @@ namespace Tbot.Workers {
 
 					_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
 
-					foreach (Planet planet in _tbotInstance.UserData.celestials.Where(c => c is Planet)) {
+					foreach (Planet planet in _tbotInstance.UserData.celestials.Where(c => c is Planet).ToList()) {
 						Planet tempCelestial = await _tbotOgameBridge.UpdatePlanet(planet, UpdateTypes.Fast) as Planet;
 						tempCelestial = await _tbotOgameBridge.UpdatePlanet(tempCelestial, UpdateTypes.Ships) as Planet;
 						Moon moon = new() {

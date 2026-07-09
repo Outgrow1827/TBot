@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
@@ -19,14 +20,23 @@ namespace TBot.Ogame.Infrastructure.Models {
 		public long AntiBallisticMissiles { get; set; }
 		public long InterplanetaryMissiles { get; set; }
 
-		public int GetAmount(Buildables defence) {
-			int output = 0;
-			foreach (PropertyInfo prop in GetType().GetProperties()) {
-				if (prop.Name == defence.ToString()) {
-					output = (int) prop.GetValue(this);
-				}
+		// Built once from reflection at class-init time instead of on every GetAmount() call - see Ships.cs
+		// for the same pattern applied to the (much hotter) ship-count accessors.
+		private static readonly Dictionary<Buildables, Func<Defences, long>> _accessors = BuildAccessors();
+
+		private static Dictionary<Buildables, Func<Defences, long>> BuildAccessors() {
+			var map = new Dictionary<Buildables, Func<Defences, long>>();
+			foreach (PropertyInfo prop in typeof(Defences).GetProperties()) {
+				if (prop.PropertyType != typeof(long) || !Enum.TryParse<Buildables>(prop.Name, out var buildable))
+					continue;
+				var instance = Expression.Parameter(typeof(Defences), "instance");
+				map[buildable] = Expression.Lambda<Func<Defences, long>>(Expression.Property(instance, prop), instance).Compile();
 			}
-			return output;
+			return map;
+		}
+
+		public int GetAmount(Buildables defence) {
+			return _accessors.TryGetValue(defence, out var getter) ? (int) getter(this) : 0;
 		}
 	}
 

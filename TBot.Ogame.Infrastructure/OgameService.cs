@@ -29,6 +29,7 @@ namespace TBot.Ogame.Infrastructure {
 		private HttpClient _client;
 		private Process? _ogamedProcess;
 		private string _username;
+		private bool _hideAccountNameInLogs;
 
 		private Credentials _credentials;
 		private Device _device;
@@ -50,13 +51,15 @@ namespace TBot.Ogame.Infrastructure {
 				ProxySettings proxySettings,
 				string host = "127.0.0.1",
 				int port = 8080,
-				string captchaKey = "") {
+				string captchaKey = "",
+				bool hideAccountNameInLogs = false) {
 			_credentials = credentials;
 			_device = device;
 			_host = host;
 			_port = port;
 			_captchaKey = captchaKey;
 			_proxySettings = proxySettings;
+			_hideAccountNameInLogs = hideAccountNameInLogs;
 
 			_username = credentials.Username;
 
@@ -105,7 +108,17 @@ namespace TBot.Ogame.Infrastructure {
 		internal Process ExecuteOgamedExecutable(Credentials credentials, Device device, string host = "localhost", int port = 8080, string captchaKey = "", ProxySettings proxySettings = null) {
 			Process? ogameProc = null;
 			try {
-				string args = $"--universe=\"{credentials.Universe}\" --username={credentials.Username} --password={credentials.Password} --device-name={device.Name} --language={credentials.Language} --auto-login=false --port={port} --host=0.0.0.0";
+				// Credentials via environment variables, not CLI args: process arguments are
+				// visible to any other process/user on the machine (Task Manager, Process Explorer,
+				// Get-CimInstance Win32_Process, etc.), env vars of a child process are not exposed
+				// that way. ogamed already supports this (urfave/cli EnvVars) for username/password/
+				// proxy-username/proxy-password/basic-auth-username/basic-auth-password.
+				var envVars = new System.Collections.Generic.Dictionary<string, string> {
+					["OGAMED_USERNAME"] = credentials.Username,
+					["OGAMED_PASSWORD"] = credentials.Password,
+				};
+
+				string args = $"--universe=\"{credentials.Universe}\" --device-name={device.Name} --language={credentials.Language} --auto-login=false --port={port} --host=0.0.0.0";
 				if (captchaKey != "")
 					args += $" --nja-api-key={captchaKey}";
 				if (proxySettings.Enabled) {
@@ -113,9 +126,9 @@ namespace TBot.Ogame.Infrastructure {
 						args += $" --proxy={proxySettings.Address}";
 						args += $" --proxy-type={proxySettings.Type}";
 						if (proxySettings.Username != "")
-							args += $" --proxy-username={proxySettings.Username}";
+							envVars["OGAMED_PROXY_USERNAME"] = proxySettings.Username;
 						if (proxySettings.Password != "")
-							args += $" --proxy-password={proxySettings.Password}";
+							envVars["OGAMED_PROXY_PASSWORD"] = proxySettings.Password;
 						if (proxySettings.LoginOnly)
 							args += " --proxy-login-only=true";
 					}
@@ -123,8 +136,8 @@ namespace TBot.Ogame.Infrastructure {
 				if (credentials.IsLobbyPioneers)
 					args += " --lobby=lobby-pioneers";
 				if (credentials.BasicAuthUsername != "" && credentials.BasicAuthPassword != "") {
-					args += $" --basic-auth-username={credentials.BasicAuthUsername}";
-					args += $" --basic-auth-password={credentials.BasicAuthPassword}";
+					envVars["OGAMED_AUTH_USERNAME"] = credentials.BasicAuthUsername;
+					envVars["OGAMED_AUTH_PASSWORD"] = credentials.BasicAuthPassword;
 				}
 
 				if (device.System != "") {
@@ -161,6 +174,9 @@ namespace TBot.Ogame.Infrastructure {
 				ogameProc = new Process();
 				ogameProc.StartInfo.FileName = GetExecutableName();
 				ogameProc.StartInfo.Arguments = args;
+				foreach (var kv in envVars) {
+					ogameProc.StartInfo.Environment[kv.Key] = kv.Value;
+				}
 				ogameProc.EnableRaisingEvents = true;
 				ogameProc.StartInfo.RedirectStandardOutput = true;
 				ogameProc.StartInfo.RedirectStandardError = true;
@@ -193,7 +209,8 @@ namespace TBot.Ogame.Infrastructure {
 		}
 
 		private void dump_ogamedProcess_Log(bool isErr, string? payload) {
-			_logger.WriteLog(isErr ? LogLevel.Error : LogLevel.Information, LogSender.OGameD, $"[{_username}] \"{payload}\"");
+			string label = _hideAccountNameInLogs ? "hidden" : _username;
+			_logger.WriteLog(isErr ? LogLevel.Error : LogLevel.Information, LogSender.OGameD, $"[{label}] \"{payload}\"");
 		}
 
 		private void handle_ogamedProcess_Exited(object? sender, EventArgs e) {
@@ -409,8 +426,8 @@ namespace TBot.Ogame.Infrastructure {
 			var planets = await GetPlanets();
 			var moons = await GetMoons();
 			List<Celestial> celestials = new();
-			celestials.AddRange(planets);
-			celestials.AddRange(moons);
+			if (planets != null) celestials.AddRange(planets);
+			if (moons != null) celestials.AddRange(moons);
 			return celestials;
 		}
 
@@ -538,6 +555,10 @@ namespace TBot.Ogame.Infrastructure {
 
 		public async Task<List<Production>> GetProductions(Celestial celestial) {
 			return await GetAsync<List<Production>>($"/bot/planets/{celestial.ID}/production");
+		}
+
+		public async Task<ArtifactsInfo> GetArtifacts(Celestial celestial) {
+			return await GetAsync<ArtifactsInfo>($"/bot/planets/{celestial.ID}/artifacts");
 		}
 
 		public async Task<ResourceSettings> GetResourceSettings(Planet planet) {
@@ -681,6 +702,14 @@ namespace TBot.Ogame.Infrastructure {
 
 		public async Task<EspionageReport> GetEspionageReport(int msgId) {
 			return await GetAsync<EspionageReport>($"/bot/espionage-report/{msgId}");
+		}
+
+		public async Task<CombatReportSummary> GetCombatReportSummary(Coordinate coordinate) {
+			return await GetAsync<CombatReportSummary>($"/bot/combat-report/{coordinate.Galaxy}/{coordinate.System}/{coordinate.Position}");
+		}
+
+		public async Task<CombatReportSummary> GetCombatReportSummary(long fleetId) {
+			return await GetAsync<CombatReportSummary>($"/bot/combat-report/fleet/{fleetId}");
 		}
 
 		public async Task JumpGate(Celestial origin, Celestial destination, Ships ships) {

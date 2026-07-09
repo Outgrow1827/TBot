@@ -174,7 +174,7 @@ namespace Tbot.Workers
 				List<GalaxyInfo> galaxyInfos = new();
 				Planet newPlanet = new();
 				List<Celestial> newCelestials = _tbotInstance.UserData.celestials.ToList();
-				foreach (Planet planet in _tbotInstance.UserData.celestials.Where(p => p is Planet)) {
+				foreach (Planet planet in _tbotInstance.UserData.celestials.Where(p => p is Planet).ToList()) {
 					newPlanet = planet;
 					var gi = await _ogameService.GetGalaxyInfo(planet.Coordinate);
 					if (gi.Planets.Any(p => p != null && p.ID == planet.ID)) {

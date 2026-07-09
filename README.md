@@ -87,9 +87,10 @@ TBot has a wide variety of useful features. They all can be configured and custo
 Here follows a short explanation of each of them, read the [Wiki](https://github.com/ogame-tbot/TBot/wiki/Configuration-guide) for a more indepth explanation.
 
 * Defender: TBot checks periodically for incoming attacks
-  * Autofleet: TBot dispatches your endangered fleet and resources on the safest mission possible. A favourite type of mission can be set in the settings
+  * Autofleet: TBot dispatches your endangered fleet and resources on the safest mission possible. A favourite type of mission can be set in the settings. `DelayFleetSaveIfImpactOccurLaterThanNextCheck` skips an immediate fleetsave if the impact is farther away than the next scheduled check
   * MessageAttacker: TBot sends a message to the attacker(s). The message is picked randomly from the array given in the settings
-  * SpyAttacker: TBot automatically spies attacker with set number of probes
+  * SpyAttacker: TBot automatically spies attacker with set number of probes. This also fires when you're only spied (not just attacked with ships) - it spies back the origin plus its sibling celestial (planet/moon at the same coordinate), and expands to every coordinate previously seen for that player (`MaxKnownCoordinates` caps this), rate-limited per (player, coordinate) via `CooldownMinutes`
+  * SpyWatch: TBot sends a Telegram notice when someone spies you, even if `IgnoreProbes` would otherwise skip it silently. Cooldown per origin via `CooldownMinutes`
   * Alarm: TBot plays a nasty sound if under attack
   * TelegramMessenger: TBot sends you a notice if under attack (requires additional configuration, see [below](#telegram))
 * Expeditions: TBot will handle them for you
@@ -103,11 +104,21 @@ Here follows a short explanation of each of them, read the [Wiki](https://github
   * AutoResearchLF: TBot will research the LifeForms techs you selected up to the given level. Only researches with lv 1 or more will be researched. You must manually select the desired researches and upgrade them to lv 1 or more in order to TBot to account for them.
   * BuyOfferOfTheDay: TBot can buy the daily item from the Trader (check intervals are implemented so you can configure shorter check times when there is the specific event)
 * AutoFarm: TBot will scan one or more ranges of systems spying inactive players and attacking them with the specified type of ship if they are profitable above a given amount.
-  * FastFarmMode: TBot keeps a persistent cache of discovered targets (coordinates, last known buildings/resources, inactivity, defenses) so it can skip re-scanning/re-probing recently seen targets and extrapolate their current resources from elapsed time instead. Configure `FastFarmMode`, `FastFarmMaxCacheAge` (minutes) and `FastFarmIncludeMoons` in the instance settings.
+  * FastFarmMode: TBot keeps a persistent cache of discovered targets (coordinates, last known buildings/resources, inactivity, defenses) so it can skip re-scanning/re-probing recently seen targets and extrapolate their current resources from elapsed time instead. Configure `FastFarmMode`, `FastFarmMaxCacheAge` (minutes) and `FastFarmIncludeMoons` in the instance settings. The extrapolation now also accounts for the target's own character class (Collector gets +25% mine production), read from their last report and kept in sync automatically.
+  * A cached/known target already inside `ScanRange` is no longer forcibly re-probed just because the range changed - if its cached report is still fresh (within `KeepReportFor`), it's reused instead, in both FastFarm and normal mode.
+  * Attacking defended targets: by default TBot only attacks fully defenceless targets. Set `AcceptableFleetLossPercentage` (0-100) to a value above 0 to allow attacking targets that still have some fleet/defence, as long as a battle simulation predicts the attacker's fleet-value loss stays within that percentage. The simulator now sizes the smallest combat fleet (in 10% steps of what's available) that still wins within that threshold, instead of always committing the whole available combat fleet, and also checks that the loot is worth the resource value expected to be lost (`MinLootToRiskRatio`). `Ships` lists which warship types TBot is allowed to draw on (from the same origin as the cargo ships) to fight through the defence - cargo ships themselves are always controlled separately by `CargoType`, not by this list.
+  * Anti-Bashing: TBot keeps a permanent, per-player record (`players_db_<alias>.json`, separate from the farm target cache) of everyone it has farmed. If a player it farmed before ever attacks back, they're permanently blacklisted from AutoFarm from then on, regardless of loot - always on, no setting needed.
+  * Poor-farm blacklist by player: with `Blacklist.Active`, a player whose confirmed real loot averages below `MinimumResourcesToNotBlacklist` across 3+ raids gets blacklisted everywhere they own a planet (`ATTACK_HISTORY`, keyed by player name), not just at the coordinate that triggered it.
+  * `ScoreWeights`: optional weighted target scoring (weight per resource type, discounted by flight distance) as an alternative to sorting purely by `PreferedResource`/total loot. Off by default.
+  * `SkipRecentlyActiveTargets`: skip a target this cycle if its espionage report shows activity in the last 60 minutes, even if the game still labels it inactive - avoids a possible trap or resources about to be moved. Off by default.
+  * `RecycleDebris`: for defended targets going through the battle simulation, if the predicted debris field (using the universe's real `DebrisFactor`/`DebrisFactorDef`) is above `MinDebrisToRecycle`, recyclers are sized and dispatched right after the attack, timed to land shortly after it. Off by default.
+  * ATTACK_HISTORY: every confirmed combat report is recorded (real loot per coordinate/player, in the same SQLite database as the farm target cache), independent of the espionage-estimate-only anti-bashing record above.
 * AutoHarvest: TBot will harvest expedition debris in your celestials' systems as well as your own DFs
 * AutoColonize: TBot will make new colonies. Input the list of coordinates of your desired colonies and TBot will do the rest.
+* Manual activity log: when `AutoFarm.Blacklist.ProcessAllReports` is `true`, TBot records any espionage/attack fleet it detects that it did **not** send itself (e.g. actions you took manually in the browser) to `data/manual_activity_<alias>.csv`. Off by default.
 * SleepMode: TBot will not interact with your account between the hours specified in settings
-  * AutoFleetSave: TBot will keep your fleets safe by dispatching them on the safest mission possible until wake up time (deploy with recall is supported!)
+  * AutoFleetSave: TBot will keep your fleets safe by dispatching them on the safest mission possible until wake up time (deploy with recall is supported!). `WarnPhalanxExposure` warns (log + Telegram) if the fleet ends up parked on a Planet instead of a Moon, exposed to Phalanx scan.
+* Resource priority order (`General.ResourcePriority`, default `["Deuterium", "Crystal", "Metal"]`): whenever a fleet's requested payload (fleetsave, repatriate, etc.) exceeds its actual cargo capacity, resources are loaded in this order instead of relying on the game's undocumented default - the resource(s) that don't fit are the ones left behind.
 * Local Proxy: Tbot allows you to play in your browser
   * Insert the hostname of the machine you'll run TBot onto in the settings (i.e.: localhost, or the local ip of a computer on your local network such as 192.168.X.X)
   * Navigate with your browser to http://*hostname:port*/game/index.php (remember to change hostname and port with the ones you specified in settings)
@@ -279,29 +290,32 @@ Feel free to fork and make pull requests or give suggestions posting an Issue or
 Also, a proper documentation about how to deal with settings would no doubt be helpful, especially for new users.
 
 ## Building
-We write and build TBot with Visual Studio 2022 Community Edition, thus .NET 6 SDK is enough for command line compilation.
+We write and build TBot with Visual Studio 2022 Community Edition. The project targets .NET 10, so the .NET 10 SDK is required for command line compilation.
 
 Releases are automated by GitHub Actions, take a look at the [workflows](https://github.com/ogame-tbot/TBot/tree/master/.github/workflows) if you are interested in the build process.
 
 ### Building locally (Windows x64)
 
-The project is configured for a clean single-file publish with no subfolders inside `bin\`:
-
 ```
 dotnet publish TBot\TBot.csproj -c Release
 ```
 
-Run from the solution root (`C:\github\TBot\`). Requires [.NET 6 SDK](https://dotnet.microsoft.com/download/dotnet/6.0) and .NET 6 runtime on the target machine.
+Run from the solution root (`C:\github\TBot\`). Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) to build. The published `TBot.exe` is self-contained (bundles its own .NET 10 runtime), but the target machine still needs the ASP.NET Core 10 runtime installed for the WebUI (Kestrel) to start:
+```
+winget install Microsoft.DotNet.AspNetCore.10
+```
 
 The output lands in `TBot\bin\` and contains only:
-- `TBot.exe` — single-file framework-dependent bundle
+- `TBot.exe` — single-file, self-contained, compressed bundle (~65MB)
 - `TBot.Common.pdb`, `TBot.Ogame.Infrastructure.pdb`, `TBot.pdb`, `TBot.WebUI.pdb`
 - `appsettings.json`, `appsettings.Development.json`, `instance_settings.json`, `settings.json`
 - `ogamed.exe` — native Go binary (not produced by the .NET build; copy from the official release)
 - `profiles\` — example configuration profiles
 - `README.md`
 
-No separate DLLs are produced. Intermediate build files go to `%LOCALAPPDATA%\TBot-cache\` and no `obj\` folder is created inside the project directory.
+No loose DLLs. Intermediate build files go to `%LOCALAPPDATA%\TBot-cache\` and no `obj\` folder is created inside the project directory. `refs\`, unused static web asset manifests, and the IIS in-process hosting module (`aspnetcorev2_inprocess.dll` - dead weight, TBot only ever runs via Kestrel) are removed automatically after both `build` and `publish`.
+
+**Why compressed self-contained, not the simpler single-file option**: a single-file bundle without compression gets memory-mapped directly from wherever `TBot.exe` lives as soon as the native host starts, before any of TBot's own code runs. That doesn't play well with non-local filesystems (e.g. a VMware shared folder) - the process can be killed by the OS with zero output before it even prints its first line. `EnableCompressionInSingleFile` forces the bundle to be extracted to a local disk cache (`%TEMP%`) on startup instead, which avoids that failure mode - but compression only works for self-contained publishes, hence the larger output than a plain framework-dependent single-file would be.
 
 ## Portability
 TBot is currently developed and mantained for Windows 64bit, Windows 32bit, Linux x86_64, MacOS 64bit, MacOS ARM, Linux ARMv7 and Linux ARM64.

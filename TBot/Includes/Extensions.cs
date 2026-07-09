@@ -7,10 +7,8 @@ using TBot.Ogame.Infrastructure.Models;
 
 namespace Tbot.Includes {
 	public static class Extensions {
-		public static IEnumerable<T> Shuffle<T>(this IEnumerable<T> source) {
-			Random rnd = new();
-			return source.OrderBy((item) => rnd.Next());
-		}
+		// Shuffle<T> removido: .NET 9+ adicionou Enumerable.Shuffle<T> nativo com o mesmo
+		// comportamento (embaralhar sem alterar a sequência original), call sites inalterados.
 
 		public static bool Has(this List<Celestial> celestials, Celestial celestial) {
 			foreach (Celestial cel in celestials) {
