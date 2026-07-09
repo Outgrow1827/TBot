@@ -41,6 +41,9 @@ _private/
 .mcp.json
 .claude/
 
+# External Go daemon binary, not built by this solution
+TBot/ogamed.exe
+
 # Uncomment if you have tasks that create the project's static files in wwwroot
 #wwwroot/
 
