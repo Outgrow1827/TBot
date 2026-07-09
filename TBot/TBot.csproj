@@ -4,7 +4,7 @@
     <OutputPath>$(LOCALAPPDATA)\TBot-cache\out\</OutputPath>
     <PublishDir>$(MSBuildProjectDirectory)\bin\</PublishDir>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net6.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <SuppressTfmSupportBuildWarnings>true</SuppressTfmSupportBuildWarnings>
     <NoWarn>$(NoWarn);NETSDK1138;NU1902;NU1903;CS8618;CS8625;CS8602;CS8605</NoWarn>
     <NuGetAudit>false</NuGetAudit>
@@ -45,8 +45,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="6.0.1" />
-    <PackageReference Include="Microsoft.Extensions.FileProviders.Physical" Version="6.0.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.FileProviders.Physical" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="RestSharp" Version="108.0.3" />
     <PackageReference Include="SixLabors.ImageSharp" Version="2.1.8" />
@@ -73,8 +74,10 @@
     <None Update="appsettings.Development.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <!-- PreserveNewest (not Always): this is the live config with real credentials once deployed -
+         a rebuild must not silently clobber it with the generic source template. -->
     <None Update="instance_settings.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="settings.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
@@ -90,8 +93,15 @@
     <DebugSymbols>true</DebugSymbols>
     <DebugType>portable</DebugType>
     <StaticWebAssetBasePath>wwwroot\</StaticWebAssetBasePath>
+    <!-- Single clean TBot.exe in bin\ is a hard requirement - do not turn this off again.
+         EnableCompressionInSingleFile forces the bundle to be extracted to a local disk cache
+         (%TEMP%) on startup instead of memory-mapping the bundle file directly from wherever
+         TBot.exe itself lives. That mmap-in-place is what silently killed the process on a VMware
+         shared folder (HGFS) with zero log output (see _private/HISTORICO.md 2026-07-04) - forcing
+         extraction avoids the operation entirely, on any drive, without giving up single-file. -->
     <PublishSingleFile>true</PublishSingleFile>
-    <SelfContained>false</SelfContained>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <PublishDir>$(MSBuildProjectDirectory)\bin\</PublishDir>
   </PropertyGroup>
@@ -103,16 +113,25 @@
     </Content>
   </ItemGroup>
 
-  <Target Name="RemoveRefsFolder" AfterTargets="Build">
+  <Target Name="RemoveRefsFolder" AfterTargets="Build;Publish">
     <RemoveDir Directories="$(OutputPath)refs" />
+    <RemoveDir Directories="$(PublishDir)refs" />
   </Target>
 
-  <Target Name="RemoveStaticWebAssets" AfterTargets="Build">
+  <Target Name="RemoveStaticWebAssets" AfterTargets="Build;Publish">
     <ItemGroup>
       <_StaticWebAssets Remove="$(OutputPath)TBot.WebUI.staticwebassets.*" />
     </ItemGroup>
     <Delete Files="$(OutputPath)TBot.WebUI.staticwebassets.endpoints.json" />
     <Delete Files="$(OutputPath)TBot.WebUI.staticwebassets.runtime.json" />
+    <Delete Files="$(PublishDir)TBot.WebUI.staticwebassets.endpoints.json" />
+    <Delete Files="$(PublishDir)TBot.WebUI.staticwebassets.runtime.json" />
+  </Target>
+
+  <!-- Self-contained ASP.NET Core publish drops this IIS in-process hosting native module even though
+       we only ever run via Kestrel directly (never behind IIS) - it's dead weight, remove it. -->
+  <Target Name="RemoveIisInProcessModule" AfterTargets="Publish">
+    <Delete Files="$(PublishDir)aspnetcorev2_inprocess.dll" />
   </Target>
 
 </Project>

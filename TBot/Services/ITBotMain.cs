@@ -30,6 +30,7 @@ namespace Tbot.Services {
 		Task InitializeFeature(Feature feat);
 		Task StopFeature(Feature feat);
 		bool IsFeatureRunning(Feature feat);
+		IEnumerable<Tbot.Workers.ITBotWorker> GetAllWorkers();
 		Task SendTelegramMessage(string fmt);
 		Task<bool> TelegramSwitch(decimal speed, Celestial attacked = null, bool fromTelegram = false);
 		Task SleepNow(DateTime WakeUpTime);

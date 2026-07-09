@@ -53,6 +53,12 @@ namespace Tbot.Workers {
 
 		public ConcurrentDictionary<Celestial, ITBotCelestialWorker> celestialWorkers => throw new NotImplementedException();
 
+		// See WorkerBase for the reasoning behind these two - same heartbeat mechanism, mirrored here
+		// because CelestialWorkerBase doesn't inherit from WorkerBase.
+		public DateTime? LastExecutionStart { get; private set; }
+		public DateTime? LastExecutionEnd { get; private set; }
+		protected virtual bool RunsDuringSleep => false;
+
 		public CelestialWorkerBase(ITBotMain parentInstance, ITBotWorker parentWorker, Celestial celestial) {
 			_tbotInstance = parentInstance;
 			_parentWorker = parentWorker;
@@ -170,7 +176,7 @@ namespace Tbot.Workers {
 
 		private async Task ExecutionWrapper(CancellationToken ct) {
 
-			if (_tbotInstance.UserData.isSleeping == true) {
+			if (_tbotInstance.UserData.isSleeping == true && !RunsDuringSleep) {
 				DoLog(LogLevel.Debug, $"Sleeping... Ending {GetWorkerName()}");
 				await EndExecution();
 				return;
@@ -185,7 +191,9 @@ namespace Tbot.Workers {
 
 				ct.ThrowIfCancellationRequested();
 
+				LastExecutionStart = DateTime.UtcNow;
 				await Execute();
+				LastExecutionEnd = DateTime.UtcNow;
 
 				if (Period != Timeout.InfiniteTimeSpan) {
 					DoLog(LogLevel.Information, $"Next {GetWorkerName()} execution in {Period}");

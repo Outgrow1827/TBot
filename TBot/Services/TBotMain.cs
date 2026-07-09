@@ -184,7 +184,14 @@ namespace Tbot.Services {
 			}
 
 
-			_ogameService.Initialize(GetCredentialsFromSettings(), GetDeviceFromSettings(), proxy, (string) host, int.Parse(port), (string) captchaKey);
+			bool hideAccountNameInLogs = false;
+			try {
+				hideAccountNameInLogs = SettingsService.IsSettingSet(InstanceSettings.General, "HideAccountAndUniverseNameInLogs") && (bool) InstanceSettings.General.HideAccountAndUniverseNameInLogs;
+			} catch { }
+			try {
+				TBot.Ogame.Infrastructure.Models.LogPrivacy.HideCoordinates = SettingsService.IsSettingSet(InstanceSettings.General, "HideSensitiveDataInLogs") && (bool) InstanceSettings.General.HideSensitiveDataInLogs;
+			} catch { }
+			_ogameService.Initialize(GetCredentialsFromSettings(), GetDeviceFromSettings(), proxy, (string) host, int.Parse(port), (string) captchaKey, hideAccountNameInLogs);
 		}
 
 		private async Task ResolveCaptcha() {
@@ -195,6 +202,7 @@ namespace Tbot.Services {
 				log(LogLevel.Warning, LogSender.Tbot, "Please check your credentials, language and universe name.");
 				log(LogLevel.Warning, LogSender.Tbot, "If your credentials are correct try refreshing your IP address.");
 				log(LogLevel.Warning, LogSender.Tbot, "If you are using a proxy, a VPN or hosting TBot on a VPS, be warned that Ogame blocks datacenters' IPs. You probably need a residential proxy.");
+				throw new UnableToLoginException("Unable to login: no captcha challenge available and original login attempt failed");
 			} else {
 				log(LogLevel.Information, LogSender.Tbot, "Trying to solve captcha...");
 				int answer = 0;
@@ -357,6 +365,11 @@ namespace Tbot.Services {
 		}
 
 		public override string ToString() {
+			try {
+				if (SettingsService.IsSettingSet(InstanceSettings.General, "HideAccountAndUniverseNameInLogs") && (bool) InstanceSettings.General.HideAccountAndUniverseNameInLogs)
+					return $"{InstanceAlias}";
+			} catch { }
+
 			if (loggedIn && (userData.userInfo != null) && (userData.serverData != null))
 				return $"{userData.userInfo.PlayerName}@{userData.serverData.Name}";
 			else
@@ -386,6 +399,7 @@ namespace Tbot.Services {
 				Feature.BrainLifeformAutoResearch => RandomizeHelper.CalcRandomInterval(IntervalType.AFewSeconds),
 				Feature.BrainOfferOfTheDay => RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds),
 				Feature.BrainAutoResearch => RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds),
+				Feature.BrainAutoDefence => RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds),
 				Feature.AutoFarm => RandomizeHelper.CalcRandomInterval(IntervalType.AMinuteOrTwo),
 				Feature.Expeditions => RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds),
 				Feature.Harvest => RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds),
@@ -396,11 +410,22 @@ namespace Tbot.Services {
 
 			// Its ok to add an infinite period time, since each worker will change its period accordingly after first execution
 			if (workers.TryGetValue(feat, out var worker)) {
+				// Skip the whole Start -> immediately fire -> "not enabled by settings, ending" dance for
+				// a feature that's disabled: OnSettingsChanged() already called StopWorker() on everyone
+				// before we got here, so a disabled worker is already idle - restarting its timer just to
+				// have it notice it's disabled and go idle again on the very next tick was pure noise,
+				// especially on every settings reload (which can happen often, e.g. while tuning config).
+				if (!worker.IsWorkerEnabledBySettings()) {
+					return;
+				}
 				worker.RestartWorker(cts.Token, Timeout.InfiniteTimeSpan, TimeSpan.FromMilliseconds(dueTime));
 			} else {
 				ITBotWorker newWorker = _workerFactory.InitializeWorker(feat, this, _tbotOgameBridge);
 				if (newWorker != null) {
 					workers.TryAdd(feat, newWorker);
+					if (!newWorker.IsWorkerEnabledBySettings()) {
+						return;
+					}
 					await newWorker.StartWorker(cts.Token, TimeSpan.FromMilliseconds(dueTime));
 				} else {
 					log(LogLevel.Warning, LogSender.Tbot, $"Cannot start worker for {feat.ToString()}");
@@ -421,6 +446,17 @@ namespace Tbot.Services {
 				return true;    // Always running
 			} else {
 				return false;
+			}
+		}
+
+		public IEnumerable<Tbot.Workers.ITBotWorker> GetAllWorkers() {
+			// Feature-level workers plus their per-celestial sub-workers (Brain/AutoMine etc. spawn
+			// one celestial worker per planet), so the watchdog can see everything that runs a timer.
+			foreach (var worker in workers.Values) {
+				yield return worker;
+				foreach (var celestialWorker in worker.celestialWorkers.Values) {
+					yield return celestialWorker;
+				}
 			}
 		}
 
@@ -479,10 +515,10 @@ namespace Tbot.Services {
 				}
 
 				if (feature == Feature.AutoDiscovery || feature == Feature.Null) {
-					jsonObj["AutoDiscovery"]["Origin"]["Galaxy"] = (int) celestial.Coordinate.Galaxy;
-					jsonObj["AutoDiscovery"]["Origin"]["System"] = (int) celestial.Coordinate.System;
-					jsonObj["AutoDiscovery"]["Origin"]["Position"] = (int) celestial.Coordinate.Position;
-					jsonObj["AutoDiscovery"]["Origin"]["Type"] = type;
+					jsonObj["AutoDiscovery"]["Origin"][0]["Galaxy"] = (int) celestial.Coordinate.Galaxy;
+					jsonObj["AutoDiscovery"]["Origin"][0]["System"] = (int) celestial.Coordinate.System;
+					jsonObj["AutoDiscovery"]["Origin"][0]["Position"] = (int) celestial.Coordinate.Position;
+					jsonObj["AutoDiscovery"]["Origin"][0]["Type"] = type;
 				}
 
 				if (feature == Feature.Colonize || feature == Feature.Null) {
@@ -526,7 +562,7 @@ namespace Tbot.Services {
 			}
 		}
 		private DateTime _lastReloadFinished = DateTime.MinValue;
-		private async void OnSettingsChanged() {
+		private async Task OnSettingsChanged() {
 			DateTime onSettingsLaunched = DateTime.Now;
 			await _settingsReloadSemaphore.WaitAsync();
 			try {
@@ -1169,99 +1205,29 @@ namespace Tbot.Services {
 					log(LogLevel.Warning, LogSender.SleepMode, "GoToSleep time and WakeUp time must be different. Sleep mode will be disabled");
 					await WakeUpAsync(null);
 				} else {
-					long interval;
+					// Was a 12-branch hand-written if/else tree (YES/NO/YES-style combinations of
+					// time>=goToSleep, time>=wakeUp, goToSleep>=wakeUp) with 2 branches explicitly commented
+					// "THIS SHOULDNT HAPPEN" that only rescheduled the next check without ever calling
+					// GoToSleepAsync/WakeUpAsync - if a real GoToSleep/WakeUp/current-time combination landed
+					// there (e.g. right after saving new sleep settings from the WebUI), the bot silently did
+					// nothing instead of sleeping or waking up. Replaced with GeneralHelper.ShouldSleep
+					// (already used the same way in FleetScheduler.SendFleet), which resolves every
+					// combination deterministically with no unhandled case.
+					bool asleep = GeneralHelper.ShouldSleep(time, goToSleep, wakeUp);
+					DateTime nextBoundary = asleep ? wakeUp : goToSleep;
+					if (nextBoundary <= time)
+						nextBoundary = nextBoundary.AddDays(1);
 
-					if (time >= goToSleep) {
-						if (time >= wakeUp) {
-							if (goToSleep >= wakeUp) {
-								// YES YES YES
-								// ASLEEP
-								// WAKE UP NEXT DAY
-								interval = (long) wakeUp.AddDays(1).Subtract(time).TotalMilliseconds + (long) RandomizeHelper.CalcRandomInterval(IntervalType.AMinuteOrTwo);
-								timers.GetValueOrDefault("SleepModeTimer").Change(interval, Timeout.Infinite);
-								if (interval <= 0)
-									interval = RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
-								DateTime newTime = time.AddMilliseconds(interval);
-								await GoToSleepAsync(newTime);
-							} else {
-								// YES YES NO
-								// AWAKE
-								// GO TO SLEEP NEXT DAY
-								interval = (long) goToSleep.AddDays(1).Subtract(time).TotalMilliseconds + (long) RandomizeHelper.CalcRandomInterval(IntervalType.AMinuteOrTwo);
-								timers.GetValueOrDefault("SleepModeTimer").Change(interval, Timeout.Infinite);
-								if (interval <= 0)
-									interval = RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
-								DateTime newTime = time.AddMilliseconds(interval);
-								await WakeUpAsync(newTime);
-							}
-						} else {
-							if (goToSleep >= wakeUp) {
-								// YES NO YES
-								// THIS SHOULDNT HAPPEN
-								interval = RandomizeHelper.CalcRandomInterval(IntervalType.AMinuteOrTwo);
-								if (interval <= 0)
-									interval = RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
-								DateTime newTime = time.AddMilliseconds(interval);
-								timers.GetValueOrDefault("SleepModeTimer").Change(interval, Timeout.Infinite);
-								log(LogLevel.Information, LogSender.SleepMode, $"Next check at {newTime.ToString()}");
-							} else {
-								// YES NO NO
-								// ASLEEP
-								// WAKE UP SAME DAY
-								interval = (long) wakeUp.Subtract(time).TotalMilliseconds + (long) RandomizeHelper.CalcRandomInterval(IntervalType.AMinuteOrTwo);
-								timers.GetValueOrDefault("SleepModeTimer").Change(interval, Timeout.Infinite);
-								if (interval <= 0)
-									interval = RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
-								DateTime newTime = time.AddMilliseconds(interval);
-								await GoToSleepAsync(newTime);
-							}
-						}
-					} else {
-						if (time >= wakeUp) {
-							if (goToSleep >= wakeUp) {
-								// NO YES YES
-								// AWAKE
-								// GO TO SLEEP SAME DAY
-								interval = (long) goToSleep.Subtract(time).TotalMilliseconds + (long) RandomizeHelper.CalcRandomInterval(IntervalType.AMinuteOrTwo);
-								timers.GetValueOrDefault("SleepModeTimer").Change(interval, Timeout.Infinite);
-								if (interval <= 0)
-									interval = RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
-								DateTime newTime = time.AddMilliseconds(interval);
-								await WakeUpAsync(newTime);
-							} else {
-								// NO YES NO
-								// THIS SHOULDNT HAPPEN
-								interval = RandomizeHelper.CalcRandomInterval(IntervalType.AMinuteOrTwo);
-								if (interval <= 0)
-									interval = RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
-								DateTime newTime = time.AddMilliseconds(interval);
-								timers.GetValueOrDefault("SleepModeTimer").Change(interval, Timeout.Infinite);
-								log(LogLevel.Information, LogSender.SleepMode, $"Next check at {newTime.ToString()}");
-							}
-						} else {
-							if (goToSleep >= wakeUp) {
-								// NO NO YES
-								// ASLEEP
-								// WAKE UP SAME DAY
-								interval = (long) wakeUp.Subtract(time).TotalMilliseconds + (long) RandomizeHelper.CalcRandomInterval(IntervalType.AMinuteOrTwo);
-								timers.GetValueOrDefault("SleepModeTimer").Change(interval, Timeout.Infinite);
-								if (interval <= 0)
-									interval = RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
-								DateTime newTime = time.AddMilliseconds(interval);
-								await GoToSleepAsync(newTime);
-							} else {
-								// NO NO NO
-								// AWAKE
-								// GO TO SLEEP SAME DAY
-								interval = (long) goToSleep.Subtract(time).TotalMilliseconds + (long) RandomizeHelper.CalcRandomInterval(IntervalType.AMinuteOrTwo);
-								timers.GetValueOrDefault("SleepModeTimer").Change(interval, Timeout.Infinite);
-								if (interval <= 0)
-									interval = RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
-								DateTime newTime = time.AddMilliseconds(interval);
-								await WakeUpAsync(newTime);
-							}
-						}
-					}
+					long interval = (long) nextBoundary.Subtract(time).TotalMilliseconds + (long) RandomizeHelper.CalcRandomInterval(IntervalType.AMinuteOrTwo);
+					if (interval <= 0)
+						interval = RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
+					timers.GetValueOrDefault("SleepModeTimer").Change(interval, Timeout.Infinite);
+					DateTime newTime = time.AddMilliseconds(interval);
+
+					if (asleep)
+						await GoToSleepAsync(newTime);
+					else
+						await WakeUpAsync(newTime);
 				}
 			} catch (Exception e) {
 				log(LogLevel.Warning, LogSender.SleepMode, $"An error has occurred while handling sleep mode: {e.Message}");

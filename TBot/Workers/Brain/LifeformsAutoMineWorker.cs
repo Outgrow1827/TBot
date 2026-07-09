@@ -73,7 +73,7 @@ namespace Tbot.Workers.Brain {
 					List<Celestial> celestialsToExclude = _calculationService.ParseCelestialsList(_tbotInstance.InstanceSettings.Brain.LifeformAutoMine.Exclude, _tbotInstance.UserData.celestials);
 					List<Celestial> celestialsToMine = new();
 					LFBuildings maxLFBuildings = new();
-					foreach (Celestial celestial in _tbotInstance.UserData.celestials.Where(p => p is Planet)) {
+					foreach (Celestial celestial in _tbotInstance.UserData.celestials.Where(p => p is Planet).ToList()) {
 						var cel = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.Buildings);
 
 						if ((int) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.StartFromCrystalMineLvl > (int) cel.Buildings.CrystalMine) {

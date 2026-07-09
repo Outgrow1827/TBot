@@ -47,6 +47,17 @@ namespace Tbot.Workers {
 			}
 		}
 
+		// Heartbeat for the watchdog: set around Execute() in ExecutionWrapper below. If
+		// LastExecutionStart is set and either LastExecutionEnd is null or older than it, this
+		// worker's current Execute() call hasn't returned yet - if that persists way past this
+		// worker's own Period, it's stuck.
+		public DateTime? LastExecutionStart { get; private set; }
+		public DateTime? LastExecutionEnd { get; private set; }
+
+		// Watchdog needs to keep ticking even while the bot is "sleeping" - every other worker
+		// intentionally pauses then, but a hang can happen at any time and sleep periods can last hours.
+		protected virtual bool RunsDuringSleep => false;
+
 		public WorkerBase(ITBotMain parentInstance) {
 			_tbotInstance = parentInstance;
 		}
@@ -171,7 +182,7 @@ namespace Tbot.Workers {
 
 		private async Task ExecutionWrapper(CancellationToken ct) {
 
-			if (_tbotInstance.UserData.isSleeping == true) {
+			if (_tbotInstance.UserData.isSleeping == true && !RunsDuringSleep) {
 				DoLog(LogLevel.Debug, $"Sleeping... Ending {GetWorkerName()}");
 				await EndExecution();
 				return;
@@ -186,7 +197,9 @@ namespace Tbot.Workers {
 
 				ct.ThrowIfCancellationRequested();
 
+				LastExecutionStart = DateTime.UtcNow;
 				await Execute();
+				LastExecutionEnd = DateTime.UtcNow;
 
 				if (Period != Timeout.InfiniteTimeSpan) {
 					DoLog(LogLevel.Information, $"Next {GetWorkerName()} execution in {Period}");

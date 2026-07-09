@@ -85,6 +85,17 @@ namespace Tbot.Workers.Brain {
 						DoLog(LogLevel.Warning, "Unable to parse CargoType. Falling back to default SmallCargo");
 						preferredCargoShip = Buildables.SmallCargo;
 					}
+					// tempCelestial.Ships only reflects ships currently stationed here - ships out on a
+					// mission (attack, transport, harvest, expedition, ...) launched from this celestial
+					// are temporarily gone but will come back, and shouldn't count as "lost" when comparing
+					// against MaxCargosToKeep, or any fleet away on a mission would trigger building
+					// replacements that aren't actually needed. Deploy/Colonize are excluded from this count
+					// because those ships permanently relocate and never return here.
+					long awayCargoShips = _tbotInstance.UserData.fleets
+						.Where(f => f.Mission != Missions.Deploy && f.Mission != Missions.Colonize)
+						.Where(f => f.Origin != null && f.Origin.IsSame(tempCelestial.Coordinate))
+						.Sum(f => f.Ships?.GetAmount(preferredCargoShip) ?? 0);
+					long ownedCargoShips = tempCelestial.Ships.GetAmount(preferredCargoShip) + awayCargoShips;
 					if (capacity <= tempCelestial.Resources.TotalResources && (bool) _tbotInstance.InstanceSettings.Brain.AutoCargo.LimitToCapacity) {
 						long difference = tempCelestial.Resources.TotalResources - capacity;
 						float cargoBonus = tempCelestial.LFBonuses.GetShipCargoBonus(preferredCargoShip);
@@ -92,14 +103,14 @@ namespace Tbot.Workers.Brain {
 						neededCargos = (long) Math.Round((float) difference / (float) oneShipCapacity, MidpointRounding.ToPositiveInfinity);
 						DoLog(LogLevel.Information, $"{difference.ToString("N0")} more capacity is needed, {neededCargos} more {preferredCargoShip.ToString()} are needed.");
 					} else {
-						neededCargos = (long) _tbotInstance.InstanceSettings.Brain.AutoCargo.MaxCargosToKeep - tempCelestial.Ships.GetAmount(preferredCargoShip);
+						neededCargos = (long) _tbotInstance.InstanceSettings.Brain.AutoCargo.MaxCargosToKeep - ownedCargoShips;
 					}
 					if (neededCargos > 0) {
 						if (neededCargos > (long) _tbotInstance.InstanceSettings.Brain.AutoCargo.MaxCargosToBuild)
 							neededCargos = (long) _tbotInstance.InstanceSettings.Brain.AutoCargo.MaxCargosToBuild;
 
-					if (tempCelestial.Ships.GetAmount(preferredCargoShip) + neededCargos > (long) _tbotInstance.InstanceSettings.Brain.AutoCargo.MaxCargosToKeep)
-						neededCargos = (long) _tbotInstance.InstanceSettings.Brain.AutoCargo.MaxCargosToKeep - tempCelestial.Ships.GetAmount(preferredCargoShip);
+					if (ownedCargoShips + neededCargos > (long) _tbotInstance.InstanceSettings.Brain.AutoCargo.MaxCargosToKeep)
+						neededCargos = (long) _tbotInstance.InstanceSettings.Brain.AutoCargo.MaxCargosToKeep - ownedCargoShips;
 
 						var cost = _calculationService.CalcPrice(preferredCargoShip, (int) neededCargos);
 						if (tempCelestial.Resources.IsEnoughFor(cost))

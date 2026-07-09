@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
@@ -25,14 +26,23 @@ namespace TBot.Ogame.Infrastructure.Models {
 		public int ShieldingTechnology { get; set; }
 		public int ArmourTechnology { get; set; }
 
-		public int GetLevel(Buildables research) {
-			int output = 0;
-			foreach (PropertyInfo prop in GetType().GetProperties()) {
-				if (prop.Name == research.ToString()) {
-					output = (int) prop.GetValue(this);
-				}
+		// Built once from reflection at class-init time instead of on every GetLevel() call - see
+		// Ships.cs for the same pattern applied to the (much hotter) ship-count accessors.
+		private static readonly Dictionary<Buildables, Func<Researches, int>> _accessors = BuildAccessors();
+
+		private static Dictionary<Buildables, Func<Researches, int>> BuildAccessors() {
+			var map = new Dictionary<Buildables, Func<Researches, int>>();
+			foreach (PropertyInfo prop in typeof(Researches).GetProperties()) {
+				if (prop.PropertyType != typeof(int) || !Enum.TryParse<Buildables>(prop.Name, out var research))
+					continue;
+				var instance = Expression.Parameter(typeof(Researches), "instance");
+				map[research] = Expression.Lambda<Func<Researches, int>>(Expression.Property(instance, prop), instance).Compile();
 			}
-			return output;
+			return map;
+		}
+
+		public int GetLevel(Buildables research) {
+			return _accessors.TryGetValue(research, out var getter) ? getter(this) : 0;
 		}
 	}
 

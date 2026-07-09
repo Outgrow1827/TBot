@@ -53,6 +53,8 @@ namespace Tbot.Workers {
 				Feature.BrainLifeformAutoMine => new LifeformsAutoMineWorker(tbotMainInstance, _ogameService, _fleetScheduler, _calculationService, tbotOgameBridge, this),
 				Feature.BrainLifeformAutoResearch => new LifeformsAutoResearchWorker(tbotMainInstance, _ogameService, _fleetScheduler, _calculationService, tbotOgameBridge, this),
 				Feature.AutoDiscovery => new AutoDiscoveryWorker(tbotMainInstance, _ogameService, _fleetScheduler, _calculationService, tbotOgameBridge),
+				Feature.BrainAutoDefence => new AutoDefenceWorker(tbotMainInstance, _ogameService, _fleetScheduler, _calculationService, tbotOgameBridge),
+				Feature.Watchdog => new WatchdogWorker(tbotMainInstance),
 				_ => null
 			};
 
@@ -111,6 +113,7 @@ namespace Tbot.Workers {
 				case Feature.BrainAutoResearch:
 				case Feature.BrainLifeformAutoMine:
 				case Feature.BrainLifeformAutoResearch:
+				case Feature.BrainAutoDefence:
 				case Feature.BrainCelestialAutoMine:
 				case Feature.BrainCelestialLifeformAutoMine:
 				case Feature.BrainCelestialLifeformAutoResearch:

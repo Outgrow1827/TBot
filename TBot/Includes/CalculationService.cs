@@ -154,7 +154,7 @@ namespace Tbot.Includes {
 				default:
 					return 0;
 			}
-			double totalBonus = Math.Round(Math.Round((double) bonus / 100, 2, MidpointRounding.ToZero) + Math.Round((double) buildableCargoBonus / 100, 2, MidpointRounding.ToZero), 2, MidpointRounding.ToZero) - 0.01;
+			double totalBonus = Math.Round(Math.Round((double) bonus / 100, 2, MidpointRounding.ToZero) + Math.Round((double) buildableCargoBonus / 100, 2, MidpointRounding.ToZero), 2, MidpointRounding.ToZero);
 			int output = (int) Math.Floor((double) baseCargo + (double) (baseCargo * totalBonus));
 			return output;
 		}
@@ -496,8 +496,10 @@ namespace Tbot.Includes {
 
 		public List<decimal> GetValidSpeedsForClass(CharacterClass playerClass) {
 			var speeds = new List<decimal>();
-			/* TODO: fix general speeds
-			if (playerClass == CharacterClass.General*) {
+			// P9 fix: this was dead code behind a comment block (with a typo, `CharacterClass.General*`,
+			// that wouldn't even have compiled) - every class silently got the coarser 10%-step list below,
+			// even General, who in-game actually gets 5%-step control over fleet speed. Restored and fixed.
+			if (playerClass == CharacterClass.General) {
 				speeds.Add(Speeds.HundredPercent);
 				speeds.Add(Speeds.NinetyfivePercent);
 				speeds.Add(Speeds.NinetyPercent);
@@ -530,17 +532,6 @@ namespace Tbot.Includes {
 				speeds.Add(Speeds.TwentyPercent);
 				speeds.Add(Speeds.TenPercent);
 			}
-			*/
-			speeds.Add(Speeds.HundredPercent);
-			speeds.Add(Speeds.NinetyPercent);
-			speeds.Add(Speeds.EightyPercent);
-			speeds.Add(Speeds.SeventyPercent);
-			speeds.Add(Speeds.SixtyPercent);
-			speeds.Add(Speeds.FiftyPercent);
-			speeds.Add(Speeds.FourtyPercent);
-			speeds.Add(Speeds.ThirtyPercent);
-			speeds.Add(Speeds.TwentyPercent);
-			speeds.Add(Speeds.TenPercent);
 			return speeds;
 		}
 
@@ -565,6 +556,28 @@ namespace Tbot.Includes {
 
 		public decimal CalcOptimalFarmSpeed(Celestial origin, Coordinate destination, Ships ships, Resources loot, decimal ratio, long maxFlightTime, Researches researches, ServerData serverData, LFBonuses lfBonuses = null, CharacterClass playerClass = CharacterClass.NoClass, AllianceClass allyClass = AllianceClass.NoClass) {
 			return CalcOptimalFarmSpeed(origin.Coordinate, destination, ships, loot, ratio, maxFlightTime, researches, serverData, lfBonuses, playerClass, allyClass);
+		}
+
+		/// <summary>
+		/// Picks the fastest speed whose fuel cost fits within availableFuel, for a mission that carries
+		/// no loot to weigh the cost against (espionage probes) - unlike CalcOptimalFarmSpeed (attacks),
+		/// which compares fuel against expected loot, this just needs "don't run the origin out of
+		/// deuterium and don't strand the probes short of range". If even the slowest valid speed doesn't
+		/// fit, returns the slowest speed anyway (least-bad option) rather than falling back to 100%,
+		/// which is the opposite of what's needed when the goal is to reach a target speed-100% can't
+		/// afford at all (e.g. "probes don't have enough fuel capacity to reach farther galaxies").
+		/// </summary>
+		public decimal CalcOptimalSpyProbeSpeed(Coordinate origin, Coordinate destination, Ships ships, long availableFuel, Researches researches, ServerData serverData, LFBonuses lfBonuses = null, CharacterClass playerClass = CharacterClass.NoClass, AllianceClass allyClass = AllianceClass.NoClass) {
+			var speeds = GetValidSpeedsForClass(playerClass);
+			var speedPredictions = new Dictionary<decimal, FleetPrediction>();
+			foreach (var speed in speeds) {
+				speedPredictions.Add(speed, CalcFleetPrediction(origin, destination, ships, Missions.Spy, speed, researches, serverData, lfBonuses, playerClass, allyClass));
+			}
+			var affordable = speedPredictions.Where(p => p.Value.Fuel <= availableFuel).ToList();
+			if (affordable.Any()) {
+				return affordable.OrderByDescending(p => p.Key).First().Key;
+			}
+			return speeds.OrderBy(s => s).First();
 		}
 
 		public Resources CalcMaxTransportableResources(Ships ships, Resources resources, int hyperspaceTech, ServerData serverData, LFBonuses lfBonuses = null, CharacterClass playerClass = CharacterClass.NoClass, long deutToLeave = 0, int probeCargo = 0) {

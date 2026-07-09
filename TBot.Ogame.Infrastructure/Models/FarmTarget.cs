@@ -24,6 +24,16 @@ namespace TBot.Ogame.Infrastructure.Models {
 				&& coords.Position == Celestial.Coordinate.Position
 				&& coords.Type == Celestial.Coordinate.Type;
 		}
+
+		// Key used to index UserData.farmTargets by coordinate (O(1) lookup instead of a linear scan
+		// over every known target on every scanned planet - see AutoFarmWorker.cs).
+		public static string GetKey(Coordinate coord) {
+			return $"{coord.Galaxy}:{coord.System}:{coord.Position}:{coord.Type}";
+		}
+
+		public string GetKey() {
+			return GetKey(Celestial.Coordinate);
+		}
 		private string GetCelestialCode() {
 			return Celestial.Coordinate.Type switch {
 				Celestials.Planet => "P",

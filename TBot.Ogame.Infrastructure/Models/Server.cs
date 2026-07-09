@@ -11,8 +11,8 @@ namespace TBot.Ogame.Infrastructure.Models {
 		public string Name { get; set; }
 		public int PlayerCount { get; set; }
 		public int PlayersOnline { get; set; }
-		public DateTime Opened { get; set; }
-		public DateTime StartDate { get; set; }
+		public DateTime? Opened { get; set; }
+		public DateTime? StartDate { get; set; }
 		public DateTime? EndDate { get; set; }
 		public bool ServerClosed { get; set; }
 		public bool Prefered { get; set; }

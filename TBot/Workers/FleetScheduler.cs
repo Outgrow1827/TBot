@@ -43,6 +43,17 @@ namespace Tbot.Workers {
 			_tbotOgameBridge = tbotOgameBridge;
 		}
 
+		// Brain.Transports.DeutToLeaveOnMoons is the original release name; a past session renamed it to
+		// DeutToLeave in this fork's template. Read either so configs written against the official
+		// instance_settings.json (which still uses DeutToLeaveOnMoons) aren't silently ignored.
+		private long GetTransportsDeutToLeave() {
+			if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.Transports, "DeutToLeaveOnMoons"))
+				return (long) _tbotInstance.InstanceSettings.Brain.Transports.DeutToLeaveOnMoons;
+			if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.Transports, "DeutToLeave"))
+				return (long) _tbotInstance.InstanceSettings.Brain.Transports.DeutToLeave;
+			return 0;
+		}
+
 		public async Task SpyCrash(Celestial fromCelestial, Coordinate target = null) {
 			decimal speed = Speeds.HundredPercent;
 			fromCelestial = await _tbotOgameBridge.UpdatePlanet(fromCelestial, UpdateTypes.Ships);
@@ -95,6 +106,52 @@ namespace Tbot.Workers {
 				await _tbotInstance.SendTelegramMessage($"EspionageProbe sent to crash on {target.ToString()}");
 			}
 			return;
+		}
+
+		// The RecallTimer scheduled in AutoFleetSave (below) only lives in this process' memory.
+		// If the bot restarts (crash, hang recovered by watchdog, manual restart, update, ...) while
+		// a fleetsaved fleet is still in flight, that timer is gone and the fleet would never be
+		// recalled - it would just land at the fleetsave destination and sit there unprotected.
+		// Called on startup and at the start of every DefenderWorker cycle to self-heal that gap:
+		// re-derive "does this fleet still need a recall timer" from OGame's live fleet list instead
+		// of relying solely on the one-shot in-memory Timer.
+		public async Task ReconcilePendingRecalls() {
+			if (!SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.SleepMode, "AutoFleetSave") ||
+				!(bool) _tbotInstance.InstanceSettings.SleepMode.AutoFleetSave.Recall) {
+				return;
+			}
+			if (!Missions.TryParse((string) _tbotInstance.InstanceSettings.SleepMode.AutoFleetSave.DefaultMission, out Missions fleetSaveMission)) {
+				return;
+			}
+
+			var candidates = _tbotInstance.UserData.fleets
+				.Where(f => f.Mission == fleetSaveMission && f.ReturnFlight == false)
+				.Where(f => !timers.ContainsKey($"RecallTimer-{f.ID}"))
+				.ToList();
+			if (!candidates.Any()) return;
+
+			DateTime now = await _tbotOgameBridge.GetDateTime();
+			foreach (var fleet in candidates) {
+				if (fleet.ArrivalTime <= now) {
+					// Missed the whole recall window while the bot was down/stuck - the fleet already
+					// landed unprotected. Can't recall it anymore, so raise it loudly instead of
+					// silently doing nothing or guessing a follow-up action.
+					_tbotInstance.log(LogLevel.Critical, LogSender.FleetScheduler,
+						$"Fleet {fleet.ID} ({fleet.Mission}) landed at {fleet.Destination} without ever being recalled - the bot was likely down during its flight. Check it manually!");
+					await _tbotInstance.SendTelegramMessage($"⚠️ Frota {fleet.ID} pousou em {fleet.Destination} sem nunca ter sido recolhida (o bot provavelmente ficou fora do ar durante o voo). Verifique manualmente!");
+					continue;
+				}
+
+				double remainingMs = (fleet.ArrivalTime - now).TotalMilliseconds;
+				double interval = (remainingMs / 2) + RandomizeHelper.CalcRandomInterval(IntervalType.AMinuteOrTwo);
+				if (interval <= 0 || interval >= remainingMs)
+					interval = Math.Max(1000, remainingMs / 2);
+
+				timers.Add($"RecallTimer-{fleet.ID}", new Timer(RetireFleet, fleet, (long) interval, Timeout.Infinite));
+				_tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler,
+					$"Recovered missing recall timer for fleet {fleet.ID} to {fleet.Destination}: will recall in {TimeSpan.FromMilliseconds(interval)}.");
+				await _tbotInstance.SendTelegramMessage($"🛡️ Recall da frota {fleet.ID} (para {fleet.Destination}) recuperado após reinício do bot - recall agendado para daqui a {TimeSpan.FromMilliseconds(interval):hh\\:mm\\:ss}.");
+			}
 		}
 
 		public async Task AutoFleetSave(Celestial celestial, bool isSleepTimeFleetSave = false, long minDuration = 0, bool WaitFleetsReturn = false, Missions TelegramMission = Missions.None, bool fromTelegram = false, bool saveall = false) {
@@ -330,6 +387,18 @@ namespace Tbot.Workers {
 			}
 
 
+			// #18 (ideia vista no OgameBot): avisa se o fleetsave caiu num planeta (escaneável por Phalanx
+			// de uma lua inimiga dentro do sistema) em vez de uma lua - não temos o nível de Phalanx real
+			// dos vizinhos (exigiria escanear a galáxia ao redor do destino), então o aviso é binário:
+			// "destino é planeta" = risco potencial, "destino é lua" = seguro contra Phalanx.
+			if (AlreadySent && possibleFleet.Destination != null &&
+				SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.SleepMode.AutoFleetSave, "WarnPhalanxExposure") &&
+				(bool) _tbotInstance.InstanceSettings.SleepMode.AutoFleetSave.WarnPhalanxExposure &&
+				possibleFleet.Destination.Type == Celestials.Planet) {
+				_tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler, $"Fleetsave from {celestial.ToString()} landed on a Planet ({possibleFleet.Destination}) - exposed to Phalanx scan from any Moon in that system.");
+				await _tbotInstance.SendTelegramMessage($"Fleetsave from {celestial.Coordinate}: fleet parked on Planet {possibleFleet.Destination} - exposed to Phalanx scan (no Moon destination available/chosen).");
+			}
+
 			if ((bool) _tbotInstance.InstanceSettings.SleepMode.AutoFleetSave.Recall && AlreadySent) {
 				if (fleetId != (int) SendFleetCode.GenericError ||
 					fleetId != (int) SendFleetCode.AfterSleepTime ||
@@ -356,6 +425,56 @@ namespace Tbot.Workers {
 						await _tbotInstance.SendTelegramMessage($"Fleet {fleetId} send to {possibleFleet.Mission} on {possibleFleet.Destination.ToString()}, arrive at {possibleFleet.Duration.ToString()}, returned at {returntime.ToString()} fuel consumed: {possibleFleet.Fuel.ToString("#,#", CultureInfo.InvariantCulture)}");
 				}
 			}
+		}
+
+		/// <summary>
+		/// Fills the payload in priority order (default DCM - Deuterium, Crystal, Metal, matching the
+		/// order OGA's Fleet Saver/Fleet Sender documents as the sane default) up to the fleet's real cargo
+		/// capacity, instead of sending the raw requested amounts and leaving it up to whatever undocumented
+		/// order the game/ogamed fills cargo in when the request exceeds capacity (typically Metal first -
+		/// the opposite of what you usually want, since Deuterium is normally the most valuable to save).
+		/// Configurable via General.ResourcePriority (list of "Metal"/"Crystal"/"Deuterium"); Food isn't
+		/// part of this - it has its own capacity/colony mechanics, left untouched.
+		/// </summary>
+		private Resources ApplyResourcePriority(Resources payload, Ships ships, Celestial origin, CharacterClass playerClass) {
+			long totalRequested = payload.Metal + payload.Crystal + payload.Deuterium;
+			if (totalRequested <= 0)
+				return payload;
+
+			long capacity = 0;
+			foreach (Buildables type in Enum.GetValues(typeof(Buildables))) {
+				long count = ships.GetAmount(type);
+				if (count <= 0)
+					continue;
+				float bonus = origin.LFBonuses?.GetShipCargoBonus(type) ?? 0;
+				capacity += (long) _calcService.CalcShipCapacity(type, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, bonus, playerClass, _tbotInstance.UserData.serverData.ProbeCargo) * count;
+			}
+			if (totalRequested <= capacity)
+				return payload; // Everything fits, no need to prioritize anything.
+
+			List<string> priorityOrder;
+			try {
+				priorityOrder = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.General, "ResourcePriority")
+					? ((IEnumerable<object>) _tbotInstance.InstanceSettings.General.ResourcePriority).Select(o => o.ToString()).ToList()
+					: new List<string> { "Deuterium", "Crystal", "Metal" };
+			} catch {
+				priorityOrder = new List<string> { "Deuterium", "Crystal", "Metal" };
+			}
+
+			Resources result = new() { Food = payload.Food };
+			long remaining = capacity;
+			foreach (var res in priorityOrder) {
+				long requested = res switch { "Metal" => payload.Metal, "Crystal" => payload.Crystal, "Deuterium" => payload.Deuterium, _ => 0 };
+				long take = Math.Min(requested, remaining);
+				switch (res) {
+					case "Metal": result.Metal = take; break;
+					case "Crystal": result.Crystal = take; break;
+					case "Deuterium": result.Deuterium = take; break;
+				}
+				remaining -= take;
+			}
+			_tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler, $"Requested payload ({totalRequested}) exceeds cargo capacity ({capacity}) - filled in priority order [{string.Join(",", priorityOrder)}]: {result}.");
+			return result;
 		}
 
 		public async Task<int> SendFleet(Celestial origin, Ships ships, Coordinate destination, Missions mission, decimal speed, Resources payload = null, CharacterClass playerClass = CharacterClass.NoClass, bool force = false) {
@@ -487,10 +606,12 @@ namespace Tbot.Workers {
 						payload.Deuterium = 0;
 					if (payload.Food < 0)
 						payload.Food = 0;
+					payload = ApplyResourcePriority(payload, ships, origin, playerClass);
 					Fleet fleet = await _ogameService.SendFleet(origin, ships, destination, mission, speed, payload);
 					_tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler, "Fleet succesfully sent");
 					_tbotInstance.UserData.fleets = await _ogameService.GetFleets();
 					_tbotInstance.UserData.slots = await _tbotOgameBridge.UpdateSlots();
+					_tbotInstance.UserData.BotSentFleetIds.Add(fleet.ID);
 					return fleet.ID;
 				} catch (Exception e) {
 					_tbotInstance.log(LogLevel.Error, LogSender.FleetScheduler, $"Unable to send fleet: an exception has occurred: {e.Message}");
@@ -768,8 +889,9 @@ namespace Tbot.Workers {
 				} else {
 					var missingResources = resources.Difference(destination.Resources);
 					Resources resToLeave = new(0, 0, 0);
-					if ((long) _tbotInstance.InstanceSettings.Brain.Transports.DeutToLeave > 0)
-						resToLeave.Deuterium = (long) _tbotInstance.InstanceSettings.Brain.Transports.DeutToLeave;
+					long deutToLeaveOnMoons = GetTransportsDeutToLeave();
+					if (deutToLeaveOnMoons > 0)
+						resToLeave.Deuterium = deutToLeaveOnMoons;
 
 					origin = await _tbotOgameBridge.UpdatePlanet(origin, UpdateTypes.Resources);
 					if (origin.Resources.IsEnoughFor(missingResources, resToLeave)) {
@@ -836,9 +958,20 @@ namespace Tbot.Workers {
 							}
 						}
 
-						if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.Transports, "RoundResources") && (bool) _tbotInstance.InstanceSettings.Brain.Transports.RoundResources) {
-							missingResources = missingResources.Round();
-							idealShips = _calcService.CalcShipNumberForPayload(missingResources, preferredShip, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, cargoBonus, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo);
+						if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.Transports, "RoundResources")) {
+							dynamic roundResourcesSetting = _tbotInstance.InstanceSettings.Brain.Transports.RoundResources;
+							// Backward-compatible: RoundResources used to be a plain bool (round to the
+							// default 1000). It's now an object ({Active, RoundTo}) so the rounding
+							// granularity is configurable, but old settings files with the bare bool still
+							// work the same as before.
+							bool roundActive = roundResourcesSetting is bool ? (bool) roundResourcesSetting
+								: SettingsService.IsSettingSet(roundResourcesSetting, "Active") && (bool) roundResourcesSetting.Active;
+							if (roundActive) {
+								int roundTo = (roundResourcesSetting is bool) ? 1000
+									: (SettingsService.IsSettingSet(roundResourcesSetting, "RoundTo") ? (int) roundResourcesSetting.RoundTo : 1000);
+								missingResources = missingResources.Round(roundTo);
+								idealShips = _calcService.CalcShipNumberForPayload(missingResources, preferredShip, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, cargoBonus, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo);
+							}
 						}
 
 						bool doMultipleTransports = (idealShips > origin.Ships.GetAmount(preferredShip) && (bool) _tbotInstance.InstanceSettings.Brain.Transports.DoMultipleTransportIsNotEnoughShipButSamePosition) &&
@@ -915,8 +1048,9 @@ namespace Tbot.Workers {
 				} else {
 					var missingResources = resources.Difference(destination.Resources);
 					Resources resToLeave = new(0, 0, 0);
-					if ((long) _tbotInstance.InstanceSettings.Brain.Transports.DeutToLeave > 0)
-						resToLeave.Deuterium = (long) _tbotInstance.InstanceSettings.Brain.Transports.DeutToLeave;
+					long deutToLeaveOnMoons = GetTransportsDeutToLeave();
+					if (deutToLeaveOnMoons > 0)
+						resToLeave.Deuterium = deutToLeaveOnMoons;
 					
 					origin = await _tbotOgameBridge.UpdatePlanet(origin, UpdateTypes.Resources);
 					if (origin.Resources.IsEnoughFor(missingResources, resToLeave)) {
@@ -986,9 +1120,20 @@ namespace Tbot.Workers {
 							}
 						}
 
-						if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.Transports, "RoundResources") && (bool) _tbotInstance.InstanceSettings.Brain.Transports.RoundResources) {
-							missingResources = missingResources.Round();
-							idealShips = _calcService.CalcShipNumberForPayload(missingResources, preferredShip, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, cargoBonus, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo);
+						if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.Transports, "RoundResources")) {
+							dynamic roundResourcesSetting = _tbotInstance.InstanceSettings.Brain.Transports.RoundResources;
+							// Backward-compatible: RoundResources used to be a plain bool (round to the
+							// default 1000). It's now an object ({Active, RoundTo}) so the rounding
+							// granularity is configurable, but old settings files with the bare bool still
+							// work the same as before.
+							bool roundActive = roundResourcesSetting is bool ? (bool) roundResourcesSetting
+								: SettingsService.IsSettingSet(roundResourcesSetting, "Active") && (bool) roundResourcesSetting.Active;
+							if (roundActive) {
+								int roundTo = (roundResourcesSetting is bool) ? 1000
+									: (SettingsService.IsSettingSet(roundResourcesSetting, "RoundTo") ? (int) roundResourcesSetting.RoundTo : 1000);
+								missingResources = missingResources.Round(roundTo);
+								idealShips = _calcService.CalcShipNumberForPayload(missingResources, preferredShip, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, cargoBonus, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo);
+							}
 						}
 
 						bool doMultipleTransports = (idealShips > origin.Ships.GetAmount(preferredShip) && (bool) _tbotInstance.InstanceSettings.Brain.Transports.DoMultipleTransportIsNotEnoughShipButSamePosition) &&

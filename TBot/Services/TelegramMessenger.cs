@@ -1053,9 +1053,8 @@ namespace Tbot.Services {
 								return;
 							}
 
-							var cachePath = FarmTargetCache.GetCacheFilePath(currInstance.InstanceSettingsPath, currInstance.InstanceAlias);
-							if (System.IO.File.Exists(cachePath)) {
-								System.IO.File.Delete(cachePath);
+							bool cleared = await FarmTargetCache.ClearTargetCache(currInstance.InstanceSettingsPath, currInstance.InstanceAlias);
+							if (cleared) {
 								await SendMessage(botClient, message.Chat, "FastFarm cache cleared!");
 							} else {
 								await SendMessage(botClient, message.Chat, "No FastFarm cache file found.");

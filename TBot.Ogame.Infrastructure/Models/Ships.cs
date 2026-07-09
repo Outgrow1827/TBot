@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
@@ -8,6 +9,28 @@ using TBot.Ogame.Infrastructure.Enums;
 
 namespace TBot.Ogame.Infrastructure.Models {
 	public class Ships {
+		// Built once from reflection at class-init time and reused for every Add/Remove/GetAmount/SetAmount/
+		// HasAtLeast/ToString call, which otherwise re-ran GetType().GetProperties() from scratch every time
+		// (these are hot paths: farm/fleet/research run dozens-hundreds of times per bot cycle).
+		private static readonly Dictionary<Buildables, (Func<Ships, long> Get, Action<Ships, long> Set)> _accessors = BuildAccessors();
+
+		private static Dictionary<Buildables, (Func<Ships, long> Get, Action<Ships, long> Set)> BuildAccessors() {
+			var map = new Dictionary<Buildables, (Func<Ships, long>, Action<Ships, long>)>();
+			foreach (PropertyInfo prop in typeof(Ships).GetProperties()) {
+				if (prop.PropertyType != typeof(long) || !Enum.TryParse<Buildables>(prop.Name, out var buildable))
+					continue;
+
+				var instance = Expression.Parameter(typeof(Ships), "instance");
+				var getter = Expression.Lambda<Func<Ships, long>>(Expression.Property(instance, prop), instance).Compile();
+
+				var value = Expression.Parameter(typeof(long), "value");
+				var setter = Expression.Lambda<Action<Ships, long>>(Expression.Assign(Expression.Property(instance, prop), value), instance, value).Compile();
+
+				map[buildable] = (getter, setter);
+			}
+			return map;
+		}
+
 		public long LightFighter { get; set; }
 		public long HeavyFighter { get; set; }
 		public long Cruiser { get; set; }
@@ -136,48 +159,31 @@ namespace TBot.Ogame.Infrastructure.Models {
 		}
 
 		public Ships Add(Buildables buildable, long quantity) {
-			foreach (PropertyInfo prop in this.GetType().GetProperties()) {
-				if (prop.Name == buildable.ToString()) {
-					prop.SetValue(this, (long) prop.GetValue(this) + quantity);
-				}
-			}
+			if (_accessors.TryGetValue(buildable, out var accessor))
+				accessor.Set(this, accessor.Get(this) + quantity);
 			return this;
 		}
 
 		public Ships Remove(Buildables buildable, int quantity) {
-			foreach (PropertyInfo prop in this.GetType().GetProperties()) {
-				if (prop.Name == buildable.ToString()) {
-					long val = (long) prop.GetValue(this);
-					if (val >= quantity)
-						prop.SetValue(this, val);
-					else
-						prop.SetValue(this, 0);
-				}
+			if (_accessors.TryGetValue(buildable, out var accessor)) {
+				long val = accessor.Get(this);
+				accessor.Set(this, val >= quantity ? val : 0);
 			}
 			return this;
 		}
 
 		public long GetAmount(Buildables buildable) {
-			foreach (PropertyInfo prop in this.GetType().GetProperties()) {
-				if (prop.Name == buildable.ToString()) {
-					return (long) prop.GetValue(this);
-				}
-			}
-			return 0;
+			return _accessors.TryGetValue(buildable, out var accessor) ? accessor.Get(this) : 0;
 		}
 
 		public void SetAmount(Buildables buildable, long number) {
-			foreach (PropertyInfo prop in this.GetType().GetProperties()) {
-				if (prop.Name == buildable.ToString()) {
-					prop.SetValue(this, number);
-					return;
-				}
-			}
+			if (_accessors.TryGetValue(buildable, out var accessor))
+				accessor.Set(this, number);
 		}
 
 		public bool HasAtLeast(Ships ships, long times = 1) {
-			foreach (PropertyInfo prop in this.GetType().GetProperties()) {
-				if ((long) prop.GetValue(this) * times < (long) prop.GetValue(ships)) {
+			foreach (var accessor in _accessors.Values) {
+				if (accessor.Get(this) * times < accessor.Get(ships)) {
 					return false;
 				}
 			}
@@ -186,10 +192,11 @@ namespace TBot.Ogame.Infrastructure.Models {
 
 		public override string ToString() {
 			string output = "";
-			foreach (PropertyInfo prop in this.GetType().GetProperties()) {
-				if ((long) prop.GetValue(this) == 0)
+			foreach (var kvp in _accessors) {
+				long value = kvp.Value.Get(this);
+				if (value == 0)
 					continue;
-				output += $"{prop.Name}: {prop.GetValue(this)}; ";
+				output += $"{kvp.Key}: {value}; ";
 			}
 			return output;
 		}

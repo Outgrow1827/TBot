@@ -19,6 +19,7 @@ namespace TBot.Common.Logging {
 		BuyOfferOfTheDay,
 		LifeformsAutoMine,
 		LifeformsAutoResearch,
+		AutoDefence,
 		//End Brain Features
 		Expeditions,
 		Harvest,
@@ -27,6 +28,7 @@ namespace TBot.Common.Logging {
 		Colonize,
 		AutoFarm,
 		AutoDiscovery,
-		Telegram
+		Telegram,
+		Watchdog
 	}
 }

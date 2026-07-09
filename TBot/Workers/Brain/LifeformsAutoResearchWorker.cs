@@ -82,7 +82,7 @@ namespace Tbot.Workers.Brain {
 					List<Celestial> celestialsToExclude = _calculationService.ParseCelestialsList(_tbotInstance.InstanceSettings.Brain.LifeformAutoResearch.Exclude, _tbotInstance.UserData.celestials);
 					List<Celestial> celestialsToMine = new();
 
-					foreach (Celestial celestial in _tbotInstance.UserData.celestials.Where(p => p is Planet)) {
+					foreach (Celestial celestial in _tbotInstance.UserData.celestials.Where(p => p is Planet).ToList()) {
 						var cel = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.LFBuildings);
 						cel = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.LFTechs);
 						cel = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.Resources);

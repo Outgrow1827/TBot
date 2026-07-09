@@ -9,7 +9,8 @@ namespace TBot.Ogame.Infrastructure {
 				ProxySettings proxySettings,
 				string host = "127.0.0.1",
 				int port = 8080,
-				string captchaKey = "");
+				string captchaKey = "",
+				bool hideAccountNameInLogs = false);
 		string GetExecutableName();
 		bool ValidatePrerequisites();
 		Task BuildCancelable(Celestial celestial, Buildables buildable);
@@ -38,6 +39,8 @@ namespace TBot.Ogame.Infrastructure {
 		Task<EspionageReport> GetEspionageReport(Coordinate coordinate);
 		Task<EspionageReport> GetEspionageReport(int msgId);
 		Task<List<EspionageReportSummary>> GetEspionageReports();
+		Task<CombatReportSummary> GetCombatReportSummary(Coordinate coordinate);
+		Task<CombatReportSummary> GetCombatReportSummary(long fleetId);
 		Task<Facilities> GetFacilities(Celestial celestial);
 		Task<List<Fleet>> GetFleets();
 		Task<GalaxyInfo> GetGalaxyInfo(Coordinate coordinate);
@@ -54,6 +57,7 @@ namespace TBot.Ogame.Infrastructure {
 		Task<Resources> GetPrice(LFBuildables buildable, long levelOrQuantity);
 		Task<Resources> GetPrice(LFTechno buildable, long levelOrQuantity);
 		Task<List<Production>> GetProductions(Celestial celestial);
+		Task<ArtifactsInfo> GetArtifacts(Celestial celestial);
 		Task<Researches> GetResearches();
 		Task<Resources> GetResources(Celestial celestial);
 		Task<ResourceSettings> GetResourceSettings(Planet planet);
