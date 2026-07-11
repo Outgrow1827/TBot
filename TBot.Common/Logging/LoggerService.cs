@@ -91,10 +91,8 @@ namespace TBot.Common.Logging {
 					outputTemplate: outTemplate
 				)
 				// Log file
-				// retainedFileCountLimit is a file count, not a day count - rollOnFileSizeLimit means a
-				// busy day can roll more than once, so this is set generously above the ~30 days we
-				// actually want kept (giving the log-processing script in the instance folder time to
-				// copy/archive the CSVs before Serilog prunes them).
+				// retainedFileCountLimit counts files, not days, and a busy day can roll more than once,
+				// so keep more than the ~30 days we actually want retained.
 				.WriteTo.File(
 					path: Path.Combine(_logPath, "TBot.log"),
 					buffered: false,

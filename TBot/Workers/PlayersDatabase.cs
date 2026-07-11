@@ -7,18 +7,11 @@ using Newtonsoft.Json;
 using TBot.Ogame.Infrastructure.Models;
 
 namespace Tbot.Workers {
-	/// <summary>
-	/// Persistent record of every player AutoFarm has farmed and/or Defender has seen attacking us - keyed
-	/// by player, not by coordinate (a player can own several planets, farmed one at a time). Two purposes:
-	///   1. Anti-Bashing: if a player we farmed later sends an attack back at us, they're marked
-	///      "retaliated" and AutoFarm should never target them again (see IsBlacklisted).
-	///   2. A general players database, separate from FarmTargetCache (which only tracks coordinates and
-	///      their current celestial data, not the player behind them across their whole empire).
-	/// </summary>
+	// Persistent record of every player AutoFarm has farmed and/or Defender has seen attacking us, keyed
+	// by player. Used for Anti-Bashing: a player who retaliates after being farmed gets blacklisted.
 	public class PlayersDatabase {
 		private readonly Dictionary<int, PlayerRecord> _byId = new();
-		// Some espionage reports/attacks may lack a numeric PlayerID depending on ogamed's parsing -
-		// fall back to matching by name in that case.
+		// Fallback for reports/attacks without a numeric PlayerID.
 		private readonly Dictionary<string, PlayerRecord> _byName = new();
 		private readonly string _filePath;
 
@@ -118,8 +111,7 @@ namespace Tbot.Workers {
 				record.KnownCoordinates.Add(coordinate);
 		}
 
-		/// <summary>All distinct coordinates ever observed for this player (attacks, spying, farming) -
-		/// see PlayerRecord.KnownCoordinates for why this isn't their full empire.</summary>
+		// All distinct coordinates ever observed for this player (attacks, spying, farming).
 		public List<string> GetKnownCoordinates(int playerId, string playerName) {
 			return Get(playerId, playerName)?.KnownCoordinates ?? new List<string>();
 		}
@@ -131,8 +123,7 @@ namespace Tbot.Workers {
 			record.TotalConfirmedLoot += loot;
 		}
 
-		/// <returns>true if this is the first time this player has retaliated (i.e. just got blacklisted
-		/// by this call) - used so the caller only alerts once, not on every subsequent attack.</returns>
+		// Returns true only the first time this player retaliates, so the caller alerts once.
 		public bool RecordRetaliation(int playerId, string playerName) {
 			if (playerId <= 0 && string.IsNullOrEmpty(playerName))
 				return false;

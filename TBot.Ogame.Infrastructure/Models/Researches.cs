@@ -26,8 +26,7 @@ namespace TBot.Ogame.Infrastructure.Models {
 		public int ShieldingTechnology { get; set; }
 		public int ArmourTechnology { get; set; }
 
-		// Built once from reflection at class-init time instead of on every GetLevel() call - see
-		// Ships.cs for the same pattern applied to the (much hotter) ship-count accessors.
+		// Built once via reflection instead of on every GetLevel() call.
 		private static readonly Dictionary<Buildables, Func<Researches, int>> _accessors = BuildAccessors();
 
 		private static Dictionary<Buildables, Func<Researches, int>> BuildAccessors() {

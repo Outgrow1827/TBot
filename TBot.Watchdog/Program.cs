@@ -3,21 +3,8 @@ using System.Text.Json;
 
 namespace TBot.Watchdog;
 
-// Companion process to TBot.exe: catches whole-process hangs/crashes that nothing running inside
-// TBot.exe itself could ever detect (see TBot/Workers/WatchdogWorker.cs for the internal, per-worker
-// equivalent - that one restarts a single stuck worker, this one restarts the whole bot).
-//
-// Started by TBot.exe at boot (Program.TryStartExternalWatchdog), passed the PID to watch via
-// --watch-pid. Watches:
-//   1. whether that process is still running at all;
-//   2. if it exits, whether it exited cleanly (code 0 - the user stopped it on purpose, e.g. Ctrl+C)
-//      or not (crash - restart it);
-//   3. while it's running, whether TBot's own internal watchdog is still writing heartbeat files
-//      (data\watchdog_heartbeat_{alias}.txt) - if those go stale, the process is hung even though
-//      Windows still sees it as "running", so it gets killed and restarted too.
-//
-// On a clean exit (code 0) this process exits too - no bot to watch, no reason to keep relaunching it
-// behind the user's back just because they closed it.
+// Companion process to TBot.exe: watches the given PID and restarts it on a crash or a stale heartbeat.
+// Exits without restarting if TBot.exe closes cleanly (code 0).
 internal class Program {
 	private static async Task<int> Main(string[] args) {
 		string exeDir = AppContext.BaseDirectory;

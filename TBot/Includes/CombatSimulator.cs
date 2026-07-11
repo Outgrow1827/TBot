@@ -5,36 +5,22 @@ using TBot.Ogame.Infrastructure.Enums;
 using TBot.Ogame.Infrastructure.Models;
 
 namespace Tbot.Includes {
-	/// <summary>
-	/// Result of a simulated OGame battle.
-	/// </summary>
+	// Result of a simulated OGame battle.
 	public class CombatSimulationResult {
 		public bool DefenderDestroyed { get; set; }
 		public bool AttackerDestroyed { get; set; }
 		public Ships AttackerShipsLost { get; set; } = new();
 		public Ships DefenderShipsLost { get; set; } = new();
 		public Defences DefencesLost { get; set; } = new();
-		/// <summary>
-		/// Percentage (0-100) of the attacker's fleet value (metal+crystal) lost in the battle.
-		/// </summary>
+		// Percentage (0-100) of the attacker's fleet value (metal+crystal) lost in the battle.
 		public double AttackerLossPercentage { get; set; }
 		public int Rounds { get; set; }
 	}
 
-	/// <summary>
-	/// Approximate simulator for OGame ground/space combat, used to estimate the fleet losses an
-	/// attacker would suffer against a given (partially known) defender composition, so AutoFarm can
-	/// decide whether to attack a defended target within an acceptable loss threshold.
-	///
-	/// This is NOT a byte-for-byte port of the game's combat engine: instead of resolving individual,
-	/// randomly-targeted shots, it works on "stacks" (one entry per ship/defense type) and distributes
-	/// each round's expected damage across the defender's stacks proportionally to their remaining unit
-	/// count - a standard approximation used by most third-party OGame battle calculators when exact
-	/// unit-by-unit RNG isn't required. Explosion chance (extra destruction chance below 30% integrity)
-	/// is not modeled; rapid fire is modeled as its exact expected-value multiplier (a rapid fire value of
-	/// R causes an attacker unit to fire, on average, R times before missing a re-fire roll, which matches
-	/// the official (R-1)/R re-fire probability).
-	/// </summary>
+	// Approximate simulator for OGame combat, used by AutoFarm to estimate fleet losses against a
+	// (partially known) defender composition. Works on stacks (one entry per ship/defense type) instead
+	// of resolving individual shots, distributing each round's damage proportionally across the
+	// defender's stacks. Explosion chance isn't modeled; rapid fire uses its expected-value multiplier.
 	public static class CombatSimulator {
 		private class UnitStats {
 			public long BaseAttack;
@@ -124,12 +110,8 @@ namespace Tbot.Includes {
 			return stacks;
 		}
 
-		/// <summary>
-		/// Simulates up to 6 combat rounds between an attacker fleet and a defender's fleet+defences.
-		/// Only ship/defence types the game reported (i.e. present in <paramref name="defenderShips"/>/
-		/// <paramref name="defenderDefences"/>) are considered - callers should treat unknown (unprobed)
-		/// composition as a reason not to trust this simulation, not as "no defence".
-		/// </summary>
+		// Simulates up to 6 combat rounds. Only ship/defence types the game reported are considered -
+		// unknown (unprobed) composition should be treated as untrustworthy, not as "no defence".
 		public static CombatSimulationResult SimulateBattle(
 			Ships attackerShips, Researches attackerResearches,
 			Ships defenderShips, Defences defenderDefences, Researches defenderResearches

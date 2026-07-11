@@ -23,8 +23,7 @@ namespace TBot.Ogame.Infrastructure.Models {
 			return $"M: {MetalMine.ToString()} C: {CrystalMine.ToString()} D: {DeuteriumSynthesizer.ToString()} S: {SolarPlant.ToString("")} F: {FusionReactor.ToString("")}";
 		}
 
-		// Built once from reflection at class-init time instead of on every GetLevel()/SetLevel() call -
-		// see Ships.cs for the same pattern applied to the (much hotter) ship-count accessors.
+		// Built once via reflection instead of on every GetLevel()/SetLevel() call.
 		private static readonly Dictionary<Buildables, (Func<Buildings, int> Get, Action<Buildings, int> Set)> _accessors = BuildAccessors();
 
 		private static Dictionary<Buildables, (Func<Buildings, int>, Action<Buildings, int>)> BuildAccessors() {

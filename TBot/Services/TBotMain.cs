@@ -408,11 +408,8 @@ namespace Tbot.Services {
 
 			// Its ok to add an infinite period time, since each worker will change its period accordingly after first execution
 			if (workers.TryGetValue(feat, out var worker)) {
-				// Skip the whole Start -> immediately fire -> "not enabled by settings, ending" dance for
-				// a feature that's disabled: OnSettingsChanged() already called StopWorker() on everyone
-				// before we got here, so a disabled worker is already idle - restarting its timer just to
-				// have it notice it's disabled and go idle again on the very next tick was pure noise,
-				// especially on every settings reload (which can happen often, e.g. while tuning config).
+				// Skip restarting a worker that's disabled - it's already idle, no need to wake it just
+				// to have it notice that and go idle again.
 				if (!worker.IsWorkerEnabledBySettings()) {
 					return;
 				}
@@ -1203,14 +1200,8 @@ namespace Tbot.Services {
 					log(LogLevel.Warning, LogSender.SleepMode, "GoToSleep time and WakeUp time must be different. Sleep mode will be disabled");
 					await WakeUpAsync(null);
 				} else {
-					// Was a 12-branch hand-written if/else tree (YES/NO/YES-style combinations of
-					// time>=goToSleep, time>=wakeUp, goToSleep>=wakeUp) with 2 branches explicitly commented
-					// "THIS SHOULDNT HAPPEN" that only rescheduled the next check without ever calling
-					// GoToSleepAsync/WakeUpAsync - if a real GoToSleep/WakeUp/current-time combination landed
-					// there (e.g. right after saving new sleep settings from the WebUI), the bot silently did
-					// nothing instead of sleeping or waking up. Replaced with GeneralHelper.ShouldSleep
-					// (already used the same way in FleetScheduler.SendFleet), which resolves every
-					// combination deterministically with no unhandled case.
+					// Uses GeneralHelper.ShouldSleep (same as FleetScheduler.SendFleet) to resolve every
+					// time/goToSleep/wakeUp combination deterministically.
 					bool asleep = GeneralHelper.ShouldSleep(time, goToSleep, wakeUp);
 					DateTime nextBoundary = asleep ? wakeUp : goToSleep;
 					if (nextBoundary <= time)

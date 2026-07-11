@@ -20,10 +20,8 @@ namespace Tbot.Workers.Brain {
 		private readonly ICalculationService _calculationService;
 		private readonly ITBotOgamedBridge _tbotOgameBridge;
 
-		// Ship types whose (Metal+Crystal) cost feeds into the debris-field value of a stationed fleet -
-		// same set used by the "Optimal Defense" calculator (Vesselin Bontchev) this worker's
-		// production-based mode is modeled after. Deuterium is excluded because debris fields never
-		// contain deuterium in OGame.
+		// Ship types whose Metal+Crystal cost counts toward debris-field value (deuterium excluded, since
+		// debris fields never contain deuterium).
 		private static readonly Buildables[] DebrisShipTypes = {
 			Buildables.SmallCargo, Buildables.LargeCargo, Buildables.LightFighter, Buildables.HeavyFighter,
 			Buildables.Cruiser, Buildables.Battleship, Buildables.ColonyShip, Buildables.Recycler,
@@ -31,9 +29,8 @@ namespace Tbot.Workers.Brain {
 			Buildables.Deathstar, Buildables.Battlecruiser
 		};
 
-		// The 5 defence types the production-based formula computes. AntiBallisticMissiles and the shield
-		// domes aren't part of the "Optimal Defense" calculation - those always come from the manually
-		// configured DefenceToReach, regardless of this toggle.
+		// Defence types covered by the production-based formula. AntiBallisticMissiles and the shield
+		// domes always come from the manually configured DefenceToReach instead.
 		private static readonly Buildables[] FormulaCoveredTypes = {
 			Buildables.RocketLauncher, Buildables.LightLaser, Buildables.HeavyLaser,
 			Buildables.GaussCannon, Buildables.PlasmaTurret
@@ -144,9 +141,7 @@ namespace Tbot.Workers.Brain {
 						if (buildableCount <= 0)
 							continue;
 
-						// Cap the order so it doesn't queue longer than MaxConstructionTime (minutes) worth
-						// of build time - without this, a big deficit (e.g. after raising DefenceToReach)
-						// could queue a single order that ties up the celestial's production queue for days.
+						// Cap the order so it doesn't queue longer than MaxConstructionTime (minutes) worth of build time.
 						if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.AutoDefence, "MaxConstructionTime") && (int) _tbotInstance.InstanceSettings.Brain.AutoDefence.MaxConstructionTime > 0) {
 							long maxSeconds = (long) _tbotInstance.InstanceSettings.Brain.AutoDefence.MaxConstructionTime * 60;
 							long estimatedSeconds = _calculationService.CalcProductionTime(buildable, (int) buildableCount, _tbotInstance.UserData.serverData, tempCelestial.Facilities);
@@ -208,11 +203,9 @@ namespace Tbot.Workers.Brain {
 			}
 		}
 
-		// Ports the "Optimal Defense" formula (Vesselin Bontchev, bontchev.my.contact.bg/ogame/optimaldefense.html):
-		// defence needed to absorb HoursOfProductionToCover worth of production + current stock + the
-		// debris value of the fleet sitting on the celestial, assuming an attacker loots PlunderPercent%
-		// of it. Cascades from Plasma Turret down to Rocket Launcher/Light Laser, each tier covering
-		// whatever loot value the tier(s) above it couldn't.
+		// Ports the "Optimal Defense" formula (Vesselin Bontchev): defence needed to absorb
+		// HoursOfProductionToCover worth of production, current stock and fleet debris value, assuming
+		// an attacker loots PlunderPercent% of it. Cascades from Plasma Turret down to Rocket Launcher.
 		private Dictionary<Buildables, long> CalcNeededDefenceFromProduction(Planet planet) {
 			var researches = _tbotInstance.UserData.researches;
 			var speed = (int) _tbotInstance.UserData.serverData.Speed;
