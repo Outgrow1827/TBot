@@ -67,8 +67,7 @@ namespace TBot.Ogame.Infrastructure.Models {
 		public int ShipManufacturingHall { get; set; }
 		public int SupraRefractor { get; set; }
 
-		// Built once from reflection at class-init time instead of on every GetLevel()/SetLevel() call -
-		// see Ships.cs for the same pattern applied to the (much hotter) ship-count accessors.
+		// Built once via reflection instead of on every GetLevel()/SetLevel() call.
 		private static readonly Dictionary<LFBuildables, (Func<LFBuildings, int> Get, Action<LFBuildings, int> Set)> _accessors = BuildAccessors();
 
 		private static Dictionary<LFBuildables, (Func<LFBuildings, int>, Action<LFBuildings, int>)> BuildAccessors() {

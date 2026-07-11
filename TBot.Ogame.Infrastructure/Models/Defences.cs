@@ -20,8 +20,7 @@ namespace TBot.Ogame.Infrastructure.Models {
 		public long AntiBallisticMissiles { get; set; }
 		public long InterplanetaryMissiles { get; set; }
 
-		// Built once from reflection at class-init time instead of on every GetAmount() call - see Ships.cs
-		// for the same pattern applied to the (much hotter) ship-count accessors.
+		// Built once via reflection instead of on every GetAmount() call.
 		private static readonly Dictionary<Buildables, Func<Defences, long>> _accessors = BuildAccessors();
 
 		private static Dictionary<Buildables, Func<Defences, long>> BuildAccessors() {

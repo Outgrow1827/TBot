@@ -25,9 +25,7 @@ namespace TBot.Ogame.Infrastructure.Models {
 			return $"R: {RoboticsFactory.ToString()} S: {Shipyard.ToString()} L: {ResearchLab.ToString()} M: {MissileSilo.ToString("")} N: {NaniteFactory.ToString("")}";
 		}
 
-		// Built once from reflection at class-init time instead of on every GetLevel()/SetLevel() call -
-		// see Ships.cs for the same pattern applied to the (much hotter) ship-count accessors. Previously
-		// Celestial.GetLevel/SetLevel(Buildables) did this reflection directly against Facilities inline.
+		// Built once via reflection instead of on every GetLevel()/SetLevel() call.
 		private static readonly Dictionary<Buildables, (Func<Facilities, int> Get, Action<Facilities, int> Set)> _accessors = BuildAccessors();
 
 		private static Dictionary<Buildables, (Func<Facilities, int>, Action<Facilities, int>)> BuildAccessors() {

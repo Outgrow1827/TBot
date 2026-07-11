@@ -7,10 +7,7 @@ using System.Threading.Tasks;
 using TBot.Ogame.Infrastructure.Enums;
 
 namespace TBot.Ogame.Infrastructure.Models {
-	/// <summary>Global switch, set once at startup from instance_settings.json
-	/// (General.HideSensitiveDataInLogs), that controls whether Coordinate.ToString()
-	/// masks galaxy/system/position. Applies everywhere a Coordinate is interpolated
-	/// into a log message, without needing to touch every log call site individually.</summary>
+	// Set at startup from General.HideSensitiveDataInLogs - masks galaxy/system/position in Coordinate.ToString().
 	public static class LogPrivacy {
 		public static bool HideCoordinates = false;
 	}
@@ -65,8 +62,7 @@ namespace TBot.Ogame.Infrastructure.Models {
 			};
 		}
 
-		/// <summary>Parses the bracketed form produced by ToString() (e.g. "[P:1:2:3]", "[M:1:2:3]") -
-		/// unlike FromString(), which expects a different "1:2:3 moon"-style format used elsewhere.</summary>
+		// Parses the bracketed form produced by ToString(), e.g. "[P:1:2:3]" or "[M:1:2:3]".
 		static public bool TryParse(string arg, out Coordinate coordinate) {
 			coordinate = null;
 			if (string.IsNullOrEmpty(arg))

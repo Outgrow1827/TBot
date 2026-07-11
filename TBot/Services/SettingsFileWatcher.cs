@@ -15,15 +15,8 @@ namespace Tbot.Services {
 		private Func<Task> _watchFunc;
 		private string _absFpToWatch;
 		private SemaphoreSlim _changedSem = new SemaphoreSlim(1, 1);
-		// Some filesystems (VMware shared folders in particular) can fire many change notifications for a
-		// single logical edit in a very short burst. Without this, each one used to kick off its own fully
-		// concurrent _watchFunc() run (see history: "async void" callback meant the semaphore only guarded
-		// the synchronous part of the call, not the actual reload), and dozens/hundreds of overlapping
-		// reloads racing on shared static state (InstanceManager.instances, worker lists, ...) is exactly
-		// what caused "Collection was modified" / "task already completed" crashes in practice. Now a burst
-		// collapses to: one run processes the file as it is when it starts, and if any further changes
-		// arrived while it was busy, exactly one more run happens right after (to pick up the latest state) -
-		// never a pile of overlapping runs.
+		// Coalesces bursts of change notifications (some filesystems fire several for one logical edit)
+		// into at most one extra run after the current one finishes, instead of running concurrently.
 		private volatile bool _runPending;
 		private PhysicalFileProvider p;
 		private IChangeToken changeToken;

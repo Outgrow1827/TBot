@@ -108,11 +108,8 @@ namespace TBot.Ogame.Infrastructure {
 		internal Process ExecuteOgamedExecutable(Credentials credentials, Device device, string host = "localhost", int port = 8080, string captchaKey = "", ProxySettings proxySettings = null) {
 			Process? ogameProc = null;
 			try {
-				// Credentials via environment variables, not CLI args: process arguments are
-				// visible to any other process/user on the machine (Task Manager, Process Explorer,
-				// Get-CimInstance Win32_Process, etc.), env vars of a child process are not exposed
-				// that way. ogamed already supports this (urfave/cli EnvVars) for username/password/
-				// proxy-username/proxy-password/basic-auth-username/basic-auth-password.
+				// Pass credentials via environment variables, not CLI args, since process arguments
+				// are visible to any other process/user on the machine.
 				var envVars = new System.Collections.Generic.Dictionary<string, string> {
 					["OGAMED_USERNAME"] = credentials.Username,
 					["OGAMED_PASSWORD"] = credentials.Password,

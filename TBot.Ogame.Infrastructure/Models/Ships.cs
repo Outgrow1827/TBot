@@ -9,9 +9,7 @@ using TBot.Ogame.Infrastructure.Enums;
 
 namespace TBot.Ogame.Infrastructure.Models {
 	public class Ships {
-		// Built once from reflection at class-init time and reused for every Add/Remove/GetAmount/SetAmount/
-		// HasAtLeast/ToString call, which otherwise re-ran GetType().GetProperties() from scratch every time
-		// (these are hot paths: farm/fleet/research run dozens-hundreds of times per bot cycle).
+		// Built once via reflection and reused for Add/Remove/GetAmount/SetAmount/HasAtLeast/ToString.
 		private static readonly Dictionary<Buildables, (Func<Ships, long> Get, Action<Ships, long> Set)> _accessors = BuildAccessors();
 
 		private static Dictionary<Buildables, (Func<Ships, long> Get, Action<Ships, long> Set)> BuildAccessors() {

@@ -12,19 +12,13 @@ using Tbot.Helpers;
 using Tbot.Services;
 
 namespace Tbot.Workers {
-	// Watches every other worker's heartbeat (WorkerBase/CelestialWorkerBase.LastExecutionStart/End)
-	// and restarts + alerts on any that looks stuck. This only catches a single worker hanging - if the
-	// whole process locks up (thread pool starved, deadlock), this worker's own timer stops ticking too,
-	// which is a hard limit of anything running inside the same process. Runs during SleepMode too,
-	// since a hang can happen at any time and sleep periods can last hours.
+	// Watches every other worker's heartbeat and restarts + alerts on any that looks stuck.
+	// Runs during SleepMode too, since a hang can happen at any time.
 	public class WatchdogWorker : WorkerBase {
 		public WatchdogWorker(ITBotMain parentInstance) : base(parentInstance) {
 		}
 
-		// Keyed by Feature (celestial workers of the same feature share one entry - good enough, this
-		// is just a restart-storm guard, not a precise per-instance tracker). Avoids restarting the same
-		// worker every single check (every 1-2 min) if it keeps getting stuck right away after each
-		// restart - a real unrecoverable bug should alert repeatedly, not thrash restarts.
+		// Guards against restarting the same worker on every check if it keeps getting stuck right away.
 		private readonly Dictionary<Feature, DateTime> _lastRestartAttempt = new();
 
 		protected override bool RunsDuringSleep => true;
@@ -55,10 +49,7 @@ namespace Tbot.Workers {
 			return 30;
 		}
 
-		// Proof-of-life file for the external watchdog (TBot.Watchdog.exe, a separate process): if this
-		// worker is still ticking, the process' timer/task infrastructure isn't fully locked up, even if
-		// some individual worker is stuck. One file per instance alias, so a multi-instance TBot.exe only
-		// looks dead to the external watchdog if ALL instances stop updating theirs.
+		// Proof-of-life file for the external watchdog (TBot.Watchdog.exe). One file per instance alias.
 		private void WriteHeartbeat() {
 			try {
 				Directory.CreateDirectory("data");

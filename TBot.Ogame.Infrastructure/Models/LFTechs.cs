@@ -89,8 +89,7 @@ namespace TBot.Ogame.Infrastructure.Models {
 		public int PsionicShieldMatrix { get; set; }
 		public int KaeleshDiscovererEnhancement { get; set; }
 
-		// Built once from reflection at class-init time instead of on every GetLevel()/SetLevel() call - see
-		// Ships.cs for the same pattern applied to the (much hotter) ship-count accessors.
+		// Built once via reflection instead of on every GetLevel()/SetLevel() call.
 		private static readonly Dictionary<LFTechno, (Func<LFTechs, int> Get, Action<LFTechs, int> Set)> _accessors = BuildAccessors();
 
 		private static Dictionary<LFTechno, (Func<LFTechs, int>, Action<LFTechs, int>)> BuildAccessors() {
