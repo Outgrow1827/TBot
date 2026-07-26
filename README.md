@@ -7,13 +7,13 @@ OGame Bot
 [![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/ogame-tbot/TBot)](https://github.com/ogame-tbot/TBot/releases/latest)
 [![Discord](https://img.shields.io/discord/801453618770214923)](https://discord.gg/NZSaY4aQ7J)
 
-TBot is a .NET 6 [OGame](https://lobby.ogame.gameforge.com/) bot based on [ogamed deamon](https://github.com/alaingilbert/ogame) by alaingilbert
+TBot is a .NET 9 [OGame](https://lobby.ogame.gameforge.com/) bot based on [ogamed deamon](https://github.com/alaingilbert/ogame) by alaingilbert
 
 Feel free to publish issues or pull requests
 
-TBot supports Ogame **v11.15**!
+TBot supports Ogame **v13.0.0**!
 
-## How to Update from 0.3.1
+## How to Update
 
 Be sure to remove .ogame folder from */home/username/* (linux) or *C:/Users/username* (win) before logging in
 
@@ -171,7 +171,8 @@ You can control and get info for TBot through a Telegram Bot. In order to enable
     * /cancelghostsleep - Cancel planned /ghostsleep(expe) if not already sent
     * /spycrash - Create a debris field by crashing a probe on target or automatically selected planet. Format: <code>/spycrash 2:41:9/auto</code>
     * /recall - Enable/disable fleet auto recall. Format: <code>/recall true/false</code>
-    * /collect - Collect planets resources to JSON setting celestial
+    * /collect [Moon|Planet] - Collect planets resources to JSON setting celestial. Optional argument filters by celestial type
+    * /collectall [Moon|Planet] - Same as /collect but without the resource limit check
     * /build - Try to build buildable on each planet. Build max possible if no number value sent <code>/build LightFighter [100]</code>
     * /collectdeut - Collect planets deut resources above minimum amount to JSON repatriate setting celestial. Format: <code>/collectdeut 500000</code>
     * /msg - Send a message to current attacker. Format: <code>/msg hello dude</code>
@@ -215,7 +216,7 @@ You can change settings from WebUI or editing the files directly.
   * Under "Language" type your universe community code. You can find it by logging to your account and analyzing the url, such as s161-us.ogame.gameforge.com => us
 * Configure the bot by editing all settings fields
   * All config options are sorted by feature, [check which features you](#features) want and configure them before activating
-* Make sure you have installed the [.NET 6 runtime](https://dotnet.microsoft.com/download/dotnet/6.0) for your platform
+* Make sure you have installed the [.NET 9 runtime](https://dotnet.microsoft.com/download/dotnet/9.0) for your platform
 * Run TBot.exe
 
 ## Running on Linux/MacOS
@@ -234,7 +235,7 @@ You can change settings from WebUI or editing the files directly.
   * Under "Language" type your universe community code. You can find it by logging to your account and analyzing the url, such as s161-us.ogame.gameforge.com => **us**
 * Configure the bot by editing all instance settings.json fields
   * All config options are sorted by feature, [check which features](#features) you want and configure them before activating
-* Make sure you have installed the [.NET 6 runtime](https://dotnet.microsoft.com/download/dotnet/6.0) for your platform
+* Make sure you have installed the [.NET 9 runtime](https://dotnet.microsoft.com/download/dotnet/9.0) for your platform
 * Run TBot
   * `./TBot`
 
@@ -254,11 +255,11 @@ $ ssh -i ~/pem/<my>.pem ec2-user@<instance's public ip-address>
 sudo yum update
 ```
 
-* Install the .NET 6 tuntime, which can be done using [these instructions for CentOs](https://docs.servicestack.net/deploy-netcore-to-amazon-linux-2-ami), and which is something like
+* Install the .NET 9 tuntime, which can be done using [these instructions for CentOs](https://docs.servicestack.net/deploy-netcore-to-amazon-linux-2-ami), and which is something like
 ```
 $ sudo rpm -Uvh https://packages.microsoft.com/config/centos/7/packages-microsoft-prod.rpm
-$ sudo yum install aspnetcore-runtime-6.0
-$ sudo yum install dotnet-sdk-6.0
+$ sudo yum install aspnetcore-runtime-9.0
+$ sudo yum install dotnet-sdk-9.0
 ```
 
 * Upload your TBot files, which were previously downloaded and setup correctly. You can do this by using something like FileZilla using sftp and the same credentials as the ssh connection and then copy your TBot folder into the user's home directory in the server. Make sure your settings file has the public ip of the aws instance and the port where you want to connect.
@@ -290,7 +291,7 @@ Feel free to fork and make pull requests or give suggestions posting an Issue or
 Also, a proper documentation about how to deal with settings would no doubt be helpful, especially for new users.
 
 ## Building
-We write and build TBot with Visual Studio 2022 Community Edition. The project targets .NET 10, so the .NET 10 SDK is required for command line compilation.
+We write and build TBot with Visual Studio 2022 Community Edition. The project targets .NET 9, so the .NET 9 SDK is required for command line compilation.
 
 Releases are automated by GitHub Actions, take a look at the [workflows](https://github.com/ogame-tbot/TBot/tree/master/.github/workflows) if you are interested in the build process.
 
@@ -300,9 +301,9 @@ Releases are automated by GitHub Actions, take a look at the [workflows](https:/
 dotnet publish TBot\TBot.csproj -c Release
 ```
 
-Run from the solution root (`C:\github\TBot\`). Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) to build. The published `TBot.exe` is self-contained (bundles its own .NET 10 runtime), but the target machine still needs the ASP.NET Core 10 runtime installed for the WebUI (Kestrel) to start:
+Run from the solution root (`C:\github\TBot\`). Requires the [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0) to build. The published `TBot.exe` is self-contained (bundles its own .NET 9 runtime), but the target machine still needs the ASP.NET Core 9 runtime installed for the WebUI (Kestrel) to start:
 ```
-winget install Microsoft.DotNet.AspNetCore.10
+winget install Microsoft.DotNet.AspNetCore.9
 ```
 
 The output lands in `TBot\bin\` and contains only:

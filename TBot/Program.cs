@@ -71,7 +71,7 @@ namespace Tbot {
 
 			SettingsService.GlobalSettingsPath = settingsPath;
 
-			var logPath = Path.Combine(Directory.GetCurrentDirectory(), "log");
+			var logPath = Path.Combine(Path.GetFullPath(AppContext.BaseDirectory), "log");
 			if (CmdLineArgsService.logPath.IsPresent == true) {
 				logPath = Path.GetFullPath(CmdLineArgsService.logPath.Get());
 			}
