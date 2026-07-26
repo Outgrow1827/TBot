@@ -12,8 +12,8 @@
 		"DeviceConf": {
 			"Name": "Device-name",
 			"System": "Windows",
-			"Browser": "Firefox",
-			"UserAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+			"Browser": "Chrome",
+			"UserAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
 			"Memory": 8,
 			"Concurrency": 16,
 			"Color": 24,
@@ -21,7 +21,7 @@
 			"Height": 1080,
 			"Timezone": "Europe/London",
 			"Lang": "en"
-		}
+		  }
 	},
 	"General": {
 		"Host": "localhost",
@@ -36,15 +36,13 @@
 		},
 		"CaptchaAPIKey": "",
 		"CustomTitle": "",
-		"HideSensitiveDataInLogs": false,
-		"ResourcePriority": ["Deuterium", "Crystal", "Metal"],
 		"SlotsToLeaveFree": 1,
 		"SlotPriorityLevel": {
 			"Brain": 2,
-			"Expeditions": 3,
-			"AutoFarm": 4,
-			"AutoColonize": 1,
-			"AutoDiscovery": 1,
+			"Expeditions": 1,
+			"AutoFarm": 3,
+			"AutoColonize": 4,
+			"AutoDiscovery": 10,
 			"AutoHarvest": 99
 		}
 	},
@@ -61,8 +59,7 @@
 			"OnlyMoons": true,
 			"DeutToLeave": 200000,
 			"Recall": true,
-			"DefaultMission": "Deploy",
-			"WarnPhalanxExposure": true
+			"DefaultMission": "Deploy"
 		}
 	},
 	"Defender": {
@@ -87,10 +84,11 @@
 		},
 		"Autofleet": {
 			"Active": true,
+			"DelayFleetSaveIfImpactOccurLaterThanNextCheck": true,
+			"MaxDelayMinutes": 30,
 			"TelegramMessenger": {
 				"Active": false
-			},
-			"DelayFleetSaveIfImpactOccurLaterThanNextCheck": true
+			}
 		},
 		"WhiteList": [
 			0,
@@ -100,13 +98,7 @@
 		],
 		"SpyAttacker": {
 			"Active": true,
-			"Probes": 20,
-			"CooldownMinutes": 60,
-			"MaxKnownCoordinates": 5
-		},
-		"SpyWatch": {
-			"Active": false,
-			"CooldownMinutes": 30
+			"Probes": 20
 		},
 		"MessageAttacker": {
 			"Active": false,
@@ -129,11 +121,9 @@
 			"Active": true,
 			"CargoType": "SmallCargo",
 			"DeutToLeaveOnMoons": 1000000,
-			"RoundResources": {
-				"Active": true,
-				"RoundTo": 10000
-			},
-			"SendToTheMoonIfPossible": true,
+			"RoundResources": true,
+			"RoundTo": 1000,
+			"SendToTheMoonIfPossible": false,
 			"Origin": {
 				"Galaxy": 3,
 				"System": 333,
@@ -141,13 +131,13 @@
 				"Type": "Moon"
 			},
 			"MaxSlots": 10,
-			"CheckMoonOrPlanetFirst": true,
-			"DoMultipleTransportIsNotEnoughShipButSamePosition": true,
+			"CheckMoonOrPlanetFirst": false,
+			"DoMultipleTransportIsNotEnoughShipButSamePosition": false,
 			"MultipleOrigins": {
 				"Active": false,
 				"OnlyFromMoons": true,
 				"MinimumResourcesToSend": 10000000,
-				"PriorityToProximityOverQuantity": true,
+				"PriorityToProximityOverQuantity": false,
 				"Exclude": [
 					{
 						"Galaxy": 1,
@@ -234,40 +224,33 @@
 			"CheckIntervalMax": 60
 		},
 		"LifeformAutoResearch": {
-			"Active": true,
-			"Transports": {
-				"Active": true
-			},
-			"MaxResearchLevel": 6,
-			"MaxTechs11": 6,
-			"MaxTechs12": 6,
-			"MaxTechs13": 6,
-			"MaxTechs14": 6,
-			"MaxTechs15": 6,
-			"MaxTechs16": 6,
-			"MaxTechs21": 6,
-			"MaxTechs22": 6,
-			"MaxTechs23": 6,
-			"MaxTechs24": 6,
-			"MaxTechs25": 6,
-			"MaxTechs26": 6,
-			"MaxTechs31": 6,
-			"MaxTechs32": 6,
-			"MaxTechs33": 6,
-			"MaxTechs34": 6,
-			"MaxTechs35": 6,
-			"MaxTechs36": 6,
-			"Exclude": [
-				{
-					"Galaxy": 3,
-					"System": 333,
-					"Position": 15,
-					"Type": "Planet"
-				}
-			],
-			"CheckIntervalMin": 30,
-			"CheckIntervalMax": 60
-		},
+            "Active": false,
+            "Transports": {
+                "Active": true
+            },
+            "MaxResearchLevel": 15,
+            "MaxTechs11": 15,
+            "MaxTechs12": 13,
+            "MaxTechs13": 12,
+            "MaxTechs14": 12,
+            "MaxTechs15": 15,
+            "MaxTechs16": 9,
+            "MaxTechs21": 9,
+            "MaxTechs22": 9,
+            "MaxTechs23": 5,
+            "MaxTechs24": 8,
+            "MaxTechs25": 14,
+            "MaxTechs26": 9,
+            "MaxTechs31": 0,
+            "MaxTechs32": 0,
+            "MaxTechs33": 0,
+            "MaxTechs34": 0,
+            "MaxTechs35": 0,
+            "MaxTechs36": 0,
+            "Exclude": [],
+            "CheckIntervalMin": 60,
+            "CheckIntervalMax": 120
+        },
 		"AutoResearch": {
 			"Active": true,
 			"Transports": {
@@ -328,20 +311,22 @@
 			"Active": false,
 			"ExcludeMoons": true,
 			"RandomOrder": true,
-			"MaxConstructionTime": 2880,
-			"ProductionCoverageHours": 24,
-			"UseProductionBasedCalculation": false,
 			"DefenceToReach": {
-				"RocketLauncher": 4876,
-				"HeavyLaser": 2812,
-				"GaussCannon": 727,
-				"PlasmaTurret": 399,
+				"RocketLauncher": 100000,
+				"HeavyLaser": 10000,
+				"GaussCannon": 1000,
+				"PlasmaTurret": 1000,
 				"SmallShieldDome": true,
-				"LargeShieldDome": true,
-				"LightLaser": 2438,
-				"AntiBallisticMissiles": 120
+				"LargeShieldDome": true
 			},
-			"Exclude": [],
+			"Exclude": [
+				{
+					"Galaxy": 3,
+					"System": 333,
+					"Position": 15,
+					"Type": "Moon"
+				}
+			],
 			"CheckIntervalMin": 60,
 			"CheckIntervalMax": 240
 		},
@@ -353,64 +338,59 @@
 				"OnlyOnMoons": true,
 				"DeutToLeave": 1000000
 			},
-			"Target": {
-				"Galaxy": 5,
-				"System": 63,
-				"Position": 8,
-				"Type": "Moon"
-			},
-			"TargetAssociateMoon": true,
-			"CargoType": "LargeCargo",
-			"RandomOrder": true,
-			"SkipIfIncomingTransport": true,
-			"Exclude": [
-				{
-					"Galaxy": 3,
-					"System": 333,
-					"Position": 15,
-					"Type": "Planet"
-				}
-			],
-			"CheckIntervalMin": 30,
-			"CheckIntervalMax": 60
-		},
-		"BuyOfferOfTheDay": {
-			"Active": true,
-			"CheckIntervalMin": 240,
-			"CheckIntervalMax": 360
-		},
-		"AutoFleepJumpGate": {
-			"Active": false,
-			"CheckIntervalMin": 5,
-			"CheckIntervalMax": 10,
 			"Target": [
 				{
-					"Galaxy": 1,
-					"System": 1,
-					"Position": 1,
+					"Galaxy": 5,
+					"System": 63,
+					"Position": 8,
 					"Type": "Moon"
 				}
 			],
-			"MinimumAmountOfShipsToBeLeftOnMoon": {
-				"LightFighter": 0,
-				"HeavyFighter": 0,
-				"Cruiser": 0,
-				"Battleship": 0,
-				"Battlecruiser": 0,
-				"Bomber": 0,
-				"Destroyer": 0,
-				"Deathstar": 100000,
-				"SmallCargo": 0,
-				"LargeCargo": 0,
-				"ColonyShip": 0,
-				"Recycler": 0,
-				"EspionageProbe": 0,
-				"Reaper": 0,
-				"Pathfinder": 0
-			},
-			"MinimumAmountOfShipPointsToTeleport": 500000
-		}
-	},
+			"TargetAssociateMoon": false,
+			"CargoType": "LargeCargo",
+			"RandomOrder": false,
+			"SkipIfIncomingTransport": true,
+			"Exclude": [],
+			"CheckIntervalMin": 3000,
+			"CheckIntervalMax": 6000
+		},
+		"BuyOfferOfTheDay": {
+            "Active": false,
+            "CheckIntervalMin": 240,
+            "CheckIntervalMax": 360
+        },
+        "AutoFleepJumpGate": {
+            "Active": false,
+            "CheckIntervalMin": 5,
+            "CheckIntervalMax": 10,
+					"Target": [
+						{
+							"Galaxy": 1,
+							"System": 1,
+							"Position": 1,
+							"Type": "Moon"
+						}
+					],
+            "MinimumAmountOfShipsToBeLeftOnMoon": {
+                "LightFighter": 0,
+                "HeavyFighter": 0,
+                "Cruiser": 0,
+                "Battleship": 0,
+                "Battlecruiser": 0,
+                "Bomber": 0,
+                "Destroyer": 0,
+                "Deathstar": 100000,
+                "SmallCargo": 0,
+                "LargeCargo": 0,
+                "ColonyShip": 0,
+                "Recycler": 0,
+                "EspionageProbe": 0,
+                "Reaper": 0,
+                "Pathfinder": 0
+            },
+            "MinimumAmountOfShipPointsToTeleport": 500000
+        }
+    },
 	"Expeditions": {
 		"Active": true,
 		"IgnoreSleep": false,
@@ -442,7 +422,7 @@
 		},
 		"RandomizeOrder": true,
 		"FuelToCarry": 20000,
-		"MaxExpeditionsPerOrigin": 10,
+		"MaxExpeditionsPerOrigin": 1,
 		"Origin": [
 			{
 				"Galaxy": 5,
@@ -459,29 +439,29 @@
 		]
 	},
 	"AutoFarm": {
-		"Active": true,
+		"Active": false,
+		"ExcludeMoons": true,
 		"ScanRange": [
 			{
-				"Galaxy": 2,
-				"StartSystem": 360,
-				"EndSystem": 420
+				"Galaxy": 5,
+				"StartSystem": 199,
+				"EndSystem": 499
 			}
 		],
 		"Exclude": [
 			{
-				"Galaxy": 3,
-				"System": 3,
-				"Position": 3
+				"Galaxy": 1,
+				"System": 1,
+				"Planet": 1
 			}
 		],
-		"KeepReportFor": 180,
-		"NumProbes": 10,
-		"ExcludeMoons": true,
+		"KeepReportFor": 1440,
+		"NumProbes": 52,
 		"Origin": [
 			{
-				"Galaxy": 2,
-				"System": 396,
-				"Position": 4,
+				"Galaxy": 5,
+				"System": 313,
+				"Position": 8,
 				"Type": "Planet"
 			}
 		],
@@ -499,54 +479,22 @@
 		"MaxWaitTime": 7200,
 		"MinLootFuelRatio": 0.5,
 		"PreferedResource": "",
-		"SkipRecentlyActiveTargets": false,
-		"ScoreWeights": {
-			"Active": false,
-			"Metal": 1.0,
-			"Crystal": 1.0,
-			"Deuterium": 1.0
-		},
 		"MaxSlots": 18,
 		"SlotsToLeaveFree": 1,
 		"CheckIntervalMin": 30,
 		"CheckIntervalMax": 60,
 		"Blacklist": {
 			"Active": true,
-			"ResetAfterHours": 168,
+			"ResetAfterHours": 20,
 			"MinimumResourcesToNotBlacklist": 1000000,
-			"ProcessAllReports": false
+			"ProcessAllReports": true
 		},
-		"StopAfterFullScan": false,
-		"FastFarmMode": false,
-		"FastFarmMaxCacheAge": 1440,
-		"FastFarmIncludeMoons": true,
-		"ProbeUntilMinimumResources": false,
-		"ProbeAttackForDefenseCheck": false,
-		"AcceptableFleetLossPercentage": 0,
-		"MinLootToRiskRatio": 1.0,
-		"RecycleDebris": {
-			"Active": false,
-			"MinDebrisToRecycle": 50000
-		},
-		"Ships": {
-			"SmallCargo": true,
-			"LargeCargo": true,
-			"LightFighter": true,
-			"HeavyFighter": true,
-			"Cruiser": true,
-			"Battleship": true,
-			"Battlecruiser": true,
-			"Bomber": true,
-			"Destroyer": true,
-			"Deathstar": false,
-			"Reaper": true,
-			"Pathfinder": true
-		}
+		"StopAfterFullScan": true
 	},
 	"AutoHarvest": {
 		"Active": false,
 		"HarvestOwnDF": true,
-		"HarvestDeepSpace": true,
+		"HarvestDeepSpace": false,
 		"MinimumResourcesOwnDF": 300,
 		"MinimumResourcesDeepSpace": 50000,
 		"MaxSlots": 5,
@@ -568,7 +516,7 @@
 			"MinTemperatureAcceptable": -130,
 			"MaxTemperatureAcceptable": 260
 		},
-		"IntensiveResearch": {
+		"IntensiveResearch" : {
 			"Active": false,
 			"MaxSlots": 10,
 			"MinWaitNextFleet": 25,
@@ -592,21 +540,12 @@
 				"MaxPlanets": 2
 			}
 		],
-		"Exclude": [
-			{
-				"Galaxy": 5,
-				"StartSystem": 1,
-				"EndSystem": 5,
-				"StartPosition": 1,
-				"EndPosition": 15
-			}
-		],
-		"RandomPosition": true,
-		"CheckIntervalMin": 30,
-		"CheckIntervalMax": 60
+		"RandomPosition": false,
+		"CheckIntervalMin": 900,
+		"CheckIntervalMax": 1200
 	},
 	"AutoDiscovery": {
-		"Active": true,
+		"Active": false,
 		"Origin": [
 			{
 				"Galaxy": 5,
@@ -617,15 +556,8 @@
 		],
 		"MaxSlots": 5,
 		"MaxFailures": 5,
-		"PauseWhenArtifactsAbove": false,
 		"RandomizeDestination": false,
 		"CheckIntervalMin": 30,
 		"CheckIntervalMax": 60
-	},
-	"Watchdog": {
-		"Active": true,
-		"MaxStuckMinutes": 30,
-		"CheckIntervalMin": 1,
-		"CheckIntervalMax": 2
 	}
 }

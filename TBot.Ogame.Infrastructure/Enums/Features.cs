@@ -9,13 +9,14 @@ namespace TBot.Ogame.Infrastructure.Enums {
 		public static readonly List<Feature> AllFeatures = new List<Feature>() {
 			Feature.Defender,
 			Feature.BrainAutobuildCargo,
+			Feature.BrainAutobuildDefence,
 			Feature.BrainAutoRepatriate,
 			Feature.BrainAutoMine,
 			Feature.BrainLifeformAutoMine,
 			Feature.BrainLifeformAutoResearch,
 			Feature.BrainOfferOfTheDay,
 			Feature.BrainAutoResearch,
-			Feature.BrainAutoDefence,
+			Feature.BrainAutoFleepJumpGate,
 			Feature.AutoFarm,
 			Feature.Expeditions,
 			Feature.AutoDiscovery,
@@ -23,7 +24,6 @@ namespace TBot.Ogame.Infrastructure.Enums {
 			Feature.Harvest,
 			Feature.SleepMode,
 			Feature.Watchdog,
-			// ManualActivityLog is no longer a separate worker - it now runs as part of AutoFarmWorker's cycle.
 		};
 	}
 }

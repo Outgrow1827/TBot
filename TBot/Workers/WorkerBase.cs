@@ -12,7 +12,6 @@ using Tbot.Services;
 using TBot.Common.Logging;
 using TBot.Ogame.Infrastructure.Enums;
 using TBot.Ogame.Infrastructure.Models;
-using Tbot.Common.Settings;
 
 namespace Tbot.Workers {
 
@@ -47,17 +46,6 @@ namespace Tbot.Workers {
 			}
 		}
 
-		// Heartbeat for the watchdog: set around Execute() in ExecutionWrapper below. If
-		// LastExecutionStart is set and either LastExecutionEnd is null or older than it, this
-		// worker's current Execute() call hasn't returned yet - if that persists way past this
-		// worker's own Period, it's stuck.
-		public DateTime? LastExecutionStart { get; private set; }
-		public DateTime? LastExecutionEnd { get; private set; }
-
-		// Watchdog needs to keep ticking even while the bot is "sleeping" - every other worker
-		// intentionally pauses then, but a hang can happen at any time and sleep periods can last hours.
-		protected virtual bool RunsDuringSleep => false;
-
 		public WorkerBase(ITBotMain parentInstance) {
 			_tbotInstance = parentInstance;
 		}
@@ -87,14 +75,9 @@ namespace Tbot.Workers {
 		public async Task StopWorker() {
 			// Stop also all the timers
 			RemoveAllTimers();
-			// Capture into a local before the null-check: StopWorker() can be called concurrently
-			// (e.g. from a settings reload and from RestartWorker at the same time), and re-reading
-			// the _timer field between the check and the DisposeAsync() call below could otherwise
-			// observe null if another caller already finished and cleared it - throwing NRE.
-			var timer = _timer;
-			if (timer != null) {
+			if (_timer != null) {
 				DoLog(LogLevel.Information, $"Closing Worker \"{GetWorkerName()}\"..");
-				await timer.DisposeAsync();
+				await _timer.DisposeAsync();
 				DoLog(LogLevel.Information, $"Worker \"{GetWorkerName()}\" closed!");
 				_timer = null;
 			}
@@ -156,20 +139,14 @@ namespace Tbot.Workers {
 		public abstract Feature GetFeature();
 		public abstract LogSender GetLogSender();
 
+		public DateTime? LastExecutionStart { get; private set; }
+		public DateTime? LastExecutionEnd { get; private set; }
+
+		// Watchdog needs to keep ticking even while the bot is "sleeping" - every other worker
+		// intentionally pauses then, but a hang can happen at any time and sleep periods can last hours.
+		protected virtual bool RunsDuringSleep => false;
 
 
-		protected int GetSlotPriority(string featureSection, int defaultPriority = int.MaxValue) {
-			try {
-				if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings[featureSection], "SlotPriorityLevel"))
-					return (int) _tbotInstance.InstanceSettings[featureSection].SlotPriorityLevel;
-			} catch { }
-			try {
-				if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.General, "SlotPriorityLevel") &&
-					SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.General.SlotPriorityLevel, featureSection))
-					return (int) _tbotInstance.InstanceSettings.General.SlotPriorityLevel[featureSection];
-			} catch { }
-			return defaultPriority;
-		}
 
 		protected Task EndExecution() {
 			// This is meant to be called within the worker callback, so we can't await _timer to end

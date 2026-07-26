@@ -45,65 +45,6 @@ namespace Tbot.Workers {
 			return Feature.Colonize;
 		}
 
-		// Each Exclude entry accepts two formats:
-		//  - single coordinate:  { Galaxy, System, Position? } (Position omitted = whole system)
-		//  - range (like Targets): { Galaxy, StartSystem, EndSystem, StartPosition?, EndPosition? }
-		//    (positions omitted = whole system range)
-		private static bool HasKey(dynamic entry, string key) {
-			foreach (var value in (IEnumerable<string>) entry.Keys)
-				if (value == key)
-					return true;
-			return false;
-		}
-
-		private bool ShouldExcludeSystem(int galaxy, int system) {
-			foreach (var exclude in _tbotInstance.InstanceSettings.AutoColonize.Exclude) {
-				if ((int) exclude.Galaxy != galaxy)
-					continue;
-
-				bool isRange = HasKey(exclude, "StartSystem") && HasKey(exclude, "EndSystem");
-				if (isRange) {
-					if (HasKey(exclude, "StartPosition") || HasKey(exclude, "EndPosition"))
-						continue; // a position range only excludes specific planets, not the whole system
-					if (system >= (int) exclude.StartSystem && system <= (int) exclude.EndSystem) {
-						DoLog(LogLevel.Information, $"Skipping system {system}: system in exclude range {(int) exclude.StartSystem}-{(int) exclude.EndSystem}.");
-						return true;
-					}
-				} else if (!HasKey(exclude, "Position") && (int) exclude.System == system) {
-					DoLog(LogLevel.Information, $"Skipping system {system}: system in exclude list.");
-					return true;
-				}
-			}
-			return false;
-		}
-
-		private bool ShouldExcludeTarget(Coordinate coord) {
-			foreach (var exclude in _tbotInstance.InstanceSettings.AutoColonize.Exclude) {
-				if ((int) exclude.Galaxy != coord.Galaxy)
-					continue;
-
-				bool isRange = HasKey(exclude, "StartSystem") && HasKey(exclude, "EndSystem");
-				if (isRange) {
-					if (coord.System < (int) exclude.StartSystem || coord.System > (int) exclude.EndSystem)
-						continue;
-					bool hasPositionRange = HasKey(exclude, "StartPosition") && HasKey(exclude, "EndPosition");
-					if (hasPositionRange) {
-						if (coord.Position >= (int) exclude.StartPosition && coord.Position <= (int) exclude.EndPosition) {
-							DoLog(LogLevel.Information, $"Skipping {coord}: coordinate in exclude range.");
-							return true;
-						}
-					} else {
-						DoLog(LogLevel.Information, $"Skipping {coord}: coordinate in exclude range (whole system range, no position bounds).");
-						return true;
-					}
-				} else if (HasKey(exclude, "Position") && (int) exclude.System == coord.System && (int) exclude.Position == coord.Position) {
-					DoLog(LogLevel.Information, $"Skipping {coord}: coordinate in exclude list.");
-					return true;
-				}
-			}
-			return false;
-		}
-
 		public override LogSender GetLogSender() {
 			return LogSender.Colonize;
 		}
@@ -111,7 +52,6 @@ namespace Tbot.Workers {
 		protected override async Task Execute() {
 			await _tbotOgameBridge.CheckCelestials();
 			bool stop = false;
-			bool delay = false;
 			Fields fieldsSettings = new() {
 				Total = (int) _tbotInstance.InstanceSettings.AutoColonize.Abandon.MinFields
 			};
@@ -126,7 +66,7 @@ namespace Tbot.Workers {
 					List<Celestial> newCelestials = _tbotInstance.UserData.celestials.ToList();
 					var dic = new Dictionary<Coordinate, Celestial>();
 				
-					foreach (Planet planet in _tbotInstance.UserData.celestials.Where(c => c is Planet).ToList()) {
+					foreach (Planet planet in _tbotInstance.UserData.celestials.Where(c => c is Planet)) {
 						Planet tempCelestial = await _tbotOgameBridge.UpdatePlanet(planet, UpdateTypes.Fast) as Planet;						
 						if (tempCelestial.Coordinate.Type == Celestials.Planet && tempCelestial.Fields.Built == 0) {
 							if (_calculationService.ShouldAbandon(tempCelestial as Planet, tempCelestial.Fields.Total, tempCelestial.Temperature.Max, fieldsSettings, temperaturesSettings)) {
@@ -159,80 +99,41 @@ namespace Tbot.Workers {
 
 						_tbotInstance.UserData.slots = await _tbotOgameBridge.UpdateSlots();
 						_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
-						List<RankSlotsPriority> rankSlotsPriority = new();
-						RankSlotsPriority BrainRank = new(Feature.BrainAutoMine,
-							GetSlotPriority("Brain", 2),
-							((bool) _tbotInstance.InstanceSettings.Brain.Active &&
-								(bool) _tbotInstance.InstanceSettings.Brain.Transports.Active &&
-								((bool) _tbotInstance.InstanceSettings.Brain.AutoMine.Active ||
-									(bool) _tbotInstance.InstanceSettings.Brain.AutoResearch.Active ||
-									(bool) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.Active ||
-									(bool) _tbotInstance.InstanceSettings.Brain.LifeformAutoResearch.Active)),
-							(int) _tbotInstance.InstanceSettings.Brain.Transports.MaxSlots,
-							(int) _tbotInstance.UserData.fleets.Where(fleet => fleet.Mission == Missions.Transport).Count());
-						RankSlotsPriority ExpeditionsRank = new(Feature.Expeditions,
-							GetSlotPriority("Expeditions", 3),
-							(bool) _tbotInstance.InstanceSettings.Expeditions.Active,
-							(int) _tbotInstance.UserData.slots.ExpTotal,
-							(int) _tbotInstance.UserData.fleets.Where(fleet => fleet.Mission == Missions.Expedition).Count());
-						RankSlotsPriority AutoFarmRank = new(Feature.AutoFarm,
-							GetSlotPriority("AutoFarm", 4),
-							(bool) _tbotInstance.InstanceSettings.AutoFarm.Active,
-							(int) _tbotInstance.InstanceSettings.AutoFarm.MaxSlots,
-							(int) _tbotInstance.UserData.fleets.Where(fleet => fleet.Mission == Missions.Attack).Count());
-						RankSlotsPriority ColonizeRank = new(Feature.Colonize,
-							GetSlotPriority("AutoColonize", 1),
-							(bool) _tbotInstance.InstanceSettings.AutoColonize.Active,
-							(bool) _tbotInstance.InstanceSettings.AutoColonize.IntensiveResearch.Active ?
-								(int) _tbotInstance.InstanceSettings.AutoColonize.IntensiveResearch.MaxSlots :
-								1,
-							(int) _tbotInstance.UserData.fleets.Where(fleet => fleet.Mission == Missions.Colonize).Count());
-						RankSlotsPriority AutoDiscoveryRank = new(Feature.AutoDiscovery,
-							GetSlotPriority("AutoDiscovery", 1),
-							(bool) _tbotInstance.InstanceSettings.AutoDiscovery.Active,
-							(int) _tbotInstance.InstanceSettings.AutoDiscovery.MaxSlots,
-							(int) _tbotInstance.UserData.fleets.Where(fleet => fleet.Mission == Missions.Discovery).Count());
-						RankSlotsPriority presentFeature = ColonizeRank;
-						rankSlotsPriority.Add(BrainRank);
-						rankSlotsPriority.Add(ExpeditionsRank);
-						rankSlotsPriority.Add(AutoFarmRank);
-						rankSlotsPriority.Add(ColonizeRank);
-						rankSlotsPriority.Add(AutoDiscoveryRank);
-						rankSlotsPriority = rankSlotsPriority.OrderBy(r => r.Rank).ToList();
-						string msg = "";
-						int reservedSlots = 0;
-						int MaxSlots = presentFeature.MaxSlots - presentFeature.SlotsUsed;
-						int otherSlots = (int) _tbotInstance.UserData.fleets.Where(fleet => (fleet.Mission != Missions.Transport &&
-								fleet.Mission != Missions.Expedition &&
-								fleet.Mission != Missions.Attack &&
-								fleet.Mission != Missions.Spy &&
-								fleet.Mission != Missions.Colonize &&
-								fleet.Mission != Missions.Discovery)
-							).Count();
-						//_tbotInstance.log(LogLevel.Warning, LogSender.Main, $"Main -> {presentFeature.ToString()}");
-						foreach (RankSlotsPriority feature in rankSlotsPriority) {
-							if (feature == presentFeature)
-								continue;
-							//_tbotInstance.log(LogLevel.Warning, LogSender.Main, $"{feature.ToString()}");
-							if (feature.Active && feature.HasPriorityOn(presentFeature)) {
-								msg = $"{msg}, {feature.MaxSlots} are reserved for {feature.Feature.ToString()}";
-								reservedSlots += feature.MaxSlots;
-							} else {
-								otherSlots += feature.SlotsUsed;
-							}
-						}
-						if (otherSlots > 0)
-							msg = $"{msg}, {otherSlots} are used for Other";
-						int tempsValue = _tbotInstance.UserData.slots.Total - (int) _tbotInstance.InstanceSettings.General.SlotsToLeaveFree - reservedSlots - otherSlots - presentFeature.SlotsUsed;
-						tempsValue = tempsValue < 0 ? 0 : tempsValue;
-						DoLog(LogLevel.Information, $"{presentFeature.MaxSlots} slots are reserved for {presentFeature.Feature.ToString()}. Total slots: {_tbotInstance.UserData.slots.Total}. {_tbotInstance.InstanceSettings.General.SlotsToLeaveFree} must remain free{msg}, {tempsValue} are availables");
-						if (reservedSlots + otherSlots > _tbotInstance.UserData.slots.Total - (int) _tbotInstance.InstanceSettings.General.SlotsToLeaveFree) {
-							DoLog(LogLevel.Information, $"Unable to send fleet for {presentFeature.Feature.ToString()}, too many slots are already used/reserved");
-							MaxSlots = 0;
-						} else if (MaxSlots > tempsValue) {
-							MaxSlots = tempsValue;
-							DoLog(LogLevel.Information, $"Less slots available than {presentFeature.Feature.ToString()}, many slots are already used/reserved -> steping back to {MaxSlots} instead of {presentFeature.MaxSlots}");
-						}
+						List<RankSlotsPriority> rankSlotsPriority = new() {
+							new RankSlotsPriority(Feature.BrainAutoMine,
+								(int) _tbotInstance.InstanceSettings.General.SlotPriorityLevel.Brain,
+								((bool) _tbotInstance.InstanceSettings.Brain.Active && (bool) _tbotInstance.InstanceSettings.Brain.Transports.Active && ((bool) _tbotInstance.InstanceSettings.Brain.AutoMine.Active || (bool) _tbotInstance.InstanceSettings.Brain.AutoResearch.Active || (bool) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.Active || (bool) _tbotInstance.InstanceSettings.Brain.LifeformAutoResearch.Active)),
+								(int) _tbotInstance.InstanceSettings.Brain.Transports.MaxSlots,
+								(int) _tbotInstance.UserData.fleets.Count(f => f.Mission == Missions.Transport)),
+							new RankSlotsPriority(Feature.Expeditions,
+								(int) _tbotInstance.InstanceSettings.General.SlotPriorityLevel.Expeditions,
+								(bool) _tbotInstance.InstanceSettings.Expeditions.Active,
+								(int) _tbotInstance.UserData.slots.ExpTotal,
+								(int)_tbotInstance.UserData.slots.ExpInUse),
+							new RankSlotsPriority(Feature.AutoFarm,
+								(int) _tbotInstance.InstanceSettings.General.SlotPriorityLevel.AutoFarm,
+								(bool) _tbotInstance.InstanceSettings.AutoFarm.Active,
+								(int) _tbotInstance.InstanceSettings.AutoFarm.MaxSlots,
+								(int) _tbotInstance.UserData.fleets.Count(f => f.Mission == Missions.Attack)),
+							new RankSlotsPriority(Feature.Colonize,
+								(int) _tbotInstance.InstanceSettings.General.SlotPriorityLevel.Colonize,
+								(bool) _tbotInstance.InstanceSettings.AutoColonize.Active,
+								(bool) _tbotInstance.InstanceSettings.AutoColonize.IntensiveResearch.Active ?
+									(int) _tbotInstance.InstanceSettings.AutoColonize.IntensiveResearch.MaxSlots :
+									1,
+								(int) _tbotInstance.UserData.fleets.Count(f => f.Mission == Missions.Colonize)),
+							new RankSlotsPriority(Feature.AutoDiscovery,
+								(int) _tbotInstance.InstanceSettings.General.SlotPriorityLevel.AutoDiscovery,
+								(bool) _tbotInstance.InstanceSettings.AutoDiscovery.Active,
+								(int) _tbotInstance.InstanceSettings.AutoDiscovery.MaxSlots,
+								(int) _tbotInstance.UserData.fleets.Count(f => f.Mission == Missions.Discovery)),
+							new RankSlotsPriority(Feature.Harvest,
+								(int) _tbotInstance.InstanceSettings.General.SlotPriorityLevel.AutoHarvest,
+								(bool) _tbotInstance.InstanceSettings.AutoHarvest.Active,
+								(int) _tbotInstance.InstanceSettings.AutoHarvest.MaxSlots,
+								(int) _tbotInstance.UserData.fleets.Count(f => f.Mission == Missions.Harvest))
+						};
+						int MaxSlots = _calculationService.CalcSlotsPriority(Feature.Colonize, rankSlotsPriority, _tbotInstance.UserData.slots, _tbotInstance.UserData.fleets, (int) _tbotInstance.InstanceSettings.General.SlotsToLeaveFree);
 
 						if (
 							(!(bool) _tbotInstance.InstanceSettings.AutoColonize.IntensiveResearch.Active && _tbotInstance.UserData.fleets.Count(f => f.Mission == Missions.Colonize && !f.ReturnFlight) >= maxPlanets - currentPlanets)
@@ -242,7 +143,7 @@ namespace Tbot.Workers {
 							interval = (_tbotInstance.UserData.fleets
 								.OrderBy(f => f.ArriveIn)
 							.First(f => !f.ReturnFlight)
-								.ArriveIn * 1000) + RandomizeHelper.CalcRandomInterval(IntervalType.AFewSeconds);
+								.ArriveIn * 1000) + RandomizeHelper.CalcRandomInterval(IntervalType.LessThanFiveSeconds);
 						} else {
 							Coordinate originCoords = new(
 								(int) _tbotInstance.InstanceSettings.AutoColonize.Origin.Galaxy,
@@ -269,9 +170,6 @@ namespace Tbot.Workers {
 										continue;
 									}
 									for (int i = (int) t.StartSystem; i <= (int) t.EndSystem; i++) {
-										if (ShouldExcludeSystem((int) t.Galaxy, i)) {
-											continue;
-										}
 										for (int ii = (int) t.StartPosition; ii <= (int) t.EndPosition; ii++) {
 											Coordinate targetCoords = new(
 												(int) t.Galaxy,
@@ -279,10 +177,7 @@ namespace Tbot.Workers {
 												(int) ii,
 												Celestials.Planet
 											);
-											if (ShouldExcludeTarget(targetCoords)) {
-												continue;
-											}
-											if (_calculationService.CalcLimitAstro((int) targetCoords.Position, _tbotInstance.UserData.researches)) {
+											if (_calculationService.IsAstrophysicsPositionValid((int) targetCoords.Position, (int) _tbotInstance.UserData.researches.Astrophysics)) {
 												targets.Add(targetCoords);
 											}
 										}
@@ -367,7 +262,14 @@ namespace Tbot.Workers {
 												return;
 											}
 											if (fleetId == (int) SendFleetCode.NotEnoughSlots) {
-												delay = true;
+												long delayInterval = 0;
+												try {
+													delayInterval = (_tbotInstance.UserData.fleets.OrderBy(f => f.BackIn).First().BackIn ?? 0) * 1000 + RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
+												} catch {
+													delayInterval = RandomizeHelper.CalcRandomInterval((int) _tbotInstance.InstanceSettings.AutoColonize.CheckIntervalMin, (int) _tbotInstance.InstanceSettings.AutoColonize.CheckIntervalMax);
+												}
+												_tbotInstance.log(LogLevel.Information, LogSender.Colonize, $"Not enough fleet slots available. Delaying for {TimeSpan.FromMilliseconds(delayInterval).TotalSeconds}s.");
+												await Task.Delay((int)delayInterval);
 												return;
 											}
 											var minWaitNextFleet = (int) _tbotInstance.InstanceSettings.AutoColonize.IntensiveResearch.MinWaitNextFleet;
@@ -465,20 +367,7 @@ namespace Tbot.Workers {
 						_tbotInstance.log(LogLevel.Information, LogSender.Colonize, $"Stopping feature.");
 						await EndExecution();
 					}
-					if (delay) {
-						_tbotInstance.log(LogLevel.Information, LogSender.Colonize, $"Delaying...");
-						var time = await _tbotOgameBridge.GetDateTime();
-						_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
-						long interval;
-						try {
-							interval = (_tbotInstance.UserData.fleets.OrderBy(f => f.BackIn).First().BackIn ?? 0) * 1000 + RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
-						} catch {
-							interval = RandomizeHelper.CalcRandomInterval((int) _tbotInstance.InstanceSettings.AutoColonize.CheckIntervalMin, (int) _tbotInstance.InstanceSettings.AutoColonize.CheckIntervalMax);
-						}
-						var newTime = time.AddMilliseconds(interval);
-						ChangeWorkerPeriod(interval);
-						_tbotInstance.log(LogLevel.Information, LogSender.Colonize, $"Next check at {newTime}");
-					}
+					
 					await _tbotOgameBridge.CheckCelestials();
 				}
 			}

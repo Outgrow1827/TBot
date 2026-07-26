@@ -36,6 +36,13 @@ bld/
 # Local-only notes, never to be pushed
 _private/
 
+# Browser captures / console exports used for debugging - contain real session
+# tokens, player names/IDs and universe data, never to be pushed
+_processados/
+*.har
+console-export-*.log
+erros.txt
+
 # Local IDE/MCP config - contains machine-specific absolute paths (username, install dirs)
 .cursor/
 .mcp.json
@@ -43,6 +50,9 @@ _private/
 
 # External Go daemon binary, not built by this solution
 TBot/ogamed.exe
+
+# Local build-output copy used for testing, not the published release artifact
+publish_out/
 
 # Uncomment if you have tasks that create the project's static files in wwwroot
 #wwwroot/

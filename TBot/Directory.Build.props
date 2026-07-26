@@ -1,5 +1,0 @@
-<Project>
-  <PropertyGroup>
-    <BaseIntermediateOutputPath>$(LOCALAPPDATA)\TBot-cache\obj\</BaseIntermediateOutputPath>
-  </PropertyGroup>
-</Project>

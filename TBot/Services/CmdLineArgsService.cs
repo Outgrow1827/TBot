@@ -20,8 +20,6 @@ namespace Tbot.Services {
 					if (userInput.Length > 0) {
 						logPath.Set(userInput);
 					}
-				} else if (cArg == "--no-crash-restart") {
-					noCrashRestart = true;
 				}
 			}
 		}
@@ -38,14 +36,11 @@ namespace Tbot.Services {
 		public static bool printHelp = false;
 		public static Optional<string> settingsPath = Optional<string>.Empty();
 		public static Optional<string> logPath = Optional<string>.Empty();
-		// Disables the self-relaunch-after-crash behaviour in Program.cs (see TryRelaunchSelfAfterCrash).
-		public static bool noCrashRestart = false;
 
 		public static string helpStr = @"
 			--help Prints this help
 			--settings=<settings filepath>
 			--log=<logpath>
-			--no-crash-restart Don't relaunch a fresh instance of TBot.exe after an unhandled exception crashes it
 		";
 	}
 }

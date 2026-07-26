@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Telegram.Bot;
@@ -21,6 +20,8 @@ using Tbot.Helpers;
 using Serilog.Events;
 using Telegram.Bot.Types.ReplyMarkups;
 using Tbot.Workers;
+using Tbot.Workers.Brain;
+using CsvHelper;
 
 namespace Tbot.Services {
 
@@ -164,7 +165,8 @@ namespace Tbot.Services {
 		public async Task SendMessage(string message, ParseMode parseMode = ParseMode.Html, CancellationToken cancellationToken = default) {
 			try {
 				isTyping = false;
-				await Client.SendTextMessageAsync(
+				//await Client.SendTextMessageAsync(
+				await Client.SendMessage(
 					chatId: Channel,
 					text: message,
 					parseMode: parseMode,
@@ -179,9 +181,10 @@ namespace Tbot.Services {
 			isTyping = true;
 			Task.Run(async () => {
 				while (isTyping) {
-					await Client.SendChatActionAsync(
+					//await Client.SendChatActionAsync(
+					await Client.SendChatAction(
 						chatId: Channel,
-						chatAction: ChatAction.Typing,
+						action: ChatAction.Typing,//ChatAction.Typing,
 						cancellationToken: cancellationToken);
 					await Task.Delay(3000);
 				}
@@ -192,7 +195,8 @@ namespace Tbot.Services {
 		public async Task SendReplyMarkup(string text, IEnumerable<IEnumerable<InlineKeyboardButton>> buttons, CancellationToken ct) {
 			isTyping = false;
 			var inlineKeyboard = new InlineKeyboardMarkup(buttons);
-			await Client.SendTextMessageAsync(
+			//await Client.SendTextMessageAsync(
+			await Client.SendMessage(
 				chatId: Channel,
 				text: text,
 				replyMarkup: inlineKeyboard,
@@ -203,7 +207,9 @@ namespace Tbot.Services {
 		public async Task SendMessage(ITelegramBotClient client, Chat chat, string message, ParseMode parseMode = ParseMode.Html) {
 			try {
 				isTyping = false;
-				await client.SendTextMessageAsync(chat, message, parseMode);
+				//await client.SendTextMessageAsync(chat, message, parseMode);
+				//await client.SendTextMessageAsync(chat, message, null, parseMode);
+				await client.SendMessage(chat, message, parseMode);
 			} catch (Exception e) {
 				_logger.WriteLog(LogLevel.Error, LogSender.Tbot, $"Could not send Telegram message: an exception has occurred: {e.Message}");
 			}
@@ -236,6 +242,7 @@ namespace Tbot.Services {
 				"/wakeup",
 				"/build",
 				"/collect",
+				"/collectall",
 				"/collectdeut",
 				"/minexpecargo",
 				"/stopexpe",
@@ -254,6 +261,7 @@ namespace Tbot.Services {
 				"/getinfo",
 				"/celestial",
 				"/cancel",
+				"/cancelmission",
 				"/cancelghostsleep",
 				"/editsettings",
 				"/spycrash",
@@ -267,11 +275,13 @@ namespace Tbot.Services {
 				"/getcurrentauction",
 				"/bidauction",
 				"/subscribeauction",
-			"/stopautofarm",
-			"/startautofarm",
-			"/clearcache",
-			"/stopautodiscovery",
-			"/startautodiscovery"
+				"/stopautofarm",
+				"/startautofarm",
+				"/stopautodiscovery",
+				"/startautodiscovery",
+				"/fleetjumpgate",
+				"/startautodiscovery",
+				"/profile"
 			};
 
 			if (update.Type != UpdateType.Message) {
@@ -347,14 +357,14 @@ namespace Tbot.Services {
 							else {
 								await SendMessage(botClient, message.Chat, "Telegram Logger is disabled.");
 							}
-							
+
 							return;
 						case "/setloglevel":
 							if (args.Length != 2) {
 								await SendMessage(botClient, message.Chat, "Usage is <code>/setloglevel Debug|Information|Warning|Error</code>");
 								return;
 							}
-							
+
 							if (Enum.TryParse<LogEventLevel>(args[1], true, out LogEventLevel newLevel) == true) {
 								await SendMessage(botClient, message.Chat, $"Enabling Telegram logger with level {newLevel.ToString()}");
 								_logger.AddTelegramLogger(Api, Channel);
@@ -421,12 +431,14 @@ namespace Tbot.Services {
 								"/spycrash - Create a debris field by crashing a probe on target or automatically selected planet. Format: <code>/spycrash 2:41:9/auto</code>\n" +
 								"/recall - Enable/disable fleet auto recall. Format: <code>/recall true/false</code>\n" +
 								"/collect - Collect planets resources to JSON setting celestial\n" +
+								"/collectall - Collect planets resources to JSON setting celestial with no MinimumResources\n" +
 								"/build - Try to build buildable on each planet. Build max possible if no number value sent <code>/build LightFighter [100]</code>\n" +
 								"/collectdeut - Collect planets only deut resources -> to JSON repatriate setting celestial\n" +
 								"/msg - Send a message to current attacker. Format: <code>/msg hello dude</code>\n" +
 								"/sleep - Stop bot for the specified amount of hours. Format: <code>/sleep 4h3m or 3m50s</code>\n" +
 								"/wakeup - Wakeup bot\n" +
 								"/cancel - Cancel fleet with specified ID. Format: <code>/cancel 65656</code>\n" +
+								"/cancelmission - Cancel all fleets with specified mission. Format: <code>/cancel Deploy</code> or other mission\n" +
 								"/getcelestials - Return the list of your celestials\n" +
 								"/attacked - check if you're (still) under attack\n" +
 								"/celestial - Update program current celestial target. Format: <code>/celestial 2:45:8 Moon/Planet</code>\n" +
@@ -448,7 +460,10 @@ namespace Tbot.Services {
 								"/stopautofarm - stop autofarm\n" +
 								"/startautofarm - start autofarm\n" +
 								"/stopautodiscovery - stop autodiscovery\n" +
-								"/startautodiscovery - start autodiscovery\n"
+								"/startautodiscovery - start autodiscovery\n" +
+								"/fleetjumpgate - run jump gate worker immediately\n" +
+								"/startautodiscovery - start autodiscovery\n" +
+								"/profile - able to load one or multiple profiles. Format: <code>/profile ls/ls-r/reset/laod [profilename] [profilenameX] </code>\n"
 							, ParseMode.Html);
 							return;
 						default:
@@ -791,6 +806,18 @@ namespace Tbot.Services {
 								return;
 
 
+							case "/cancelmission":
+								if (message.Text.Split(' ').Length != 2) {
+									await SendMessage(botClient, message.Chat, "Mission argument required!");
+									return;
+								}
+								arg = message.Text.Split(' ')[1];
+								Missions.TryParse(arg, out mission);
+
+								await currInstance.TelegramRetireFleetM(mission);
+								return;
+
+
 							case "/cancelghostsleep":
 								if (message.Text.Split(' ').Length != 1) {
 									await SendMessage(botClient, message.Chat, "No argument accepted with this command!");
@@ -892,12 +919,30 @@ namespace Tbot.Services {
 
 
 							case "/collect":
-								if (message.Text.Split(' ').Length != 1) {
+								if (message.Text.Split(' ').Length > 2) {
 									await SendMessage(botClient, message.Chat, "No argument accepted with this command!");
+									return;
+								}
+								if (message.Text.Split(' ').Length == 2) {
+									currInstance.TelegramCollect(false, message.Text.Split(' ')[1]);
 									return;
 								}
 
 								currInstance.TelegramCollect();
+								return;
+
+
+							case "/collectall":
+								if (message.Text.Split(' ').Length > 2) {
+									await SendMessage(botClient, message.Chat, "No argument accepted with this command!");
+									return;
+								}
+								if (message.Text.Split(' ').Length == 2) {
+									currInstance.TelegramCollect(true, message.Text.Split(' ')[1]);
+									return;
+								}
+
+								currInstance.TelegramCollect(true);
 								return;
 
 
@@ -1043,25 +1088,11 @@ namespace Tbot.Services {
 									return;
 								}
 
-							await currInstance.InitializeFeature(Feature.AutoFarm);
-							await SendMessage(botClient, message.Chat, "Autofarm started!");
-							return;
-
-						case "/clearcache":
-							if (message.Text.Split(' ').Length != 1) {
-								await SendMessage(botClient, message.Chat, "No argument accepted with this command!");
+								await currInstance.InitializeFeature(Feature.AutoFarm);
+								await SendMessage(botClient, message.Chat, "Autofarm started!");
 								return;
-							}
 
-							bool cleared = await FarmTargetCache.ClearTargetCache(currInstance.InstanceSettingsPath, currInstance.InstanceAlias);
-							if (cleared) {
-								await SendMessage(botClient, message.Chat, "FastFarm cache cleared!");
-							} else {
-								await SendMessage(botClient, message.Chat, "No FastFarm cache file found.");
-							}
-							return;
-
-						case "/stopautodiscovery":
+							case "/stopautodiscovery":
 								if (message.Text.Split(' ').Length != 1) {
 									await SendMessage(botClient, message.Chat, "No argument accepted with this command!");
 									return;
@@ -1080,6 +1111,28 @@ namespace Tbot.Services {
 
 								await currInstance.InitializeFeature(Feature.AutoDiscovery);
 								await SendMessage(botClient, message.Chat, "Autodiscovery started!");
+								return;
+
+							case "/fleetjumpgate":
+								if (args.Length != 1) {
+									await SendMessage(botClient, message.Chat, "No arguments accepted with this command!");
+									return;
+								}
+
+								AutoFleetJumpGateWorker worker = (AutoFleetJumpGateWorker) currInstance.WorkerFactory.GetWorker(Feature.BrainAutoFleepJumpGate);
+
+								if (worker == null) {
+									await SendMessage(botClient, message.Chat, "JumpGate worker not available.");
+									return;
+								}
+
+								await SendMessage(botClient, message.Chat, "Running JumpGate worker now...");
+								try {
+									await worker.RunFromTelegramAsync();
+									await SendMessage(botClient, message.Chat, "JumpGate worker completed.");
+								} catch (Exception ex) {
+									await SendMessage(botClient, message.Chat, $"Error during JumpGate execution: {ex.Message}");
+								}
 								return;
 
 
@@ -1260,6 +1313,38 @@ namespace Tbot.Services {
 								await SendMessage(botClient, message.Chat, celestialStr);
 
 								return;
+
+							case "/profile":
+								if (message.Text.Split(' ').Length < 2) {
+									await SendMessage(botClient, message.Chat, "Mission argument required!");
+									await SendMessage(botClient, message.Chat, "<code>/profile ls</code> (list of profiles)\n<code>/profile ls-r</code> (list of profile currently running)\n<code>/profile load ProfileName</code> (to load a profile)\n<code>/profile load ProfileName1 ProfilName2 ProfilNameX</code> (to merge and load multiple profiles)\n<code>/profile reset</code> (to reset the default profile)");
+									return;
+								}
+
+								switch (message.Text.Split(' ')[1]) {
+									case "ls":
+										await currInstance.ListProfiles();
+										return;
+
+									case "ls-r":
+										await currInstance.ListRunningProfiles();
+										return;
+
+									case "load":
+										List<string> messageParts = message.Text.Split(" ").ToList();
+										messageParts = messageParts.Skip(2).ToList();
+										await currInstance.LoadProfile(messageParts);
+										return;
+
+									case "reset":
+										await currInstance.ResetProfile();
+										return;
+									default:
+										await SendMessage(botClient, message.Chat, "Unknown argument for /profile command!");
+										await SendMessage(botClient, message.Chat, "<code>/profile ls</code> (list of profiles)\n<code>/profile ls-r</code> (list of profile currently running)\n<code>/profile load ProfileName</code> (to load a profile)\n<code>/profile load ProfileName1 ProfilName2 ProfilNameX</code> (to merge and load multiple profiles)\n<code>/profile reset</code> (to reset the default profile)");
+										return;
+								}
+								
 							default:
 								return;
 						}
@@ -1294,7 +1379,8 @@ namespace Tbot.Services {
 		async Task HandleErrorAsync(ITelegramBotClient botClient, Exception exception, CancellationToken cancellationToken) {
 			try {
 				if (exception is ApiRequestException apiRequestException) {
-					await botClient.SendTextMessageAsync(Channel, apiRequestException.ToString());
+					//await botClient.SendTextMessageAsync(Channel, apiRequestException.ToString());
+					await botClient.SendMessage(Channel, apiRequestException.ToString());
 				}
 			} catch { }
 		}
@@ -1307,7 +1393,8 @@ namespace Tbot.Services {
 
 				var receiverOptions = new ReceiverOptions {
 					AllowedUpdates = Array.Empty<UpdateType>(),
-					ThrowPendingUpdates = true
+					DropPendingUpdates = false,
+					//ThrowPendingUpdates = true
 				};
 
 				receivingTask = Client.ReceiveAsync(HandleUpdateAsync, HandleErrorAsync, receiverOptions, ct);

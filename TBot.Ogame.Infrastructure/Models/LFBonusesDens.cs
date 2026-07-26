@@ -10,10 +10,10 @@ namespace TBot.Ogame.Infrastructure.Models {
 		public float Crystal { get; set; }
         public float Deuterium { get; set; }
 
-		public LFBonusesDens() {
-			Metal = 0;
-			Crystal = 0;
-			Deuterium = 0;
+		public LFBonusesDens(float metal = 0, float crystal = 0, float deuterium = 0) {
+			Metal = metal;
+			Crystal = crystal;
+			Deuterium = deuterium;
 		}
 	}
 }

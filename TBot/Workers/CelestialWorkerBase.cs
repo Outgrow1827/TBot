@@ -12,7 +12,6 @@ using Tbot.Services;
 using TBot.Common.Logging;
 using TBot.Ogame.Infrastructure.Enums;
 using TBot.Ogame.Infrastructure.Models;
-using Tbot.Common.Settings;
 
 namespace Tbot.Workers {
 
@@ -53,12 +52,6 @@ namespace Tbot.Workers {
 
 		public ConcurrentDictionary<Celestial, ITBotCelestialWorker> celestialWorkers => throw new NotImplementedException();
 
-		// See WorkerBase for the reasoning behind these two - same heartbeat mechanism, mirrored here
-		// because CelestialWorkerBase doesn't inherit from WorkerBase.
-		public DateTime? LastExecutionStart { get; private set; }
-		public DateTime? LastExecutionEnd { get; private set; }
-		protected virtual bool RunsDuringSleep => false;
-
 		public CelestialWorkerBase(ITBotMain parentInstance, ITBotWorker parentWorker, Celestial celestial) {
 			_tbotInstance = parentInstance;
 			_parentWorker = parentWorker;
@@ -90,15 +83,9 @@ namespace Tbot.Workers {
 		public async Task StopWorker() {
 			// Stop also all the timers
 			RemoveAllTimers();
-			// Capture into a local before the null-check: StopWorker() can be called concurrently
-			// (e.g. from WorkerBase.RestartWorker and from this same worker's own StartWorker at
-			// the same time), and re-reading the _timer field between the check and the
-			// DisposeAsync() call below could otherwise observe null if another caller already
-			// finished and cleared it - throwing NRE.
-			var timer = _timer;
-			if (timer != null) {
+			if (_timer != null) {
 				DoLog(LogLevel.Information, $"Closing Worker \"{GetWorkerName()}\"..");
-				await timer.DisposeAsync();
+				await _timer.DisposeAsync();
 				DoLog(LogLevel.Information, $"Worker \"{GetWorkerName()}\" closed!");
 				_timer = null;
 			}
@@ -153,20 +140,10 @@ namespace Tbot.Workers {
 		public abstract Feature GetFeature();
 		public abstract LogSender GetLogSender();
 
+		public DateTime? LastExecutionStart { get; private set; }
+		public DateTime? LastExecutionEnd { get; private set; }
 
 
-		protected int GetSlotPriority(string featureSection, int defaultPriority = int.MaxValue) {
-			try {
-				if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings[featureSection], "SlotPriorityLevel"))
-					return (int) _tbotInstance.InstanceSettings[featureSection].SlotPriorityLevel;
-			} catch { }
-			try {
-				if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.General, "SlotPriorityLevel") &&
-					SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.General.SlotPriorityLevel, featureSection))
-					return (int) _tbotInstance.InstanceSettings.General.SlotPriorityLevel[featureSection];
-			} catch { }
-			return defaultPriority;
-		}
 
 		protected Task EndExecution() {
 			// This is meant to be called within the worker callback, so we can't await _timer to end
@@ -176,7 +153,7 @@ namespace Tbot.Workers {
 
 		private async Task ExecutionWrapper(CancellationToken ct) {
 
-			if (_tbotInstance.UserData.isSleeping == true && !RunsDuringSleep) {
+			if (_tbotInstance.UserData.isSleeping == true) {
 				DoLog(LogLevel.Debug, $"Sleeping... Ending {GetWorkerName()}");
 				await EndExecution();
 				return;

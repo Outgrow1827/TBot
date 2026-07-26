@@ -46,6 +46,17 @@ namespace Tbot.Services {
 		private Dictionary<string, Timer> timers = new();
 		private ConcurrentDictionary<Feature, ITBotWorker> workers = new();
 		private CancellationTokenSource cts = new();
+		private string _telegramSolverBotToken = "";
+		private long _telegramSolverChatId = 0;
+
+		public IEnumerable<Tbot.Workers.ITBotWorker> GetAllWorkers() {
+			foreach (var w in workers.Values) {
+				yield return w;
+				foreach (var cw in w.celestialWorkers.Values) {
+					yield return cw;
+				}
+			}
+		}
 
 
 		public UserData userData = new();
@@ -57,7 +68,7 @@ namespace Tbot.Services {
 		public event EventHandler OnError;
 
 		public dynamic InstanceSettings { get; private set; }
-		public string InstanceSettingsPath { get; private set; }
+		private string InstanceSettingsPath { get; set; }
 		public string InstanceAlias { get; private set; }
 		public UserData UserData {
 			set {
@@ -90,6 +101,12 @@ namespace Tbot.Services {
 				return _fleetScheduler;
 			}
 		}
+		public IWorkerFactory WorkerFactory {
+			get {
+				return _workerFactory;
+			}
+		}
+
 		public long SleepDuration { get; set; }
 		public DateTime NextWakeUpTime { get; set; }
 
@@ -189,7 +206,8 @@ namespace Tbot.Services {
 				hideAccountNameInLogs = SettingsService.IsSettingSet(InstanceSettings.General, "HideSensitiveDataInLogs") && (bool) InstanceSettings.General.HideSensitiveDataInLogs;
 			} catch { }
 			TBot.Ogame.Infrastructure.Models.LogPrivacy.HideCoordinates = hideAccountNameInLogs;
-			_ogameService.Initialize(GetCredentialsFromSettings(), GetDeviceFromSettings(), proxy, (string) host, int.Parse(port), (string) captchaKey, hideAccountNameInLogs);
+			_ogameService.Initialize(GetCredentialsFromSettings(), GetDeviceFromSettings(), proxy, (string) host, int.Parse(port), (string) captchaKey, hideAccountNameInLogs, _telegramSolverBotToken, _telegramSolverChatId);
+			await Task.Delay(RandomizeHelper.CalcRandomInterval(IntervalType.AFewSeconds));
 		}
 
 		private async Task ResolveCaptcha() {
@@ -200,7 +218,6 @@ namespace Tbot.Services {
 				log(LogLevel.Warning, LogSender.Tbot, "Please check your credentials, language and universe name.");
 				log(LogLevel.Warning, LogSender.Tbot, "If your credentials are correct try refreshing your IP address.");
 				log(LogLevel.Warning, LogSender.Tbot, "If you are using a proxy, a VPN or hosting TBot on a VPS, be warned that Ogame blocks datacenters' IPs. You probably need a residential proxy.");
-				throw new UnableToLoginException("Unable to login: no captcha challenge available and original login attempt failed");
 			} else {
 				log(LogLevel.Information, LogSender.Tbot, "Trying to solve captcha...");
 				int answer = 0;
@@ -233,13 +250,17 @@ namespace Tbot.Services {
 
 		public async Task Init(string settingPath,
 			string alias,
-			ITelegramMessenger telegramHandler) {
+			ITelegramMessenger telegramHandler,
+			string telegramSolverBotToken = "",
+			long telegramSolverChatId = 0) {
 
 			InstanceSettingsPath = settingPath;
 			InstanceAlias = alias;
 			InstanceSettings = await SettingsService.GetSettings(settingPath);
 
 			telegramMessenger = telegramHandler;
+			_telegramSolverBotToken = telegramSolverBotToken;
+			_telegramSolverChatId = telegramSolverChatId;
 			try {
 				await InitializeOgame();
 			} catch (Exception e) {
@@ -253,12 +274,7 @@ namespace Tbot.Services {
 				await _ogameService.Login();
 			} catch (OgamedException oe) {
 				log(LogLevel.Warning, LogSender.Tbot, $"Unable to login (\"{oe.Message}\"). Checking captcha...");
-				try {
-					await ResolveCaptcha();
-				} catch (Exception ex) {
-					log(LogLevel.Error, LogSender.Tbot, $"Unable to login after captcha. (\"{ex.Message}\")");
-					throw new UnableToLoginException("Unable to login", ex);
-				}
+				await ResolveCaptcha();
 			} catch (System.Net.Http.HttpRequestException) {
 				try {
 					await ResolveCaptcha();
@@ -298,6 +314,7 @@ namespace Tbot.Services {
 			userData.researches = await _tbotOgameBridge.UpdateResearches();
 			userData.scheduledFleets = new();
 			userData.farmTargets = new();
+			userData.runningProfiles = new();
 
 			if (userData.celestials.Count == 1) {
 				await EditSettings(userData.celestials.First());
@@ -363,11 +380,6 @@ namespace Tbot.Services {
 		}
 
 		public override string ToString() {
-			try {
-				if (SettingsService.IsSettingSet(InstanceSettings.General, "HideSensitiveDataInLogs") && (bool) InstanceSettings.General.HideSensitiveDataInLogs)
-					return $"{InstanceAlias}";
-			} catch { }
-
 			if (loggedIn && (userData.userInfo != null) && (userData.serverData != null))
 				return $"{userData.userInfo.PlayerName}@{userData.serverData.Name}";
 			else
@@ -391,13 +403,13 @@ namespace Tbot.Services {
 			long dueTime = feat switch {
 				Feature.Defender => RandomizeHelper.CalcRandomInterval(IntervalType.AFewSeconds),
 				Feature.BrainAutobuildCargo => RandomizeHelper.CalcRandomInterval(IntervalType.AMinuteOrTwo),
+				Feature.BrainAutobuildDefence => RandomizeHelper.CalcRandomInterval(IntervalType.AMinuteOrTwo),
 				Feature.BrainAutoRepatriate => RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds),
 				Feature.BrainAutoMine => RandomizeHelper.CalcRandomInterval(IntervalType.AFewSeconds),
 				Feature.BrainLifeformAutoMine => RandomizeHelper.CalcRandomInterval(IntervalType.AFewSeconds),
 				Feature.BrainLifeformAutoResearch => RandomizeHelper.CalcRandomInterval(IntervalType.AFewSeconds),
 				Feature.BrainOfferOfTheDay => RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds),
 				Feature.BrainAutoResearch => RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds),
-				Feature.BrainAutoDefence => RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds),
 				Feature.AutoFarm => RandomizeHelper.CalcRandomInterval(IntervalType.AMinuteOrTwo),
 				Feature.Expeditions => RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds),
 				Feature.Harvest => RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds),
@@ -408,19 +420,11 @@ namespace Tbot.Services {
 
 			// Its ok to add an infinite period time, since each worker will change its period accordingly after first execution
 			if (workers.TryGetValue(feat, out var worker)) {
-				// Skip restarting a worker that's disabled - it's already idle, no need to wake it just
-				// to have it notice that and go idle again.
-				if (!worker.IsWorkerEnabledBySettings()) {
-					return;
-				}
 				worker.RestartWorker(cts.Token, Timeout.InfiniteTimeSpan, TimeSpan.FromMilliseconds(dueTime));
 			} else {
 				ITBotWorker newWorker = _workerFactory.InitializeWorker(feat, this, _tbotOgameBridge);
 				if (newWorker != null) {
 					workers.TryAdd(feat, newWorker);
-					if (!newWorker.IsWorkerEnabledBySettings()) {
-						return;
-					}
 					await newWorker.StartWorker(cts.Token, TimeSpan.FromMilliseconds(dueTime));
 				} else {
 					log(LogLevel.Warning, LogSender.Tbot, $"Cannot start worker for {feat.ToString()}");
@@ -441,17 +445,6 @@ namespace Tbot.Services {
 				return true;    // Always running
 			} else {
 				return false;
-			}
-		}
-
-		public IEnumerable<Tbot.Workers.ITBotWorker> GetAllWorkers() {
-			// Feature-level workers plus their per-celestial sub-workers (Brain/AutoMine etc. spawn
-			// one celestial worker per planet), so the watchdog can see everything that runs a timer.
-			foreach (var worker in workers.Values) {
-				yield return worker;
-				foreach (var celestialWorker in worker.celestialWorkers.Values) {
-					yield return celestialWorker;
-				}
 			}
 		}
 
@@ -557,7 +550,7 @@ namespace Tbot.Services {
 			}
 		}
 		private DateTime _lastReloadFinished = DateTime.MinValue;
-		private async Task OnSettingsChanged() {
+		private async void OnSettingsChanged() {
 			DateTime onSettingsLaunched = DateTime.Now;
 			await _settingsReloadSemaphore.WaitAsync();
 			try {
@@ -581,14 +574,134 @@ namespace Tbot.Services {
 				// If wakeUp, then all features will be restored
 				await HandleSleepModeAsync(null);
 				_lastReloadFinished = DateTime.Now;
-			} catch (Exception e) {
-				log(LogLevel.Error, LogSender.Tbot, $"Error while reloading settings: {e.Message}");
-				log(LogLevel.Warning, LogSender.Tbot, $"Stacktrace: {e.StackTrace}");
 			}
 			finally {
 				_settingsReloadSemaphore.Release();
 			}
+			
+		}
+		public async Task ListProfiles() {
+			string profilesDir = Path.Combine(Path.GetDirectoryName(InstanceSettingsPath), "profiles");
+			string profileList = "Available profiles:\n";
+			if (Directory.Exists(profilesDir)) {
+				var profileFiles = Directory.GetFiles(profilesDir, "*.json");
+				log(LogLevel.Information, LogSender.Tbot, "Available profiles:");
+				foreach (var profileFile in profileFiles) {
+					profileList += $"- {Path.GetFileNameWithoutExtension(profileFile)}\n";
+					log(LogLevel.Information, LogSender.Tbot, $"- {Path.GetFileNameWithoutExtension(profileFile)}");
+				}
+			} else {
+				log(LogLevel.Warning, LogSender.Tbot, "Profiles directory not found.");
+				profileList = "No profiles found.";
+			}
+			await SendTelegramMessage(profileList);
+		}
+		public async Task ListRunningProfiles() {
+			List<string> profiles = userData.runningProfiles;
+			if (profiles.Count <= 0 || profiles == null) {
+				await SendTelegramMessage("No profile is currently running.");
+				return;
+			}
+			string txt = profiles.Count > 1 ? "Profiles currently running:\n" : "Profile currently running:\n";
+			foreach (var profile in profiles) {
+				txt += $"- {profile}\n";
+			}
+			await SendTelegramMessage(txt);
+		}
+		public async Task LoadProfile(List<string> profileName) {
+			for (int i = 0; i < profileName.Count; i++)
+				profileName[i] = profileName[i].Trim();
 
+			log(LogLevel.Information, LogSender.Tbot, "Loading profile detected !");
+			await _settingsReloadSemaphore.WaitAsync();
+
+			try {
+				List<string> profilePath = new();
+				for (int i = 0; i < profileName.Count; i++) {
+					string pPath = Path.Combine(Path.GetDirectoryName(InstanceSettingsPath), "profiles", profileName[i] + ".json");
+					profilePath.Add(pPath);
+					if (!File.Exists(pPath)) {
+						log(LogLevel.Warning, LogSender.Tbot, $"Profile {profileName[i]} not found in the profile folder, loading abandoned.");
+						await SendTelegramMessage($"Profile {profileName[i]} not found in the profile folder, loading abandoned.");
+						return;
+					}
+				}
+				string txt = " "+ profileName.First();
+				foreach (var p in profileName.Skip(1)) {
+					txt += " + "+ p;
+				}
+				if (profilePath.Count > 1)
+					log(LogLevel.Information, LogSender.Tbot, $"Loading profiles{txt}. Waiting workers to complete ongoing activities...");
+				else
+					log(LogLevel.Information, LogSender.Tbot, $"Loading profile{txt}. Waiting workers to complete ongoing activities...");
+				
+				cts.Cancel();
+				foreach (var worker in workers) {
+					log(LogLevel.Information, LogSender.Tbot, $"Stopping feature {worker.Key.ToString()}...");
+					await worker.Value.StopWorker();
+					log(LogLevel.Information, LogSender.Tbot, $"Feature {worker.Key.ToString()} stopped for settings reload!");
+				}
+
+				InstanceSettings = await SettingsService.GetMergedSettings(InstanceSettingsPath, profilePath);
+
+				if (profilePath.Count > 1) {
+					log(LogLevel.Information, LogSender.Tbot, $"Profiles{txt} loaded successfully.");
+					await SendTelegramMessage($"Profiles{txt} loaded successfully.");
+				} else {
+					log(LogLevel.Information, LogSender.Tbot, $"Profile{txt} loaded successfully.");
+					await SendTelegramMessage($"Profile{txt} loaded successfully.");
+				}
+				userData.runningProfiles = profileName;
+
+				_lastReloadFinished = DateTime.Now;
+			} catch (Newtonsoft.Json.JsonException jsonEx) {
+				log(LogLevel.Error, LogSender.Tbot, $"Invalid JSON Format: {jsonEx.Message}");
+				await SendTelegramMessage($"Invalid JSON Format: {jsonEx.Message}");
+			} catch (Exception e) {
+				log(LogLevel.Warning, LogSender.Tbot, $"Exception: {e.Message}");
+				log(LogLevel.Warning, LogSender.Tbot, $"Stacktrace: {e.StackTrace}");
+				await SendTelegramMessage($"Error loading profile: refer to logs.");
+			} finally {
+				if (cts.IsCancellationRequested) {
+					cts = new();
+					// If wakeUp, then all features will be restored
+					await HandleSleepModeAsync(null);
+				}
+				_settingsReloadSemaphore.Release();
+			}
+		}
+		public async Task ResetProfile() {
+
+			log(LogLevel.Information, LogSender.Tbot, "Unloading profile detected! Waiting workers to complete ongoing activities...");
+			await _settingsReloadSemaphore.WaitAsync();
+
+			try {
+				// Wait on feature to be shut down
+				cts.Cancel();
+				foreach (var worker in workers) {
+					log(LogLevel.Information, LogSender.Tbot, $"Stopping feature {worker.Key.ToString()}...");
+					await worker.Value.StopWorker();
+					log(LogLevel.Information, LogSender.Tbot, $"Feature {worker.Key.ToString()} stopped for settings reload!");
+				}
+
+				log(LogLevel.Information, LogSender.Tbot, "Loading origin settings file");
+				await SendTelegramMessage($"Loading origin settings file");
+				InstanceSettings = await SettingsService.GetSettings(InstanceSettingsPath);
+				userData.runningProfiles = new List<string>();
+
+				_lastReloadFinished = DateTime.Now;
+			} catch (Exception e) {
+				log(LogLevel.Warning, LogSender.Tbot, $"Exception: {e.Message}");
+				log(LogLevel.Warning, LogSender.Tbot, $"Stacktrace: {e.StackTrace}");
+				await SendTelegramMessage($"Error loading profile: refer to logs.");
+			} finally {
+				if (cts.IsCancellationRequested) {
+					cts = new();
+					// If wakeUp, then all features will be restored
+					await HandleSleepModeAsync(null);
+				}
+				_settingsReloadSemaphore.Release();
+			}
 		}
 
 		private void InitializeSleepMode() {
@@ -879,9 +992,16 @@ namespace Tbot.Services {
 			}
 		}
 
-		public void TelegramCollect() {
-			_fleetScheduler.Collect();
-
+		public void TelegramCollect(bool noLimit = false, string celestialType = null) {
+			if (!string.IsNullOrEmpty(celestialType)) {
+				if (!Enum.TryParse(celestialType, true, out Celestials celestialTypeEnum)) {
+					SendTelegramMessage($"Invalid celestial type: {celestialType}. Valid types are: Planet, Moon. Or just /collect");
+					return;
+				}
+				_fleetScheduler.Collect(noLimit, celestialTypeEnum);
+			} else {
+				_fleetScheduler.Collect(noLimit);
+			}
 			return;
 		}
 
@@ -937,7 +1057,7 @@ namespace Tbot.Services {
 			if (mode.Equals("auto")) {
 				float cargoBonus = 0;
 				if (origin.LFBonuses != null && origin.LFBonuses.Ships != null && origin.LFBonuses.Ships.Count > 0 && origin.LFBonuses.Ships.ContainsKey((int) Buildables.SmallCargo)) {
-					cargoBonus = origin.LFBonuses.Ships.GetValueOrDefault((int) Buildables.SmallCargo).Cargo;
+					cargoBonus = origin.LFBonuses.Ships.GetValueOrDefault((int) Buildables.SmallCargo).CargoCapacity;
 				}
 				long idealSmallCargo = _helpersService.CalcShipNumberForPayload(payload, Buildables.SmallCargo, userData.researches.HyperspaceTechnology, userData.serverData, cargoBonus, userData.userInfo.Class, userData.serverData.ProbeCargo);
 
@@ -946,7 +1066,7 @@ namespace Tbot.Services {
 				} else {
 					cargoBonus = 0;
 					if (origin.LFBonuses != null && origin.LFBonuses.Ships != null && origin.LFBonuses.Ships.Count > 0 && origin.LFBonuses.Ships.ContainsKey((int) Buildables.LargeCargo)) {
-						cargoBonus = origin.LFBonuses.Ships.GetValueOrDefault((int) Buildables.LargeCargo).Cargo;
+						cargoBonus = origin.LFBonuses.Ships.GetValueOrDefault((int) Buildables.LargeCargo).CargoCapacity;
 					}
 					long idealLargeCargo = _helpersService.CalcShipNumberForPayload(payload, Buildables.LargeCargo, userData.researches.HyperspaceTechnology, userData.serverData, cargoBonus, userData.userInfo.Class, userData.serverData.ProbeCargo);
 					if (idealLargeCargo <= origin.Ships.GetAmount(Buildables.LargeCargo)) {
@@ -1200,23 +1320,99 @@ namespace Tbot.Services {
 					log(LogLevel.Warning, LogSender.SleepMode, "GoToSleep time and WakeUp time must be different. Sleep mode will be disabled");
 					await WakeUpAsync(null);
 				} else {
-					// Uses GeneralHelper.ShouldSleep (same as FleetScheduler.SendFleet) to resolve every
-					// time/goToSleep/wakeUp combination deterministically.
-					bool asleep = GeneralHelper.ShouldSleep(time, goToSleep, wakeUp);
-					DateTime nextBoundary = asleep ? wakeUp : goToSleep;
-					if (nextBoundary <= time)
-						nextBoundary = nextBoundary.AddDays(1);
+					long interval;
 
-					long interval = (long) nextBoundary.Subtract(time).TotalMilliseconds + (long) RandomizeHelper.CalcRandomInterval(IntervalType.AMinuteOrTwo);
-					if (interval <= 0)
-						interval = RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
-					timers.GetValueOrDefault("SleepModeTimer").Change(interval, Timeout.Infinite);
-					DateTime newTime = time.AddMilliseconds(interval);
-
-					if (asleep)
-						await GoToSleepAsync(newTime);
-					else
-						await WakeUpAsync(newTime);
+					if (time >= goToSleep) {
+						if (time >= wakeUp) {
+							if (goToSleep >= wakeUp) {
+								// YES YES YES
+								// ASLEEP
+								// WAKE UP NEXT DAY
+								interval = (long) wakeUp.AddDays(1).Subtract(time).TotalMilliseconds + (long) RandomizeHelper.CalcRandomInterval(IntervalType.AMinuteOrTwo);
+								timers.GetValueOrDefault("SleepModeTimer").Change(interval, Timeout.Infinite);
+								if (interval <= 0)
+									interval = RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
+								DateTime newTime = time.AddMilliseconds(interval);
+								await GoToSleepAsync(newTime);
+							} else {
+								// YES YES NO
+								// AWAKE
+								// GO TO SLEEP NEXT DAY
+								interval = (long) goToSleep.AddDays(1).Subtract(time).TotalMilliseconds + (long) RandomizeHelper.CalcRandomInterval(IntervalType.AMinuteOrTwo);
+								timers.GetValueOrDefault("SleepModeTimer").Change(interval, Timeout.Infinite);
+								if (interval <= 0)
+									interval = RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
+								DateTime newTime = time.AddMilliseconds(interval);
+								await WakeUpAsync(newTime);
+							}
+						} else {
+							if (goToSleep >= wakeUp) {
+								// YES NO YES
+								// THIS SHOULDNT HAPPEN
+								interval = RandomizeHelper.CalcRandomInterval(IntervalType.AMinuteOrTwo);
+								if (interval <= 0)
+									interval = RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
+								DateTime newTime = time.AddMilliseconds(interval);
+								timers.GetValueOrDefault("SleepModeTimer").Change(interval, Timeout.Infinite);
+								log(LogLevel.Information, LogSender.SleepMode, $"Next check at {newTime.ToString()}");
+							} else {
+								// YES NO NO
+								// ASLEEP
+								// WAKE UP SAME DAY
+								interval = (long) wakeUp.Subtract(time).TotalMilliseconds + (long) RandomizeHelper.CalcRandomInterval(IntervalType.AMinuteOrTwo);
+								timers.GetValueOrDefault("SleepModeTimer").Change(interval, Timeout.Infinite);
+								if (interval <= 0)
+									interval = RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
+								DateTime newTime = time.AddMilliseconds(interval);
+								await GoToSleepAsync(newTime);
+							}
+						}
+					} else {
+						if (time >= wakeUp) {
+							if (goToSleep >= wakeUp) {
+								// NO YES YES
+								// AWAKE
+								// GO TO SLEEP SAME DAY
+								interval = (long) goToSleep.Subtract(time).TotalMilliseconds + (long) RandomizeHelper.CalcRandomInterval(IntervalType.AMinuteOrTwo);
+								timers.GetValueOrDefault("SleepModeTimer").Change(interval, Timeout.Infinite);
+								if (interval <= 0)
+									interval = RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
+								DateTime newTime = time.AddMilliseconds(interval);
+								await WakeUpAsync(newTime);
+							} else {
+								// NO YES NO
+								// THIS SHOULDNT HAPPEN
+								interval = RandomizeHelper.CalcRandomInterval(IntervalType.AMinuteOrTwo);
+								if (interval <= 0)
+									interval = RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
+								DateTime newTime = time.AddMilliseconds(interval);
+								timers.GetValueOrDefault("SleepModeTimer").Change(interval, Timeout.Infinite);
+								log(LogLevel.Information, LogSender.SleepMode, $"Next check at {newTime.ToString()}");
+							}
+						} else {
+							if (goToSleep >= wakeUp) {
+								// NO NO YES
+								// ASLEEP
+								// WAKE UP SAME DAY
+								interval = (long) wakeUp.Subtract(time).TotalMilliseconds + (long) RandomizeHelper.CalcRandomInterval(IntervalType.AMinuteOrTwo);
+								timers.GetValueOrDefault("SleepModeTimer").Change(interval, Timeout.Infinite);
+								if (interval <= 0)
+									interval = RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
+								DateTime newTime = time.AddMilliseconds(interval);
+								await GoToSleepAsync(newTime);
+							} else {
+								// NO NO NO
+								// AWAKE
+								// GO TO SLEEP SAME DAY
+								interval = (long) goToSleep.Subtract(time).TotalMilliseconds + (long) RandomizeHelper.CalcRandomInterval(IntervalType.AMinuteOrTwo);
+								timers.GetValueOrDefault("SleepModeTimer").Change(interval, Timeout.Infinite);
+								if (interval <= 0)
+									interval = RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
+								DateTime newTime = time.AddMilliseconds(interval);
+								await WakeUpAsync(newTime);
+							}
+						}
+					}
 				}
 			} catch (Exception e) {
 				log(LogLevel.Warning, LogSender.SleepMode, $"An error has occurred while handling sleep mode: {e.Message}");
@@ -1406,6 +1602,17 @@ namespace Tbot.Services {
 				return;
 			}
 			_fleetScheduler.RetireFleet(ToRecallFleet);
+		}
+		public async Task TelegramRetireFleetM(Missions mission) {
+			userData.fleets = await _fleetScheduler.UpdateFleets();
+			List<Fleet> ToRecallFleet = userData.fleets.Where(f => f.Mission == mission).ToList();
+			if (ToRecallFleet.Count == 0) {
+				await SendTelegramMessage($"Unable to recall fleet ! No mission ?");
+				return;
+			}
+			foreach (var fleet in ToRecallFleet) {
+				_fleetScheduler.RetireFleet(fleet);
+			}
 		}
 
 		public async Task TelegramMesgAttacker(string message) {

@@ -130,7 +130,7 @@ namespace Tbot.Workers
 
 		public async Task<List<Celestial>> UpdatePlanets(UpdateTypes UpdateTypes = UpdateTypes.Full) {
 			// log(LogLevel.Information, LogSender.Tbot, $"Updating userData.celestials... Mode: {UpdateTypes.ToString()}");
-			List<Celestial> localPlanets = await GetPlanets();
+			List<Celestial> localPlanets = (await GetPlanets()).ToList();
 			List<Celestial> newPlanets = new();
 			try {
 				foreach (Celestial planet in localPlanets) {
@@ -141,6 +141,46 @@ namespace Tbot.Workers
 				_tbotInstance.log(LogLevel.Debug, LogSender.Tbot, $"UpdatePlanets({UpdateTypes.ToString()}) Exception: {e.Message}");
 				_tbotInstance.log(LogLevel.Warning, LogSender.Tbot, $"Stacktrace: {e.StackTrace}");
 				return newPlanets;
+			}
+		}
+		public async Task<List<Celestial>> GetEmpire() {
+			List<Celestial> localPlanets = _tbotInstance.UserData.celestials ?? new();
+			try {
+				List<Celestial> ogamedPlanets = await _ogameService.GetEmpirePlanets();
+				ogamedPlanets.AddRange(await _ogameService.GetEmpireMoons());
+				if (ogamedPlanets.Count() != 0)
+					localPlanets = ogamedPlanets.ToList();
+				return localPlanets;
+			} catch (Exception e) {
+				_tbotInstance.log(LogLevel.Debug, LogSender.Tbot, $"GetEmpire() Exception: {e.Message}");
+				_tbotInstance.log(LogLevel.Warning, LogSender.Tbot, $"Stacktrace: {e.StackTrace}");
+				return localPlanets;
+			}
+		}
+		public async Task<List<Celestial>> GetEmpirePlanets() {
+			List<Celestial> localPlanets = _tbotInstance.UserData.celestials.Where(c => c.Coordinate.Type == Celestials.Planet).ToList() ?? new();
+			try {
+				List<Celestial> ogamedPlanets = await _ogameService.GetEmpirePlanets();
+				if (ogamedPlanets.Count() != 0)
+					localPlanets = ogamedPlanets.ToList();
+				return localPlanets;
+			} catch (Exception e) {
+				_tbotInstance.log(LogLevel.Debug, LogSender.Tbot, $"GetEmpirePlanets() Exception: {e.Message}");
+				_tbotInstance.log(LogLevel.Warning, LogSender.Tbot, $"Stacktrace: {e.StackTrace}");
+				return localPlanets;
+			}
+		}
+		public async Task<List<Celestial>> GetEmpireMoons() {
+			List<Celestial> localPlanets = _tbotInstance.UserData.celestials.Where(c => c.Coordinate.Type == Celestials.Moon).ToList() ?? new();
+			try {
+				List<Celestial> ogamedPlanets = await _ogameService.GetEmpireMoons();
+				if (ogamedPlanets.Count() != 0)
+					localPlanets = ogamedPlanets.ToList();
+				return localPlanets;
+			} catch (Exception e) {
+				_tbotInstance.log(LogLevel.Debug, LogSender.Tbot, $"GetEmpireMoons() Exception: {e.Message}");
+				_tbotInstance.log(LogLevel.Warning, LogSender.Tbot, $"Stacktrace: {e.StackTrace}");
+				return localPlanets;
 			}
 		}
 
@@ -174,7 +214,7 @@ namespace Tbot.Workers
 				List<GalaxyInfo> galaxyInfos = new();
 				Planet newPlanet = new();
 				List<Celestial> newCelestials = _tbotInstance.UserData.celestials.ToList();
-				foreach (Planet planet in _tbotInstance.UserData.celestials.Where(p => p is Planet).ToList()) {
+				foreach (Planet planet in _tbotInstance.UserData.celestials.Where(p => p is Planet)) {
 					newPlanet = planet;
 					var gi = await _ogameService.GetGalaxyInfo(planet.Coordinate);
 					if (gi.Planets.Any(p => p != null && p.ID == planet.ID)) {
@@ -239,7 +279,7 @@ namespace Tbot.Workers
 
 		public async Task<List<Celestial>> UpdateCelestials() {
 			try {
-				return await _ogameService.GetCelestials();
+				return (await _ogameService.GetCelestials()).ToList();
 			} catch (Exception e) {
 				_tbotInstance.log(LogLevel.Debug, LogSender.Tbot, $"UpdateCelestials() Exception: {e.Message}");
 				_tbotInstance.log(LogLevel.Warning, LogSender.Tbot, $"Stacktrace: {e.StackTrace}");

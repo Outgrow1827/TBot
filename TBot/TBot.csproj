@@ -1,28 +1,19 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputPath>$(LOCALAPPDATA)\TBot-cache\out\</OutputPath>
-    <PublishDir>$(MSBuildProjectDirectory)\bin\</PublishDir>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
-    <SuppressTfmSupportBuildWarnings>true</SuppressTfmSupportBuildWarnings>
-    <NoWarn>$(NoWarn);NETSDK1138;NU1902;NU1903;CS8618;CS8625;CS8602;CS8605</NoWarn>
-    <NuGetAudit>false</NuGetAudit>
+    <TargetFramework>net9.0</TargetFramework>
     <Nullable>disable</Nullable>
-    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
-    <SatelliteResourceLanguages></SatelliteResourceLanguages>
-    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
     <Authors>TBot</Authors>
-    <Version>0.3.4</Version>
+    <Version>3.4.6</Version>
     <StartupObject>Tbot.Program</StartupObject>
     <Platforms>AnyCPU;x64;x86</Platforms>
-    <Copyright>2023 © TBot</Copyright>
+    <Copyright>2026 © TBot</Copyright>
     <PackageLicenseExpression>https://licenses.nuget.org/MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://www.ogame-tbot.net</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/ogame-tbot/TBot</RepositoryUrl>
-    <AssemblyVersion>0.3.4.0</AssemblyVersion>
-    <FileVersion>0.3.4.0</FileVersion>
+    <RepositoryUrl>https://github.com/0xE232FE/TBot</RepositoryUrl>
+    <AssemblyVersion>3.4.6</AssemblyVersion>
+    <FileVersion>3.4.6</FileVersion>
     <Description>OGame Bot</Description>
     <SignAssembly>False</SignAssembly>
     <AssemblyOriginatorKeyFile>ELK-Lab.pfx</AssemblyOriginatorKeyFile>
@@ -34,24 +25,30 @@
     <PackageIcon></PackageIcon>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x86'">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+  </PropertyGroup>
+
   <ItemGroup>
     <Content Include="tbot.ico" />
-    <Content Include="ogamed.exe">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="profiles\**">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.9" />
-    <PackageReference Include="Microsoft.Extensions.FileProviders.Physical" Version="10.0.9" />
+	<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.8" />
+	<PackageReference Include="Microsoft.Extensions.FileProviders.Physical" Version="9.0.8" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-    <PackageReference Include="RestSharp" Version="108.0.3" />
-    <PackageReference Include="SixLabors.ImageSharp" Version="2.1.8" />
-    <PackageReference Include="Telegram.Bot" Version="18.0.0" />
+    <PackageReference Include="RestSharp" Version="112.1.0" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
+    <PackageReference Include="Telegram.Bot" Version="22.6.2" />
     <PackageReference Include="Telegram.Bot.Extensions.Polling" Version="1.0.2" />
   </ItemGroup>
 
@@ -71,16 +68,17 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="appsettings.Development.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <!-- PreserveNewest (not Always): this is the live config with real credentials once deployed -
-         a rebuild must not silently clobber it with the generic source template. -->
     <None Update="instance_settings.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Update="settings.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="profiles\**\*.*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
 
@@ -89,50 +87,4 @@
     <ProjectReference Include="..\TBot.WebUI\TBot.WebUI.csproj" />
   </ItemGroup>
 
-  <PropertyGroup>
-    <DebugSymbols>true</DebugSymbols>
-    <DebugType>portable</DebugType>
-    <StaticWebAssetBasePath>wwwroot\</StaticWebAssetBasePath>
-    <!-- Single clean TBot.exe in bin\ is a hard requirement - do not turn this off again.
-         EnableCompressionInSingleFile forces the bundle to be extracted to a local disk cache
-         (%TEMP%) on startup instead of memory-mapping the bundle file directly from wherever
-         TBot.exe itself lives. That mmap-in-place is what silently killed the process on a VMware
-         shared folder (HGFS) with zero log output (see _private/HISTORICO.md 2026-07-04) - forcing
-         extraction avoids the operation entirely, on any drive, without giving up single-file. -->
-    <PublishSingleFile>true</PublishSingleFile>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
-    <SelfContained>true</SelfContained>
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <PublishDir>$(MSBuildProjectDirectory)\bin\</PublishDir>
-  </PropertyGroup>
-
-  <ItemGroup>
-    <Content Include="..\README.md">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-      <TargetPath>README.md</TargetPath>
-    </Content>
-  </ItemGroup>
-
-  <Target Name="RemoveRefsFolder" AfterTargets="Build;Publish">
-    <RemoveDir Directories="$(OutputPath)refs" />
-    <RemoveDir Directories="$(PublishDir)refs" />
-  </Target>
-
-  <Target Name="RemoveStaticWebAssets" AfterTargets="Build;Publish">
-    <ItemGroup>
-      <_StaticWebAssets Remove="$(OutputPath)TBot.WebUI.staticwebassets.*" />
-    </ItemGroup>
-    <Delete Files="$(OutputPath)TBot.WebUI.staticwebassets.endpoints.json" />
-    <Delete Files="$(OutputPath)TBot.WebUI.staticwebassets.runtime.json" />
-    <Delete Files="$(PublishDir)TBot.WebUI.staticwebassets.endpoints.json" />
-    <Delete Files="$(PublishDir)TBot.WebUI.staticwebassets.runtime.json" />
-  </Target>
-
-  <!-- Self-contained ASP.NET Core publish drops this IIS in-process hosting native module even though
-       we only ever run via Kestrel directly (never behind IIS) - it's dead weight, remove it. -->
-  <Target Name="RemoveIisInProcessModule" AfterTargets="Publish">
-    <Delete Files="$(PublishDir)aspnetcorev2_inprocess.dll" />
-  </Target>
-
 </Project>
-

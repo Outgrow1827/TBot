@@ -8,8 +8,8 @@ using TBot.Ogame.Infrastructure.Enums;
 
 namespace TBot.Ogame.Infrastructure.Models {
 	public class RankSlotsPriority {
-		public RankSlotsPriority(Feature feature = Feature.Null, int rank = int.MaxValue, bool active = false, int maxSlots = 0, int slotsUsed = 0) {
-            Rank = rank < 1 ? int.MaxValue : rank;
+		public RankSlotsPriority(Feature feature = Feature.Null, int rank = int.MinValue, bool active = false, int maxSlots = 0, int slotsUsed = 0) {
+            Rank = rank < 1 ? int.MinValue : (int) rank;
             Active = active;
             MaxSlots = maxSlots;
             SlotsUsed = slotsUsed;
@@ -24,7 +24,7 @@ namespace TBot.Ogame.Infrastructure.Models {
 			return this.Rank < feature.Rank;
 		}
 		public override string ToString() {
-			return $"{Rank} -- {Feature.ToString()} is {Active}, using {SlotsUsed}/{MaxSlots}";
+			return $"Rank {Rank} -- {Feature.ToString()} is {Active}, using {SlotsUsed}/{MaxSlots}";
 		}
 	}
 

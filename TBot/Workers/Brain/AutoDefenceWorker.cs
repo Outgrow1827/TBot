@@ -1,9 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-using Tbot.Common.Settings;
 using Tbot.Helpers;
 using Tbot.Includes;
 using Tbot.Services;
@@ -19,28 +20,6 @@ namespace Tbot.Workers.Brain {
 		private readonly IFleetScheduler _fleetScheduler;
 		private readonly ICalculationService _calculationService;
 		private readonly ITBotOgamedBridge _tbotOgameBridge;
-
-		// Ship types whose Metal+Crystal cost counts toward debris-field value (deuterium excluded, since
-		// debris fields never contain deuterium).
-		private static readonly Buildables[] DebrisShipTypes = {
-			Buildables.SmallCargo, Buildables.LargeCargo, Buildables.LightFighter, Buildables.HeavyFighter,
-			Buildables.Cruiser, Buildables.Battleship, Buildables.ColonyShip, Buildables.Recycler,
-			Buildables.EspionageProbe, Buildables.Bomber, Buildables.SolarSatellite, Buildables.Destroyer,
-			Buildables.Deathstar, Buildables.Battlecruiser
-		};
-
-		// Defence types covered by the production-based formula. AntiBallisticMissiles and the shield
-		// domes always come from the manually configured DefenceToReach instead.
-		private static readonly Buildables[] FormulaCoveredTypes = {
-			Buildables.RocketLauncher, Buildables.LightLaser, Buildables.HeavyLaser,
-			Buildables.GaussCannon, Buildables.PlasmaTurret
-		};
-
-		private const float PlunderPercent = 75f;
-		// Fallback only used if Brain.AutoDefence.ProductionCoverageHours isn't set in the JSON -
-		// keeps old installs behaving the same as before this became configurable.
-		private const int DefaultProductionCoverageHours = 24;
-
 		public AutoDefenceWorker(ITBotMain parentInstance,
 			IOgameService ogameService,
 			IFleetScheduler fleetScheduler,
@@ -59,16 +38,22 @@ namespace Tbot.Workers.Brain {
 
 				List<Celestial> newCelestials = _tbotInstance.UserData.celestials.ToList();
 				List<Celestial> celestialsToExclude = _calculationService.ParseCelestialsList(_tbotInstance.InstanceSettings.Brain.AutoDefence.Exclude, _tbotInstance.UserData.celestials);
-				bool useProductionBased = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.AutoDefence, "UseProductionBasedCalculation")
-					&& (bool) _tbotInstance.InstanceSettings.Brain.AutoDefence.UseProductionBasedCalculation;
 
+				Defences neededDefences = new(
+					(long) _tbotInstance.InstanceSettings.Brain.AutoDefence.DefenceToReach.RocketLauncher,
+					(long) _tbotInstance.InstanceSettings.Brain.AutoDefence.DefenceToReach.LightLaser,
+					(long) _tbotInstance.InstanceSettings.Brain.AutoDefence.DefenceToReach.HeavyLaser,
+					(long) _tbotInstance.InstanceSettings.Brain.AutoDefence.DefenceToReach.GaussCannon,
+					(long) _tbotInstance.InstanceSettings.Brain.AutoDefence.DefenceToReach.IonCannon,
+					(long) _tbotInstance.InstanceSettings.Brain.AutoDefence.DefenceToReach.PlasmaTurret,
+					(long) ((bool) _tbotInstance.InstanceSettings.Brain.AutoDefence.DefenceToReach.SmallShieldDome ? 1: 0),
+					(long) ((bool) _tbotInstance.InstanceSettings.Brain.AutoDefence.DefenceToReach.LargeShieldDome ? 1: 0),
+					(long) _tbotInstance.InstanceSettings.Brain.AutoDefence.DefenceToReach.AntiBallisticMissiles,
+					(long) _tbotInstance.InstanceSettings.Brain.AutoDefence.DefenceToReach.InterplanetaryMissiles
+				);
 				foreach (Celestial celestial in (bool) _tbotInstance.InstanceSettings.Brain.AutoDefence.RandomOrder ? _tbotInstance.UserData.celestials.Shuffle().ToList() : _tbotInstance.UserData.celestials) {
 					if (celestialsToExclude.Has(celestial)) {
 						DoLog(LogLevel.Information, $"Skipping {celestial.ToString()}: celestial in exclude list.");
-						continue;
-					}
-					if (celestial.Coordinate.Type == Celestials.Moon && (bool) _tbotInstance.InstanceSettings.Brain.AutoDefence.ExcludeMoons) {
-						DoLog(LogLevel.Information, $"Skipping {celestial.ToString()}: celestial is a moon.");
 						continue;
 					}
 
@@ -76,112 +61,59 @@ namespace Tbot.Workers.Brain {
 
 					tempCelestial = await _tbotOgameBridge.UpdatePlanet(tempCelestial, UpdateTypes.Productions);
 					if (tempCelestial.HasProduction()) {
-						DoLog(LogLevel.Information, $"Skipping {tempCelestial.ToString()}: there is already a production ongoing.");
-						newCelestials.Remove(celestial);
-						newCelestials.Add(tempCelestial);
+						DoLog(LogLevel.Warning, $"Skipping {tempCelestial.ToString()}: there is already a production ongoing.");
+						foreach (Production production in tempCelestial.Productions) {
+							Buildables productionType = (Buildables) production.ID;
+							DoLog(LogLevel.Information, $"Skipping {tempCelestial.ToString()}: {production.Nbr}x{productionType.ToString()} are already in production.");
+						}
 						continue;
 					}
 					tempCelestial = await _tbotOgameBridge.UpdatePlanet(tempCelestial, UpdateTypes.Constructions);
 					if (tempCelestial.Constructions.BuildingID == (int) Buildables.Shipyard || tempCelestial.Constructions.BuildingID == (int) Buildables.NaniteFactory) {
 						Buildables buildingInProgress = (Buildables) tempCelestial.Constructions.BuildingID;
 						DoLog(LogLevel.Information, $"Skipping {tempCelestial.ToString()}: {buildingInProgress.ToString()} is upgrading.");
-						newCelestials.Remove(celestial);
-						newCelestials.Add(tempCelestial);
 						continue;
 					}
 
+					tempCelestial = await _tbotOgameBridge.UpdatePlanet(tempCelestial, UpdateTypes.Ships);
 					tempCelestial = await _tbotOgameBridge.UpdatePlanet(tempCelestial, UpdateTypes.Defences);
 					tempCelestial = await _tbotOgameBridge.UpdatePlanet(tempCelestial, UpdateTypes.Resources);
-					tempCelestial = await _tbotOgameBridge.UpdatePlanet(tempCelestial, UpdateTypes.Ships);
-					tempCelestial = await _tbotOgameBridge.UpdatePlanet(tempCelestial, UpdateTypes.Facilities);
+					tempCelestial = await _tbotOgameBridge.UpdatePlanet(tempCelestial, UpdateTypes.LFBonuses);
 
-					Dictionary<Buildables, long> targets;
-					if (useProductionBased && tempCelestial is Planet) {
-						tempCelestial = await _tbotOgameBridge.UpdatePlanet(tempCelestial, UpdateTypes.Buildings);
-						tempCelestial = await _tbotOgameBridge.UpdatePlanet(tempCelestial, UpdateTypes.LFBonuses);
-						targets = CalcNeededDefenceFromProduction((Planet) tempCelestial);
-						DoLog(LogLevel.Information, $"{tempCelestial}: production-based defence targets - " +
-							$"RocketLauncher:{targets[Buildables.RocketLauncher]} LightLaser:{targets[Buildables.LightLaser]} " +
-							$"HeavyLaser:{targets[Buildables.HeavyLaser]} GaussCannon:{targets[Buildables.GaussCannon]} " +
-							$"PlasmaTurret:{targets[Buildables.PlasmaTurret]}");
+					var capacity = _calculationService.CalcFleetCapacity(tempCelestial.Ships, _tbotInstance.UserData.serverData, _tbotInstance.UserData.researches.HyperspaceTechnology, tempCelestial.LFBonuses, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo);
+					if (tempCelestial.Coordinate.Type == Celestials.Moon && (bool) _tbotInstance.InstanceSettings.Brain.AutoDefence.ExcludeMoons) {
+						DoLog(LogLevel.Information, $"Skipping {tempCelestial.ToString()}: celestial is a moon.");
+						continue;
+					}
+					Defences currentDefences = tempCelestial.Defences;
+					Defences defencesToBuild = neededDefences.Difference(currentDefences);
+					if (defencesToBuild.IsEmpty()) {
+						DoLog(LogLevel.Information, $"Skipping {tempCelestial.ToString()}: all defences are already built.");
+						continue;
 					} else {
-						targets = new Dictionary<Buildables, long>();
-						foreach (var buildable in FormulaCoveredTypes) {
-							if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.AutoDefence.DefenceToReach, buildable.ToString())) {
-								targets[buildable] = (long) (int) _tbotInstance.InstanceSettings.Brain.AutoDefence.DefenceToReach[buildable.ToString()];
-							}
+						Resources defenceCost = defencesToBuild.GetDefenceCost();
+						if (!tempCelestial.Resources.IsEnoughFor(defenceCost)) {
+							DoLog(LogLevel.Information, $"{tempCelestial.ToString()}: Not enough resources to build all defences. Will build only what is possible.");
+							defencesToBuild = _calculationService.CalcmaxDefencesBuildable(defencesToBuild, tempCelestial.Resources);
 						}
-					}
-					// AntiBallisticMissiles is not part of the "Optimal Defense" formula (it isn't a
-					// combat-value defence, it exists to shoot down incoming IPMs) - always manual, regardless of the toggle.
-					if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.AutoDefence.DefenceToReach, "AntiBallisticMissiles")) {
-						targets[Buildables.AntiBallisticMissiles] = (long) (int) _tbotInstance.InstanceSettings.Brain.AutoDefence.DefenceToReach.AntiBallisticMissiles;
-					}
-
-					// Cheapest unit cost first, until the celestial's current resources run out.
-					var orderedTypes = targets.Keys
-						.OrderBy(b => {
-							var unitCost = _calculationService.CalcPrice(b, 1);
-							return unitCost.Metal + unitCost.Crystal + unitCost.Deuterium;
-						})
-						.ToList();
-
-					var availableResources = new Resources {
-						Metal = tempCelestial.Resources.Metal,
-						Crystal = tempCelestial.Resources.Crystal,
-						Deuterium = tempCelestial.Resources.Deuterium
-					};
-					bool builtSomething = false;
-					foreach (var buildable in orderedTypes) {
-						long deficit = targets[buildable] - tempCelestial.Defences.GetAmount(buildable);
-						if (deficit <= 0)
+						if (defencesToBuild.IsEmpty()) {
+							DoLog(LogLevel.Information, $"{tempCelestial.ToString()}: Not enough resources to build any defence.");
 							continue;
-
-						long buildableCount = Math.Min(deficit, _calculationService.CalcMaxBuildableNumber(buildable, availableResources));
-						if (buildableCount <= 0)
-							continue;
-
-						// Cap the order so it doesn't queue longer than MaxConstructionTime (minutes) worth of build time.
-						if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.AutoDefence, "MaxConstructionTime") && (int) _tbotInstance.InstanceSettings.Brain.AutoDefence.MaxConstructionTime > 0) {
-							long maxSeconds = (long) _tbotInstance.InstanceSettings.Brain.AutoDefence.MaxConstructionTime * 60;
-							long estimatedSeconds = _calculationService.CalcProductionTime(buildable, (int) buildableCount, _tbotInstance.UserData.serverData, tempCelestial.Facilities);
-							if (estimatedSeconds > maxSeconds && estimatedSeconds > 0) {
-								long cappedCount = Math.Max(1, buildableCount * maxSeconds / estimatedSeconds);
-								DoLog(LogLevel.Information, $"{tempCelestial}: capping {buildable} order from {buildableCount} to {cappedCount} - would take longer than MaxConstructionTime ({_tbotInstance.InstanceSettings.Brain.AutoDefence.MaxConstructionTime} min).");
-								buildableCount = cappedCount;
-							}
 						}
-
-						var cost = _calculationService.CalcPrice(buildable, (int) buildableCount);
-						DoLog(LogLevel.Information, $"{tempCelestial}: building {buildableCount}x{buildable} (deficit was {deficit}).");
-						await _ogameService.BuildDefences(tempCelestial, buildable, buildableCount);
-						availableResources.Metal -= cost.Metal;
-						availableResources.Crystal -= cost.Crystal;
-						availableResources.Deuterium -= cost.Deuterium;
-						builtSomething = true;
-						// OGame only lets a celestial queue one defence build order at a time (same
-						// production queue as ships) - stop after the first successful order this cycle.
-						break;
-					}
-
-					// Shield domes are single-unit bool targets, never covered by the production formula.
-					foreach (var buildable in new[] { Buildables.SmallShieldDome, Buildables.LargeShieldDome }) {
-						if (!SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.AutoDefence.DefenceToReach, buildable.ToString()))
-							continue;
-						bool wanted = (bool) _tbotInstance.InstanceSettings.Brain.AutoDefence.DefenceToReach[buildable.ToString()];
-						if (!wanted || tempCelestial.Defences.GetAmount(buildable) > 0)
-							continue;
-						var cost = _calculationService.CalcPrice(buildable, 1);
-						if (!availableResources.IsEnoughFor(cost))
-							continue;
-						DoLog(LogLevel.Information, $"{tempCelestial}: building {buildable}.");
-						await _ogameService.BuildDefences(tempCelestial, buildable, 1);
-						builtSomething = true;
-						break;
-					}
-
-					if (!builtSomething) {
-						DoLog(LogLevel.Information, $"{tempCelestial}: defences already at target, nothing to build.");
+						DoLog(LogLevel.Information, $"{tempCelestial.ToString()}: Defences to build: {defencesToBuild.ToString()}");
+						try {
+							foreach (var (defenceType, amountNeeded) in defencesToBuild.GetDefenceTypesWithAmount()) {
+								await _ogameService.BuildDefences(tempCelestial, defenceType, amountNeeded);
+							}
+							DoLog(LogLevel.Information, "Production succesfully started.");
+						} catch {
+							DoLog(LogLevel.Warning, "Unable to start defence production.");
+						}
+						tempCelestial = await _tbotOgameBridge.UpdatePlanet(tempCelestial, UpdateTypes.Productions);
+						foreach (Production production in tempCelestial.Productions) {
+							Buildables productionType = (Buildables) production.ID;
+							DoLog(LogLevel.Information, $"{tempCelestial.ToString()}: {production.Nbr}x{productionType.ToString()} are in production.");
+						}
 					}
 
 					newCelestials.Remove(celestial);
@@ -198,73 +130,15 @@ namespace Tbot.Workers.Brain {
 					interval = RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
 				var newTime = time.AddMilliseconds(interval);
 				ChangeWorkerPeriod(interval);
-				DoLog(LogLevel.Information, $"Next autodefence check at {newTime}");
+				DoLog(LogLevel.Information, $"Next Defence check at {newTime.ToString()}");
 				await _tbotOgameBridge.CheckCelestials();
 			}
-		}
-
-		// Ports the "Optimal Defense" formula (Vesselin Bontchev): defence needed to absorb
-		// HoursOfProductionToCover worth of production, current stock and fleet debris value, assuming
-		// an attacker loots PlunderPercent% of it. Cascades from Plasma Turret down to Rocket Launcher.
-		private Dictionary<Buildables, long> CalcNeededDefenceFromProduction(Planet planet) {
-			var researches = _tbotInstance.UserData.researches;
-			var speed = (int) _tbotInstance.UserData.serverData.Speed;
-			var playerClass = _tbotInstance.UserData.userInfo.Class;
-			var hasGeologist = _tbotInstance.UserData.staff.Geologist;
-			var hasStaff = _tbotInstance.UserData.staff.IsFull;
-
-			long hourlyMetal = _calculationService.CalcMetalProduction(planet, speed, 1, researches, playerClass, hasGeologist, hasStaff);
-			long hourlyCrystal = _calculationService.CalcCrystalProduction(planet, speed, 1, researches, playerClass, hasGeologist, hasStaff);
-			long hourlyDeuterium = _calculationService.CalcDeuteriumProduction(planet, speed, 1, researches, playerClass, hasGeologist, hasStaff);
-
-			// CalcDeuteriumProduction only accounts for the Deuterium Synthesizer's own output - it doesn't
-			// net out what the Fusion Reactor burns. Same formula the reference calculator uses.
-			if (planet.Buildings.FusionReactor > 0) {
-				long fusionConsumption = (long) Math.Round(10 * planet.Buildings.FusionReactor * Math.Pow(1.1, planet.Buildings.FusionReactor));
-				hourlyDeuterium -= Math.Min(fusionConsumption, hourlyDeuterium);
-			}
-
-			int coverageHours = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.AutoDefence, "ProductionCoverageHours") && (int) _tbotInstance.InstanceSettings.Brain.AutoDefence.ProductionCoverageHours > 0
-				? (int) _tbotInstance.InstanceSettings.Brain.AutoDefence.ProductionCoverageHours
-				: DefaultProductionCoverageHours;
-			long productionOverPeriod = (hourlyMetal + hourlyCrystal + hourlyDeuterium) * coverageHours;
-			long stored = planet.Resources.Metal + planet.Resources.Crystal + planet.Resources.Deuterium;
-
-			float debrisFactor = _tbotInstance.UserData.serverData.DebrisFactor; // fraction, e.g. 0.3 for 30%
-			long fleetDebrisValue = 0;
-			foreach (var shipType in DebrisShipTypes) {
-				long count = planet.Ships.GetAmount(shipType);
-				if (count <= 0)
-					continue;
-				var shipCost = _calculationService.CalcPrice(shipType, 1);
-				fleetDebrisValue += (shipCost.Metal + shipCost.Crystal) * count;
-			}
-			fleetDebrisValue = (long) (fleetDebrisValue * debrisFactor);
-
-			double totalLoot = fleetDebrisValue + (productionOverPeriod + stored) * (PlunderPercent / 100.0);
-			double debrisPercent = debrisFactor * 100.0;
-			double debrisRatio = (100.0 - debrisPercent) / 100.0;
-
-			long neededPT = (long) Math.Ceiling(5.0658556 * totalLoot * (70.0 / (100.0 - debrisPercent)) / 100000.0);
-			long neededGC = Math.Max(0, (long) Math.Ceiling(totalLoot / (10000.0 * debrisRatio) - neededPT));
-			long neededHL = Math.Max(0, (long) Math.Ceiling((totalLoot / (4000.0 * debrisRatio) - neededPT - neededGC) / 0.6));
-			long neededRlPlusLl = Math.Max(0, (long) Math.Ceiling(totalLoot / (1000.0 * debrisRatio) - neededPT - neededGC - neededHL));
-			long neededRL = (long) Math.Ceiling(neededRlPlusLl * 2.0 / 3.0);
-			long neededLL = (long) Math.Ceiling(neededRlPlusLl / 3.0);
-
-			return new Dictionary<Buildables, long> {
-				[Buildables.RocketLauncher] = neededRL,
-				[Buildables.LightLaser] = neededLL,
-				[Buildables.HeavyLaser] = neededHL,
-				[Buildables.GaussCannon] = neededGC,
-				[Buildables.PlasmaTurret] = neededPT,
-			};
 		}
 
 		public override bool IsWorkerEnabledBySettings() {
 			try {
 				return ((bool) _tbotInstance.InstanceSettings.Brain.Active && (bool) _tbotInstance.InstanceSettings.Brain.AutoDefence.Active);
-			} catch (Exception) {
+			} catch(Exception) {
 				return false;
 			}
 		}
@@ -273,7 +147,7 @@ namespace Tbot.Workers.Brain {
 			return "AutoDefence";
 		}
 		public override Feature GetFeature() {
-			return Feature.BrainAutoDefence;
+			return Feature.BrainAutobuildDefence;
 		}
 
 		public override LogSender GetLogSender() {

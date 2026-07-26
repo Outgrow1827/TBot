@@ -15,13 +15,16 @@ namespace Tbot.Services {
 		event EventHandler OnError;
 		Task Init(string settingPath,
 			string alias,
-			ITelegramMessenger telegramHandler);
+			ITelegramMessenger telegramHandler,
+			string telegramSolverBotToken = "",
+			long telegramSolverChatId = 0);
+
+		IEnumerable<Tbot.Workers.ITBotWorker> GetAllWorkers();
 
 		ValueTask DisposeAsync();
 
 		dynamic InstanceSettings { get; }
 		string InstanceAlias { get; }
-		string InstanceSettingsPath { get; }
 		UserData UserData { get; set; }
 		TelegramUserData TelegramUserData { get; }
 		long SleepDuration { get; set; }
@@ -30,9 +33,11 @@ namespace Tbot.Services {
 		Task InitializeFeature(Feature feat);
 		Task StopFeature(Feature feat);
 		bool IsFeatureRunning(Feature feat);
-		IEnumerable<Tbot.Workers.ITBotWorker> GetAllWorkers();
 		Task SendTelegramMessage(string fmt);
 		Task<bool> TelegramSwitch(decimal speed, Celestial attacked = null, bool fromTelegram = false);
 		Task SleepNow(DateTime WakeUpTime);
+		Task ListProfiles();
+		Task LoadProfile(List<string> profileName);
+		Task ResetProfile();
 	}
 }

@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Linq.Expressions;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
@@ -9,26 +8,6 @@ using TBot.Ogame.Infrastructure.Enums;
 
 namespace TBot.Ogame.Infrastructure.Models {
 	public class Ships {
-		// Built once via reflection and reused for Add/Remove/GetAmount/SetAmount/HasAtLeast/ToString.
-		private static readonly Dictionary<Buildables, (Func<Ships, long> Get, Action<Ships, long> Set)> _accessors = BuildAccessors();
-
-		private static Dictionary<Buildables, (Func<Ships, long> Get, Action<Ships, long> Set)> BuildAccessors() {
-			var map = new Dictionary<Buildables, (Func<Ships, long>, Action<Ships, long>)>();
-			foreach (PropertyInfo prop in typeof(Ships).GetProperties()) {
-				if (prop.PropertyType != typeof(long) || !Enum.TryParse<Buildables>(prop.Name, out var buildable))
-					continue;
-
-				var instance = Expression.Parameter(typeof(Ships), "instance");
-				var getter = Expression.Lambda<Func<Ships, long>>(Expression.Property(instance, prop), instance).Compile();
-
-				var value = Expression.Parameter(typeof(long), "value");
-				var setter = Expression.Lambda<Action<Ships, long>>(Expression.Assign(Expression.Property(instance, prop), value), instance, value).Compile();
-
-				map[buildable] = (getter, setter);
-			}
-			return map;
-		}
-
 		public long LightFighter { get; set; }
 		public long HeavyFighter { get; set; }
 		public long Cruiser { get; set; }
@@ -157,31 +136,48 @@ namespace TBot.Ogame.Infrastructure.Models {
 		}
 
 		public Ships Add(Buildables buildable, long quantity) {
-			if (_accessors.TryGetValue(buildable, out var accessor))
-				accessor.Set(this, accessor.Get(this) + quantity);
+			foreach (PropertyInfo prop in this.GetType().GetProperties()) {
+				if (prop.Name == buildable.ToString()) {
+					prop.SetValue(this, (long) prop.GetValue(this) + quantity);
+				}
+			}
 			return this;
 		}
 
 		public Ships Remove(Buildables buildable, int quantity) {
-			if (_accessors.TryGetValue(buildable, out var accessor)) {
-				long val = accessor.Get(this);
-				accessor.Set(this, val >= quantity ? val : 0);
+			foreach (PropertyInfo prop in this.GetType().GetProperties()) {
+				if (prop.Name == buildable.ToString()) {
+					long val = (long) prop.GetValue(this);
+					if (val >= quantity)
+						prop.SetValue(this, val);
+					else
+						prop.SetValue(this, 0);
+				}
 			}
 			return this;
 		}
 
 		public long GetAmount(Buildables buildable) {
-			return _accessors.TryGetValue(buildable, out var accessor) ? accessor.Get(this) : 0;
+			foreach (PropertyInfo prop in this.GetType().GetProperties()) {
+				if (prop.Name == buildable.ToString()) {
+					return (long) prop.GetValue(this);
+				}
+			}
+			return 0;
 		}
 
 		public void SetAmount(Buildables buildable, long number) {
-			if (_accessors.TryGetValue(buildable, out var accessor))
-				accessor.Set(this, number);
+			foreach (PropertyInfo prop in this.GetType().GetProperties()) {
+				if (prop.Name == buildable.ToString()) {
+					prop.SetValue(this, number);
+					return;
+				}
+			}
 		}
 
 		public bool HasAtLeast(Ships ships, long times = 1) {
-			foreach (var accessor in _accessors.Values) {
-				if (accessor.Get(this) * times < accessor.Get(ships)) {
+			foreach (PropertyInfo prop in this.GetType().GetProperties()) {
+				if ((long) prop.GetValue(this) * times < (long) prop.GetValue(ships)) {
 					return false;
 				}
 			}
@@ -190,11 +186,10 @@ namespace TBot.Ogame.Infrastructure.Models {
 
 		public override string ToString() {
 			string output = "";
-			foreach (var kvp in _accessors) {
-				long value = kvp.Value.Get(this);
-				if (value == 0)
+			foreach (PropertyInfo prop in this.GetType().GetProperties()) {
+				if ((long) prop.GetValue(this) == 0)
 					continue;
-				output += $"{kvp.Key}: {value}; ";
+				output += $"{prop.Name}: {prop.GetValue(this)}; ";
 			}
 			return output;
 		}

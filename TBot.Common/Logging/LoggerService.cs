@@ -44,7 +44,7 @@ namespace TBot.Common.Logging {
 		public void WriteLog(LogLevel level, LogSender sender, string message) {
 			IDisposable? telegram = null;
 
-			if (_telegramAdded == true) {
+			if (_telegramAdded == true && sender != LogSender.OGameD) {
 				telegram = LogContext.PushProperty("TelegramEnabled", true);
 			}
 			using (LogContext.PushProperty("LogSender", sender))
@@ -91,15 +91,14 @@ namespace TBot.Common.Logging {
 					outputTemplate: outTemplate
 				)
 				// Log file
-				// retainedFileCountLimit counts files, not days, and a busy day can roll more than once,
-				// so keep more than the ~30 days we actually want retained.
 				.WriteTo.File(
 					path: Path.Combine(_logPath, "TBot.log"),
 					buffered: false,
-					flushToDiskInterval: TimeSpan.FromHours(1),
+					shared: true,
+					flushToDiskInterval: TimeSpan.FromSeconds(1),
 					rollOnFileSizeLimit: true,
 					fileSizeLimitBytes: maxFileSize,
-					retainedFileCountLimit: 60,
+					retainedFileCountLimit: 10,
 					rollingInterval: RollingInterval.Day)
 				// CSV
 				.WriteTo.File(
@@ -107,10 +106,9 @@ namespace TBot.Common.Logging {
 					buffered: false,
 					hooks: new SerilogCSVHeaderHooks(),
 					formatter: new SerilogCSVTextFormatter(),
-					flushToDiskInterval: TimeSpan.FromHours(1),
+					flushToDiskInterval: TimeSpan.FromSeconds(1),
 					rollOnFileSizeLimit: true,
 					fileSizeLimitBytes: maxFileSize,
-					retainedFileCountLimit: 60,
 					rollingInterval: RollingInterval.Day)
 				.WriteTo.SignalRTBotSink<WebHub, IWebHub>(
 					LogEventLevel.Verbose,
@@ -135,6 +133,7 @@ namespace TBot.Common.Logging {
 				_telegramLevelSwitch.MinimumLevel = LogEventLevel.Verbose;
 				_telegramAdded = false;
 
+				(Log.Logger as IDisposable)?.Dispose();
 				Log.Logger = logConfig.CreateLogger();
 
 			}
@@ -143,16 +142,33 @@ namespace TBot.Common.Logging {
 		public void AddTelegramLogger(string botToken, string chatId) {
 			lock (syncObject) {
 				if (_telegramAdded == false) {
+					var previousLogger = Log.Logger;
+
+					// Building the Telegram sink can block on a synchronous network call to the
+					// Telegram API (bot/chat validation). If that call hangs due to network
+					// flakiness, it must not be allowed to freeze the whole instance startup -
+					// bound it with a timeout and fall back to logging without Telegram.
+				var buildTask = Task.Run(() => {
 					var logConfig = GetDefaultConfiguration();
-					Log.Logger = logConfig.WriteTo.Logger(
-							c => c.Filter.Equals(Matching.WithProperty<bool>("TelegramEnabled", p => p == true))
-							).WriteTo.Telegram(botToken: botToken,
+					return logConfig.WriteTo.Logger(
+							c => c.Filter.ByIncludingOnly(Matching.WithProperty<bool>("TelegramEnabled", p => p == true))
+							.MinimumLevel.ControlledBy(_telegramLevelSwitch)
+							.WriteTo.Telegram(botToken: botToken,
 								chatId: chatId,
 								dateFormat: null,
 								outputTemplate: "{LogLevelEmoji:l}{LogSenderEmoji:l} {Message:lj}{NewLine}{Exception}")
+						)
 						.CreateLogger();
+				});
 
-					_telegramAdded = true;
+					if (buildTask.Wait(TimeSpan.FromSeconds(15))) {
+						Serilog.ILogger newLogger = buildTask.Result;
+						(previousLogger as IDisposable)?.Dispose();
+						Log.Logger = newLogger;
+						_telegramAdded = true;
+					} else {
+						previousLogger.Warning("Timed out initializing the Telegram logger (Telegram API unreachable/slow) - continuing without Telegram logging");
+					}
 				}
 			}
 		}

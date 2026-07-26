@@ -5,9 +5,11 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace TBot.Ogame.Infrastructure.Models {
-	public class LoginResult
-	{
-		public bool Success { get; set; }
-		public string Error { get; set; }
-	}
+	public class LFBonusesMisc {
+		public float PhalanxRange { get; set; }
+
+		public LFBonusesMisc(float phalanxrange = 0) {
+			PhalanxRange = phalanxrange;
+		}
+    }
 }

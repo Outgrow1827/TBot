@@ -10,7 +10,9 @@ namespace TBot.Ogame.Infrastructure {
 				string host = "127.0.0.1",
 				int port = 8080,
 				string captchaKey = "",
-				bool hideAccountNameInLogs = false);
+				bool hideAccountNameInLogs = false,
+				string telegramSolverBotToken = "",
+				long telegramSolverChatId = 0);
 		string GetExecutableName();
 		bool ValidatePrerequisites();
 		Task BuildCancelable(Celestial celestial, Buildables buildable);
@@ -39,15 +41,15 @@ namespace TBot.Ogame.Infrastructure {
 		Task<EspionageReport> GetEspionageReport(Coordinate coordinate);
 		Task<EspionageReport> GetEspionageReport(int msgId);
 		Task<List<EspionageReportSummary>> GetEspionageReports();
-		Task<CombatReportSummary> GetCombatReportSummary(Coordinate coordinate);
-		Task<CombatReportSummary> GetCombatReportSummary(long fleetId);
 		Task<Facilities> GetFacilities(Celestial celestial);
 		Task<List<Fleet>> GetFleets();
 		Task<GalaxyInfo> GetGalaxyInfo(Coordinate coordinate);
 		Task<GalaxyInfo> GetGalaxyInfo(int galaxy, int system);
 		Task<LFBuildings> GetLFBuildings(Celestial celestial);
 		Task<LFTechs> GetLFTechs(Celestial celestial);
+		Task<LFBonuses> GetLFBonuses();
 		Task<LFBonuses> GetLFBonuses(Celestial celestial);
+		Task<ArtifactsInfo> GetArtifacts(Celestial celestial);
 		Task<Moon> GetMoon(Moon moon);
 		Task<List<Moon>> GetMoons();
 		Task<string> GetOgamedIP();
@@ -57,7 +59,6 @@ namespace TBot.Ogame.Infrastructure {
 		Task<Resources> GetPrice(LFBuildables buildable, long levelOrQuantity);
 		Task<Resources> GetPrice(LFTechno buildable, long levelOrQuantity);
 		Task<List<Production>> GetProductions(Celestial celestial);
-		Task<ArtifactsInfo> GetArtifacts(Celestial celestial);
 		Task<Researches> GetResearches();
 		Task<Resources> GetResources(Celestial celestial);
 		Task<ResourceSettings> GetResourceSettings(Planet planet);
@@ -77,6 +78,8 @@ namespace TBot.Ogame.Infrastructure {
 		Task<string> GetTbotIP();
 		Task<Techs> GetTechs(Celestial celestial);
 		Task<CharacterClass> GetUserClass();
+		Task<List<Celestial>> GetEmpirePlanets();
+		Task<List<Celestial>> GetEmpireMoons();
 		Task<UserInfo> GetUserInfo();
 		Task<string> GetUsername();
 		Task<bool> HasAdmiral();
@@ -88,7 +91,7 @@ namespace TBot.Ogame.Infrastructure {
 		bool IsPortAvailable(string host, int port = 8080);
 		Task<bool> IsUnderAttack();
 		Task<bool> IsVacationMode();
-		Task JumpGate(Celestial origin, Celestial destination, Ships ships);
+		Task<JumpGateResult> JumpGate(Celestial origin, Celestial destination, Ships ships);
 		Task<bool> SendDiscovery(Celestial origin, Coordinate coords);
 		void KillOgamedExecutable(CancellationToken ct = default);
 		Task Login();
@@ -99,6 +102,8 @@ namespace TBot.Ogame.Infrastructure {
 		Task SendMessage(int playerID, string message);
 		Task SetUserAgent(string userAgent);
 		Task SolveCaptcha(string challengeID, int answer);
-		Task<bool> AbandonCelestial(Celestial celestial);
+		        Task<bool> AbandonCelestial(Celestial celestial);
+                Task<List<Coordinate>> GetPositionsAvailableForDiscoveryFleet(Celestial celestial, Coordinate coordinate);
+        Task<int> GetAvailableDiscoveries(Celestial celestial);
 	}
 }

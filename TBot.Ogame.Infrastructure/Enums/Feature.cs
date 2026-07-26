@@ -21,8 +21,9 @@ namespace TBot.Ogame.Infrastructure.Enums {
 		BrainLifeformAutoMine = 12,
 		BrainLifeformAutoResearch = 13,
 		AutoDiscovery = 14,
-		Watchdog = 15,
-		BrainAutoDefence = 16,
+		BrainAutobuildDefence = 15,
+		BrainAutoFleepJumpGate = 16,
+		Watchdog = 17,
 
 		BrainCelestialAutoMine = 101,
 		BrainCelestialLifeformAutoMine = 102,

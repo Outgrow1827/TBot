@@ -8,6 +8,32 @@ using TBot.Ogame.Infrastructure.Enums;
 
 namespace TBot.Ogame.Infrastructure.Models {
 	public class LFBonuses {
+
+		public LFBonusesResources LfResourceBonuses { get; set; }
+		public LFBonusesCharacterClasses CharacterClassesBonuses { get; set; }
+		public Dictionary<string, LFBonusesShip> LfShipBonuses { get; set; }
+		public Dictionary<string, LFBonusesBase> CostTimeBonuses { get; set; }
+		public LFBonusesMisc MiscBonuses { get; set; }
+		public Dictionary<int, LFBonusesShip> LfShipBonusesInt {
+			get {
+				if (LfShipBonuses == null)
+					return new Dictionary<int, LFBonusesShip>();
+				return LfShipBonuses
+					.Where(kvp => int.TryParse(kvp.Key, out _))
+					.ToDictionary(kvp => int.Parse(kvp.Key), kvp => kvp.Value);
+			}
+        }
+		public Dictionary<int, LFBonusesBase> CostTimeBonusesInt {
+			get {
+				if (CostTimeBonuses == null)
+					return new Dictionary<int, LFBonusesBase>();
+				return CostTimeBonuses
+					.Where(kvp => int.TryParse(kvp.Key, out _))
+					.ToDictionary(kvp => int.Parse(kvp.Key), kvp => kvp.Value);
+			}
+        }
+
+
 		public LFBonusesProduction Production { get; set; }
 		public LFBonusesExpeditions Expeditions { get; set; }
 		public LFBonusesDens Dens { get; set; }
@@ -29,6 +55,12 @@ namespace TBot.Ogame.Infrastructure.Models {
 		public float InactivesLoot { get; set; }
 
 		public LFBonuses() {
+			LfResourceBonuses = new LFBonusesResources();
+			CharacterClassesBonuses = new LFBonusesCharacterClasses();
+			LfShipBonuses = new Dictionary<string, LFBonusesShip>();
+			CostTimeBonuses = new Dictionary<string, LFBonusesBase>();
+			MiscBonuses = new LFBonusesMisc();
+
 			Production = new LFBonusesProduction();
 			Expeditions = new LFBonusesExpeditions();
 			Dens = new LFBonusesDens();
@@ -44,24 +76,24 @@ namespace TBot.Ogame.Infrastructure.Models {
 
 		public float GetShipCargoBonus(Buildables buildable) {
 			float bonusCargo = 0;
-			if (this != null && Ships != null && Ships.Count > 0 && Ships.ContainsKey((int) buildable)) {
-				bonusCargo = Ships.GetValueOrDefault((int) buildable).Cargo;
+			if (this != null && LfShipBonusesInt != null && LfShipBonusesInt.Count > 0 && LfShipBonusesInt.ContainsKey((int) buildable)) {
+				bonusCargo = LfShipBonusesInt.GetValueOrDefault((int) buildable).CargoCapacity;
 			}
 			return bonusCargo;
 		}
 
 		public float GetShipSpeedBonus(Buildables buildable) {
 			float bonusSpeed = 0;
-			if (this != null && Ships != null && Ships.Count > 0 && Ships.ContainsKey((int) buildable)) {
-				bonusSpeed = Ships.GetValueOrDefault((int) buildable).Speed;
+			if (this != null && LfShipBonusesInt != null && LfShipBonusesInt.Count > 0 && LfShipBonusesInt.ContainsKey((int) buildable)) {
+				bonusSpeed = LfShipBonusesInt.GetValueOrDefault((int) buildable).Speed;
 			}
 			return bonusSpeed;
 		}
 
 		public float GetShipConsumptionBonus(Buildables buildable) {
 			float bonusCons = 0;
-			if (this != null && Ships != null && Ships.Count > 0 && Ships.ContainsKey((int) buildable)) {
-				bonusCons = Ships.GetValueOrDefault((int) buildable).Consumption;
+			if (this != null && LfShipBonusesInt != null && LfShipBonusesInt.Count > 0 && LfShipBonusesInt.ContainsKey((int) buildable)) {
+				bonusCons = LfShipBonusesInt.GetValueOrDefault((int) buildable).FuelConsumption;
 			}
 			return bonusCons;
 		}

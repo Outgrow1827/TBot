@@ -52,16 +52,9 @@ namespace Tbot.Services {
 			_helpersService = helpersService;
 		}
 
-		public async Task OnSettingsChanged() {
+		public async void OnSettingsChanged() {
 			await instancesSem.WaitAsync();
-			try {
-				await OnSettingsChangedImpl();
-			} finally {
-				instancesSem.Release();
-			}
-		}
 
-		private async Task OnSettingsChangedImpl() {
 			_logger.WriteLog(LogLevel.Information, LogSender.Main, $"Reading settings \"{SettingsAbsoluteFilepath}\"");
 
 			// Read settings first
@@ -145,7 +138,7 @@ namespace Tbot.Services {
 				if (newInstances.Any(c => string.Compare(c._botSettingsPath, deInstance._botSettingsPath) == 0) == false) {
 					_logger.WriteLog(LogLevel.Information, LogSender.Main, $"Deinitializing instance \"{deInstance._alias}\" \"{deInstance._botSettingsPath}\"");
 
-					deinitingInstances.Add(deInstance.Deinitialize());
+					deinitingInstances.Add(deInstance._botMain.DisposeAsync().AsTask());
 				}
 			}
 			await Task.WhenAll(deinitingInstances);
@@ -156,6 +149,11 @@ namespace Tbot.Services {
 				string alias = instanceToBeInited.Alias;
 				_logger.WriteLog(LogLevel.Information, LogSender.Main, $"Asynchronously initializing instance \"{alias}\" \"{cInstanceSettingPath}\"");
 				awaitingInstances.Add(StartTBotMain(cInstanceSettingPath, alias));
+				//Generate random sleeptime
+				Random waitTime = new Random();
+				int millisecondsTimeout	 = waitTime.Next(30, 60) * 1000;
+				//Put the thread to sleep
+				System.Threading.Thread.Sleep(millisecondsTimeout);
 			}
 
 			// Await initialization and add initialized instances
@@ -186,21 +184,18 @@ namespace Tbot.Services {
 
 			_logger.WriteLog(LogLevel.Information, LogSender.Main, $"Instances stats: Initialized {instances.Count} - Deinitialized {deinitingInstances.Count}");
 
-			// Initialize settingsWatcher
+			// Initialize settingsWatcher 
 			if (settingsWatcher == null)
 				settingsWatcher = new SettingsFileWatcher(OnSettingsChanged, SettingsAbsoluteFilepath);
+
+			instancesSem.Release();
 		}
 
 		public async ValueTask DisposeAsync() {
-			await instancesSem.WaitAsync();
 			List<Task> deinitTasks = new();
-			try {
-				foreach (var instance in instances) {
-					_logger.WriteLog(LogLevel.Information, LogSender.Main, $"Deinitializing instance \"{instance._alias}\" \"{instance._botSettingsPath}\"");
-					deinitTasks.Add(instance.Deinitialize());
-				}
-			} finally {
-				instancesSem.Release();
+			foreach (var instance in instances) {
+				_logger.WriteLog(LogLevel.Information, LogSender.Main, $"Deinitializing instance \"{instance._alias}\" \"{instance._botSettingsPath}\"");
+				deinitTasks.Add(instance.Deinitialize());
 			}
 			await Task.WhenAll(deinitTasks);
 			instances.Clear();
@@ -262,7 +257,15 @@ namespace Tbot.Services {
 					var scope = _scopeFactory.CreateScope();
 					var tBotInstance = scope.ServiceProvider.GetRequiredService<ITBotMain>();
 
-					await tBotInstance.Init(settingsPath, alias, telegramMessenger);	// This may throw
+					string telegramSolverBotToken = "";
+					long telegramSolverChatId = 0;
+					if (SettingsService.IsSettingSet(_mainSettings, "TelegramMessenger") &&
+						SettingsService.IsSettingSet(_mainSettings.TelegramMessenger, "API") &&
+						SettingsService.IsSettingSet(_mainSettings.TelegramMessenger, "ChatId")) {
+						telegramSolverBotToken = (string) _mainSettings.TelegramMessenger.API;
+						long.TryParse((string) _mainSettings.TelegramMessenger.ChatId, out telegramSolverChatId);
+					}
+					await tBotInstance.Init(settingsPath, alias, telegramMessenger, telegramSolverBotToken, telegramSolverChatId);	// This may throw
 
 					_logger.WriteLog(LogLevel.Information, LogSender.Main, $"Instance \"{alias}\" initialized successfully!");
 					// Add a OnError callback so we can remove it from our list if an error occurred

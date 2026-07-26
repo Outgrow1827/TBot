@@ -38,10 +38,11 @@ namespace Tbot.Workers {
 			if (GetWorker(feat) != null) {
 				return GetWorker(feat);
 			}
-			
+
 			ITBotWorker newWorker = feat switch {
 				Feature.Defender => new DefenderWorker(tbotMainInstance, _ogameService, _fleetScheduler, tbotOgameBridge),
 				Feature.BrainAutobuildCargo => new AutoCargoWorker(tbotMainInstance, _ogameService, _fleetScheduler, _calculationService, tbotOgameBridge),
+				Feature.BrainAutobuildDefence => new AutoDefenceWorker(tbotMainInstance, _ogameService, _fleetScheduler, _calculationService, tbotOgameBridge),
 				Feature.BrainAutoRepatriate => new AutoRepatriateWorker(tbotMainInstance, _fleetScheduler, _calculationService, tbotOgameBridge),
 				Feature.BrainAutoMine => new AutoMineWorker(tbotMainInstance, _ogameService, _fleetScheduler, _calculationService, tbotOgameBridge, this),
 				Feature.BrainOfferOfTheDay => new BuyOfferOfTheDayWorker(tbotMainInstance, _ogameService, tbotOgameBridge),
@@ -53,8 +54,7 @@ namespace Tbot.Workers {
 				Feature.BrainLifeformAutoMine => new LifeformsAutoMineWorker(tbotMainInstance, _ogameService, _fleetScheduler, _calculationService, tbotOgameBridge, this),
 				Feature.BrainLifeformAutoResearch => new LifeformsAutoResearchWorker(tbotMainInstance, _ogameService, _fleetScheduler, _calculationService, tbotOgameBridge, this),
 				Feature.AutoDiscovery => new AutoDiscoveryWorker(tbotMainInstance, _ogameService, _fleetScheduler, _calculationService, tbotOgameBridge),
-				Feature.BrainAutoDefence => new AutoDefenceWorker(tbotMainInstance, _ogameService, _fleetScheduler, _calculationService, tbotOgameBridge),
-				Feature.Watchdog => new WatchdogWorker(tbotMainInstance),
+				Feature.BrainAutoFleepJumpGate => new AutoFleetJumpGateWorker(tbotMainInstance, _ogameService, tbotOgameBridge),
 				_ => null
 			};
 
@@ -64,7 +64,7 @@ namespace Tbot.Workers {
 				}
 				_workers.TryAdd(feat, newWorker);
 			}
-			
+
 			return newWorker;
 		}
 
@@ -96,7 +96,7 @@ namespace Tbot.Workers {
 			}
 			return null;
 		}
-		
+
 		public ITBotCelestialWorker GetCelestialWorker(ITBotWorker parentWorker, Celestial celestial) {
 			if (parentWorker.celestialWorkers.Any(e => e.Key.ID == celestial.ID)) {
 				return parentWorker.celestialWorkers.First(e => e.Key.ID == celestial.ID).Value;
@@ -107,13 +107,14 @@ namespace Tbot.Workers {
 		private bool IsBrain(Feature feat) {
 			switch (feat) {
 				case Feature.BrainAutobuildCargo:
+				case Feature.BrainAutobuildDefence:
 				case Feature.BrainAutoRepatriate:
 				case Feature.BrainAutoMine:
 				case Feature.BrainOfferOfTheDay:
 				case Feature.BrainAutoResearch:
 				case Feature.BrainLifeformAutoMine:
 				case Feature.BrainLifeformAutoResearch:
-				case Feature.BrainAutoDefence:
+				case Feature.BrainAutoFleepJumpGate:
 				case Feature.BrainCelestialAutoMine:
 				case Feature.BrainCelestialLifeformAutoMine:
 				case Feature.BrainCelestialLifeformAutoResearch:

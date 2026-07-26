@@ -10,6 +10,9 @@ namespace Tbot.Workers {
 		Task<bool> CheckCelestials();
 		Task<DateTime> GetDateTime();
 		Task<List<Celestial>> GetPlanets();
+		Task<List<Celestial>> GetEmpire();
+		Task<List<Celestial>> GetEmpirePlanets();
+		Task<List<Celestial>> GetEmpireMoons();
 		Task<List<Celestial>> UpdateCelestials();
 		Task<List<GalaxyInfo>> UpdateGalaxyInfos();
 		Task<Celestial> UpdatePlanet(Celestial planet, UpdateTypes UpdateTypes = UpdateTypes.Full);

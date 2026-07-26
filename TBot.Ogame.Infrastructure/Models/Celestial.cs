@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 using TBot.Ogame.Infrastructure.Enums;
@@ -28,6 +29,7 @@ namespace TBot.Ogame.Infrastructure.Models {
 		public ResourceSettings ResourceSettings { get; set; }
 		public ResourcesProduction ResourcesProduction { get; set; }
 		public Debris Debris { get; set; }
+		public Researches Researches { get; set; }
 
 		public override string ToString() {
 			return $"{Name} {Coordinate.ToString()}";
@@ -56,36 +58,69 @@ namespace TBot.Ogame.Infrastructure.Models {
 				&& coords.Type == Coordinate.Type;
 		}
 
-		// Delegates to Buildings/Facilities/LFBuildings/LFTechs' own compiled accessor dictionaries
-		// (see Ships.cs for the pattern) instead of running GetType().GetProperties() directly here.
 		public int GetLevel(Buildables building) {
-			int output = Buildings.GetLevel(building);
-			if (output == 0)
-				output = Facilities.GetLevel(building);
+			int output = 0;
+			foreach (PropertyInfo prop in Buildings.GetType().GetProperties()) {
+				if (prop.Name == building.ToString()) {
+					output = (int) prop.GetValue(Buildings);
+				}
+			}
+			if (output == 0) {
+				foreach (PropertyInfo prop in Facilities.GetType().GetProperties()) {
+					if (prop.Name == building.ToString()) {
+						output = (int) prop.GetValue(Facilities);
+					}
+				}
+			}
 			return output;
 		}
 
 		public Celestial SetLevel(Buildables building, int level) {
-			Buildings.SetLevel(building, level);
-			Facilities.SetLevel(building, level);
+			foreach (PropertyInfo prop in Buildings.GetType().GetProperties()) {
+				if (prop.Name == building.ToString()) {
+					prop.SetValue(this.Buildings, level);
+				}
+			}
+			foreach (PropertyInfo prop in Facilities.GetType().GetProperties()) {
+				if (prop.Name == building.ToString()) {
+					prop.SetValue(this.Facilities, level);
+				}
+			}
 			return this;
 		}
 
 		public int GetLevel(LFBuildables building) {
-			return LFBuildings.GetLevel(building);
+			int output = 0;
+			foreach (PropertyInfo prop in LFBuildings.GetType().GetProperties()) {
+				if (prop.Name == building.ToString()) {
+					output = (int) prop.GetValue(LFBuildings);
+				}
+			}
+			return output;
 		}
 
 		public Celestial SetLevel(LFBuildables building, int level) {
-			LFBuildings.SetLevel(building, level);
+			foreach (PropertyInfo prop in LFBuildings.GetType().GetProperties()) {
+				if (prop.Name == building.ToString()) {
+					prop.SetValue(this.LFBuildings, level);
+				}
+			}
 			return this;
 		}
 
 		public int GetLevel(LFTechno techno) {
-			return LFTechs.GetLevel(techno);
+			int output = 0;
+			foreach (PropertyInfo prop in LFTechs.GetType().GetProperties()) {
+				if (prop.Name == techno.ToString()) {
+					output = (int) prop.GetValue(LFTechs);
+				}
+			}
+			return output;
 		}
 
 		public LFTypes SetLFType() {
-			return (LFTypes) LFBuildings.LifeformType;
+			LFTypes LFtype = (LFTypes) LFBuildings.GetType().GetProperty("LifeformType").GetValue(LFBuildings);
+			return LFtype;
 		}
 	}
 

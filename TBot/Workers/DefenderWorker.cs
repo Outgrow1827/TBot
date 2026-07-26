@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -18,15 +19,12 @@ using Tbot.Common.Settings;
 
 namespace Tbot.Workers {
 	internal class DefenderWorker : WorkerBase {
+		private static readonly ConcurrentDictionary<int, DateTime> _handledAttackIds = new();
+		private static readonly TimeSpan _handledAttackTtl = TimeSpan.FromMinutes(60);
+
 		private readonly IFleetScheduler _fleetScheduler;
 		private readonly IOgameService _ogameService;
 		private readonly ITBotOgamedBridge _tbotOgameBridge;
-		// #17 (ideia vista no OgameBot): quando alguém só te espiona (IgnoreProbes=true), o bot ignora
-		// silenciosamente sem nem avisar - esse dicionário guarda, por origem, até quando não repetir o
-		// aviso de Telegram, pra não floodar quando o mesmo jogador manda várias sondas seguidas. Só
-		// precisa viver em memória (não persistido): um reinício do bot no pior caso manda um aviso a
-		// mais, não é um problema de segurança/farm como o resto do estado persistido em SQLite.
-		private readonly Dictionary<string, DateTime> _spyWatchNotifiedUntil = new();
 		public DefenderWorker(ITBotMain parentInstance,
 			IOgameService ogameService,
 			IFleetScheduler fleetScheduler,
@@ -43,17 +41,15 @@ namespace Tbot.Workers {
 
 				await FakeActivity();
 				_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
-				await _fleetScheduler.ReconcilePendingRecalls();
 				bool isUnderAttack = await _ogameService.IsUnderAttack();
 				DateTime time = await _tbotOgameBridge.GetDateTime();
 				if (isUnderAttack) {
 					if ((bool) _tbotInstance.InstanceSettings.Defender.Alarm.Active)
-						await Task.Factory.StartNew(() => ConsoleHelpers.PlayAlarm(), _ct);
-					// UpdateTitle(false, true);
+						await Task.Run(() => ConsoleHelpers.PlayAlarm(), _ct);
 					DoLog(LogLevel.Warning, "ENEMY ACTIVITY!!!");
 					_tbotInstance.UserData.attacks = await _ogameService.GetAttacks();
 					foreach (AttackerFleet attack in _tbotInstance.UserData.attacks) {
-						HandleAttack(attack);
+						await HandleAttack(attack);
 					}
 				} else {
 					DoLog(LogLevel.Information, "Your empire is safe");
@@ -62,7 +58,6 @@ namespace Tbot.Workers {
 				if (interval <= 0)
 					interval = RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
 
-				// Display dateTime for logging 
 				DateTime newTime = time.AddMilliseconds(interval);
 				ChangeWorkerPeriod(TimeSpan.FromMilliseconds(interval));
 				DoLog(LogLevel.Information, $"Next check at {newTime.ToString()}");
@@ -100,8 +95,6 @@ namespace Tbot.Workers {
 
 
 		private async Task FakeActivity() {
-			//checking if under attack by making activity on planet/moon configured in settings (otherwise make acti on latest activated planet)
-			// And make activity on one more random planet to fake real player
 
 			Celestial celestial;
 			Celestial randomCelestial;
@@ -131,123 +124,23 @@ namespace Tbot.Workers {
 			return;
 		}
 
-		/// <summary>
-		/// #17: notifies (Telegram) when someone spies us, since IgnoreProbes normally makes that case
-		/// return silently right after this call with no other trace. Cooldown is per attack origin so a
-		/// player re-probing repeatedly doesn't flood the chat.
-		/// </summary>
-		private async Task NotifySpyWatch(AttackerFleet attack) {
-			if (!SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Defender, "SpyWatch") ||
-				!SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Defender.SpyWatch, "Active") ||
-				!(bool) _tbotInstance.InstanceSettings.Defender.SpyWatch.Active)
-				return;
-
-			string originKey = attack.Origin?.ToString() ?? attack.AttackerID.ToString();
-			DateTime now = DateTime.UtcNow;
-			if (_spyWatchNotifiedUntil.TryGetValue(originKey, out DateTime notifiedUntil) && now < notifiedUntil)
-				return;
-
-			int cooldownMinutes = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Defender.SpyWatch, "CooldownMinutes")
-				? (int) _tbotInstance.InstanceSettings.Defender.SpyWatch.CooldownMinutes : 30;
-			_spyWatchNotifiedUntil[originKey] = now.AddMinutes(cooldownMinutes);
-
-			await _tbotInstance.SendTelegramMessage($"Player {attack.AttackerName} ({attack.AttackerID}) is spying your celestial {attack.Destination} from {attack.Origin}.");
-		}
-
-		// #17/#20 follow-up: cooldown per (attacker, coordinate) pair for the actual counter-spy send, not
-		// just the Telegram notification (_spyWatchNotifiedUntil above) - without this, a player probing
-		// the same coordinate 10x in a row would have us dumb-fire 10 counter-spy waves back at them.
-		private readonly Dictionary<string, DateTime> _spyBackSentUntil = new();
-
-		/// <summary>
-		/// Spies back at whoever attacked/spied us: not just the origin celestial, but every coordinate
-		/// we've ever recorded for that player (PlayersDatabase.KnownCoordinates - built up from every
-		/// attack/spy/farm sighting, see PlayersDatabase), each together with its sibling celestial at the
-		/// same galaxy:system:position (if they spied from a Moon, also spy the Planet there, and
-		/// vice-versa). Doesn't discover the attacker's planets we've never directly observed - ogamed has
-		/// no "list all of a player's planets" API today, that would need new scraping support in the Go
-		/// fork. Rate-limited per (player, coordinate) so repeated probing from the same place doesn't
-		/// trigger a fresh counter-spy wave every single time.
-		/// </summary>
-		private async Task SpyBackAtOrigin(Celestial attackedCelestial, Coordinate origin, AttackerFleet attack) {
-			_tbotInstance.UserData.slots = await _tbotOgameBridge.UpdateSlots();
-			if (attackedCelestial.Ships.EspionageProbe == 0) {
-				DoLog(LogLevel.Warning, "Could not spy attacker: no probes available.");
-				return;
-			}
-
-			int probes = (int) _tbotInstance.InstanceSettings.Defender.SpyAttacker.Probes;
-			int cooldownMinutes = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Defender.SpyAttacker, "CooldownMinutes")
-				? (int) _tbotInstance.InstanceSettings.Defender.SpyAttacker.CooldownMinutes : 60;
-			int maxKnownCoordinates = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Defender.SpyAttacker, "MaxKnownCoordinates")
-				? (int) _tbotInstance.InstanceSettings.Defender.SpyAttacker.MaxKnownCoordinates : 5;
-
-			var targets = new List<Coordinate> { origin };
+		private async Task HandleAttack(AttackerFleet attack) {
 			try {
-				var playersDb = await PlayersDatabase.Load(_tbotInstance.InstanceSettingsPath, _tbotInstance.InstanceAlias);
-				playersDb.RecordSighting(attack.AttackerID, attack.AttackerName, origin.ToString());
-				await playersDb.Save();
-
-				foreach (var known in playersDb.GetKnownCoordinates(attack.AttackerID, attack.AttackerName)) {
-					if (Coordinate.TryParse(known, out Coordinate knownCoord) && !targets.Any(t => t.IsSame(knownCoord)))
-						targets.Add(knownCoord);
+				var nowUtc = DateTime.UtcNow;
+				foreach (var kv in _handledAttackIds.ToArray()) {
+					if (nowUtc - kv.Value > _handledAttackTtl)
+						_handledAttackIds.TryRemove(kv.Key, out _);
 				}
-				if (targets.Count > maxKnownCoordinates) {
-					DoLog(LogLevel.Debug, $"Counter-spy: {attack.AttackerName} has {targets.Count} known coordinates, capping to {maxKnownCoordinates} (origin always included).");
-					targets = targets.Take(maxKnownCoordinates).ToList();
+				if (attack != null && attack.ID != 0 &&
+					_handledAttackIds.TryGetValue(attack.ID, out var seenAt) &&
+					(nowUtc - seenAt) <= _handledAttackTtl) {
+					DoLog(LogLevel.Information, $"Attack {attack.ID} already handled recently; skipping duplicate actions.");
+					return;
 				}
-			} catch (Exception e) {
-				DoLog(LogLevel.Warning, $"Could not load known coordinates for {attack.AttackerName}, spying only the origin: {e.Message}");
-			}
-
-			foreach (var target in targets) {
-				string cooldownKey = $"{attack.AttackerID}:{target}";
-				DateTime now = DateTime.UtcNow;
-				if (_spyBackSentUntil.TryGetValue(cooldownKey, out DateTime sentUntil) && now < sentUntil) {
-					DoLog(LogLevel.Debug, $"Counter-spy on {target} skipped: already spied within the last {cooldownMinutes}min.");
-					continue;
+				if (attack != null && attack.ID != 0) {
+					_handledAttackIds[attack.ID] = nowUtc;
 				}
-				_spyBackSentUntil[cooldownKey] = now.AddMinutes(cooldownMinutes);
 
-				attackedCelestial = await _tbotOgameBridge.UpdatePlanet(attackedCelestial, UpdateTypes.Ships);
-				await SendSpyProbes(attackedCelestial, target, probes);
-
-				try {
-					var galaxyInfo = await _ogameService.GetGalaxyInfo(target.Galaxy, target.System);
-					var targetPlanet = galaxyInfo?.Planets?.SingleOrDefault(p => p != null && p.Coordinate.Position == target.Position);
-					Coordinate sibling = null;
-					if (target.Type == Celestials.Planet && targetPlanet?.Moon != null) {
-						sibling = new Coordinate(target.Galaxy, target.System, target.Position, Celestials.Moon);
-					} else if (target.Type == Celestials.Moon && targetPlanet != null) {
-						sibling = new Coordinate(target.Galaxy, target.System, target.Position, Celestials.Planet);
-					}
-					if (sibling != null && !targets.Any(t => t.IsSame(sibling))) {
-						attackedCelestial = await _tbotOgameBridge.UpdatePlanet(attackedCelestial, UpdateTypes.Ships);
-						await SendSpyProbes(attackedCelestial, sibling, probes);
-					}
-				} catch (Exception e) {
-					DoLog(LogLevel.Debug, $"Could not check/spy sibling celestial of {target}: {e.Message}");
-				}
-			}
-		}
-
-		private async Task SendSpyProbes(Celestial origin, Coordinate destination, int probes) {
-			if (origin.Ships.EspionageProbe < probes) {
-				DoLog(LogLevel.Warning, $"Could not spy {destination.ToString()}: not enough probes available.");
-				return;
-			}
-			try {
-				Ships ships = new() { EspionageProbe = probes };
-				int fleetId = await _fleetScheduler.SendFleet(origin, ships, destination, Missions.Spy, Speeds.HundredPercent, new Resources(), _tbotInstance.UserData.userInfo.Class);
-				Fleet fleet = _tbotInstance.UserData.fleets.Single(fleet => fleet.ID == fleetId);
-				DoLog(LogLevel.Information, $"Spying {destination.ToString()} from {origin.ToString()} with {probes} probes. Arrival at {fleet.ArrivalTime.ToString()}");
-			} catch (Exception e) {
-				DoLog(LogLevel.Error, $"Could not spy {destination.ToString()}: an exception has occurred: {e.Message}");
-				DoLog(LogLevel.Warning, $"Stacktrace: {e.StackTrace}");
-			}
-		}
-
-		private async void HandleAttack(AttackerFleet attack) {
 			if (_tbotInstance.UserData.celestials.Count() == 0) {
 				DateTime time = await _tbotOgameBridge.GetDateTime();
 				long interval = RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
@@ -258,37 +151,42 @@ namespace Tbot.Workers {
 				return;
 			}
 
-			Celestial attackedCelestial = _tbotInstance.UserData.celestials.Unique().SingleOrDefault(planet => planet.HasCoords(attack.Destination));
-			attackedCelestial = await _tbotOgameBridge.UpdatePlanet(attackedCelestial, UpdateTypes.Ships);
-
-			// Anti-Bashing: if this attacker is someone AutoFarm has farmed before, mark them as retaliated
-			// so AutoFarm permanently avoids them from now on (see PlayersDatabase / AutoFarmWorker).
-			try {
-				var playersDb = await PlayersDatabase.Load(_tbotInstance.InstanceSettingsPath, _tbotInstance.InstanceAlias);
-				var existing = playersDb.Get(attack.AttackerID, attack.AttackerName);
-				if (existing != null && existing.TimesFarmedByUs > 0) {
-					bool isNewlyBlacklisted = playersDb.RecordRetaliation(attack.AttackerID, attack.AttackerName);
-					await playersDb.Save();
-					if (isNewlyBlacklisted) {
-						DoLog(LogLevel.Critical, $"Anti-Bashing: player {attack.AttackerName} ({attack.AttackerID}), farmed by us {existing.TimesFarmedByUs}x before, just retaliated! Blacklisting them from AutoFarm permanently.");
-						await _tbotInstance.SendTelegramMessage($"⚔️ Anti-Bashing: {attack.AttackerName} retaliou depois de sermos nós a farmar ele(a) {existing.TimesFarmedByUs}x. Bloqueado permanentemente do AutoFarm.");
-					}
-				}
-			} catch (Exception e) {
-				DoLog(LogLevel.Warning, $"Unable to check/update players database for anti-bashing: {e.Message}");
+			Celestial attackedCelestial = _tbotInstance.UserData.celestials.Unique().FirstOrDefault(planet => planet.HasCoords(attack.Destination));
+			if (attackedCelestial == null) {
+				DoLog(LogLevel.Warning, $"Unable to handle attack {attack.ID}: attacked celestial not found in account data.");
+				return;
 			}
-
+			attackedCelestial = await _tbotOgameBridge.UpdatePlanet(attackedCelestial, UpdateTypes.Ships);
 			try {
-				if ((_tbotInstance.InstanceSettings.Defender.WhiteList as long[]).Any()) {
-					foreach (int playerID in (long[]) _tbotInstance.InstanceSettings.Defender.WhiteList) {
-						if (attack.AttackerID == playerID) {
-							DoLog(LogLevel.Information, $"Attack {attack.ID.ToString()} skipped: attacker {attack.AttackerName} whitelisted.");
-							return;
-						}
-					}
+				if ((bool)_tbotInstance.InstanceSettings.Defender.IgnoreAttackIfIHave.Active) {
+					attackedCelestial = await _tbotOgameBridge.UpdatePlanet(attackedCelestial, UpdateTypes.Resources);
 				}
 			} catch {
-				DoLog(LogLevel.Warning, "An error has occurred while checking Defender WhiteList");
+			}
+
+
+			try {
+				var wlObj = _tbotInstance.InstanceSettings.Defender.WhiteList;
+				IEnumerable<long> whiteListIds = wlObj switch {
+					long[] a => a,
+					int[] a => a.Select(x => (long)x),
+					IEnumerable<long> e => e,
+					IEnumerable<int> e => e.Select(x => (long)x),
+					_ => Enumerable.Empty<long>()
+				};
+
+				if (!whiteListIds.Any() && wlObj != null) {
+					DoLog(LogLevel.Debug, $"Defender WhiteList present but unsupported type: {wlObj.GetType().FullName}");
+				}
+
+				foreach (var playerId in whiteListIds) {
+					if (attack.AttackerID == playerId) {
+						DoLog(LogLevel.Information, $"Attack {attack.ID.ToString()} skipped: attacker {attack.AttackerName} whitelisted.");
+						return;
+					}
+				}
+			} catch (Exception ex) {
+				DoLog(LogLevel.Warning, $"An error has occurred while checking Defender WhiteList: {ex.Message}");
 			}
 
 			try {
@@ -310,13 +208,17 @@ namespace Tbot.Workers {
 								 Type = Celestials.Planet
 							}));
 						}
-						defenderCelestial = await _tbotOgameBridge.UpdatePlanet(attackedCelestial, UpdateTypes.Facilities);
+						if (defenderCelestial == null) {
+							DoLog(LogLevel.Warning, $"Missile attack detected on {attack.Destination.ToString()} but planet celestial was not found in account data. Skipping missile defence.");
+							return;
+						}
+						defenderCelestial = await _tbotOgameBridge.UpdatePlanet(defenderCelestial, UpdateTypes.Facilities);
 						if (defenderCelestial.Facilities.MissileSilo >= 2) {
-							defenderCelestial = await _tbotOgameBridge.UpdatePlanet(attackedCelestial, UpdateTypes.Defences);
-							defenderCelestial = await _tbotOgameBridge.UpdatePlanet(attackedCelestial, UpdateTypes.Productions);
+							defenderCelestial = await _tbotOgameBridge.UpdatePlanet(defenderCelestial, UpdateTypes.Defences);
+							defenderCelestial = await _tbotOgameBridge.UpdatePlanet(defenderCelestial, UpdateTypes.Productions);
 							if (defenderCelestial.Productions.Count == 0) {
 								var availableSpace = defenderCelestial.Facilities.MissileSilo - defenderCelestial.Defences.AntiBallisticMissiles - (2 * defenderCelestial.Defences.InterplanetaryMissiles);
-								defenderCelestial = await _tbotOgameBridge.UpdatePlanet(attackedCelestial, UpdateTypes.Resources);
+								defenderCelestial = await _tbotOgameBridge.UpdatePlanet(defenderCelestial, UpdateTypes.Resources);
 								if (availableSpace > 0) {
 									DoLog(LogLevel.Information, $"Building {availableSpace} AntiBallisticMissiles on {defenderCelestial.ToString()}");
 									await _ogameService.BuildDefences(defenderCelestial, Buildables.AntiBallisticMissiles, availableSpace);
@@ -337,14 +239,10 @@ namespace Tbot.Workers {
 				}
 				if (attack.Ships != null && _tbotInstance.UserData.researches.EspionageTechnology >= 8) {
 					if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Defender, "IgnoreProbes") && (bool) _tbotInstance.InstanceSettings.Defender.IgnoreProbes && attack.IsOnlyProbes()) {
-						if (attack.MissionType == Missions.Spy) {
+						if (attack.MissionType == Missions.Spy)
 							DoLog(LogLevel.Information, "Attacker sent only Probes! Espionage action skipped.");
-							await NotifySpyWatch(attack);
-							if ((bool) _tbotInstance.InstanceSettings.Defender.SpyAttacker.Active)
-								await SpyBackAtOrigin(attackedCelestial, attack.Origin, attack);
-						} else {
+						else
 							DoLog(LogLevel.Information, $"Attack {attack.ID.ToString()} skipped: only Espionage Probes.");
-						}
 
 						return;
 					}
@@ -358,10 +256,14 @@ namespace Tbot.Workers {
 				} else {
 					DoLog(LogLevel.Information, "Unable to detect fleet composition.");
 				}
+				var ignoreAttackIfIHaveActive = (bool) _tbotInstance.InstanceSettings.Defender.IgnoreAttackIfIHave.Active;
+				var totalResources = attackedCelestial.Resources?.TotalResources ?? 0;
+				var fleetPoints = attackedCelestial.Ships?.GetFleetPoints() ?? 0;
+
 				if (
-					(bool) _tbotInstance.InstanceSettings.Defender.IgnoreAttackIfIHave.Active &&
-					attackedCelestial.Resources.TotalResources < (long) _tbotInstance.InstanceSettings.Defender.IgnoreAttackIfIHave.MinResourcesToSave &&
-					(attackedCelestial.Ships.GetFleetPoints() *1000) < (long) _tbotInstance.InstanceSettings.Defender.IgnoreAttackIfIHave.MinFleetToSave
+					ignoreAttackIfIHaveActive &&
+					totalResources < (long) _tbotInstance.InstanceSettings.Defender.IgnoreAttackIfIHave.MinResourcesToSave &&
+					(fleetPoints * 1000) < (long) _tbotInstance.InstanceSettings.Defender.IgnoreAttackIfIHave.MinFleetToSave
 				) {
 					DoLog(LogLevel.Information, $"Attack {attack.ID.ToString()} skipped: it's not worth it.");
 					return;
@@ -372,17 +274,37 @@ namespace Tbot.Workers {
 
 			if ((bool) _tbotInstance.InstanceSettings.Defender.TelegramMessenger.Active) {
 				await _tbotInstance.SendTelegramMessage($"Player {attack.AttackerName} ({attack.AttackerID}) is attacking your planet {attack.Destination.ToString()} arriving at {attack.ArrivalTime.ToString()}");
-				if (attack.Ships != null)
+				if (attack.Ships != null) { 
 					await Task.Delay(1000, _ct);
-				await _tbotInstance.SendTelegramMessage($"The attack is composed by: {attack.Ships.ToString()}");
+					await _tbotInstance.SendTelegramMessage($"The attack is composed by: {attack.Ships.ToString()}");
+				}
 			}
 			DoLog(LogLevel.Warning, $"Player {attack.AttackerName} ({attack.AttackerID}) is attacking your planet {attackedCelestial.ToString()} arriving at {attack.ArrivalTime.ToString()}");
-			if (attack.Ships != null)
+			if (attack.Ships != null) {
 				await Task.Delay(1000, _ct);
-			DoLog(LogLevel.Warning, $"The attack is composed by: {attack.Ships.ToString()}");
+				DoLog(LogLevel.Warning, $"The attack is composed by: {attack.Ships.ToString()}");
+			}
 
 			if ((bool) _tbotInstance.InstanceSettings.Defender.SpyAttacker.Active) {
-				await SpyBackAtOrigin(attackedCelestial, attack.Origin, attack);
+				_tbotInstance.UserData.slots = await _tbotOgameBridge.UpdateSlots();
+				if (attackedCelestial.Ships.EspionageProbe == 0) {
+					DoLog(LogLevel.Warning, "Could not spy attacker: no probes available.");
+				} else {
+					try {
+						Coordinate destination = attack.Origin;
+						Ships ships = new() { EspionageProbe = (int) _tbotInstance.InstanceSettings.Defender.SpyAttacker.Probes };
+						int fleetId = await _fleetScheduler.SendFleet(attackedCelestial, ships, destination, Missions.Spy, Speeds.HundredPercent, new Resources(), _tbotInstance.UserData.userInfo.Class);
+						var fleet = _tbotInstance.UserData.fleets.SingleOrDefault(f => f.ID == fleetId);
+						if (fleet == null) {
+							DoLog(LogLevel.Warning, $"SpyAttacker: SendFleet returned id={fleetId}, but fleet was not found in current fleet list (send may have failed or list not updated yet).");
+						} else {
+							DoLog(LogLevel.Information, $"Spying attacker from {attackedCelestial.ToString()} to {destination.ToString()} with {_tbotInstance.InstanceSettings.Defender.SpyAttacker.Probes} probes. Arrival at {fleet.ArrivalTime.ToString()}");
+						}
+					} catch (Exception e) {
+						DoLog(LogLevel.Error, $"Could not spy attacker: an exception has occurred: {e.Message}");
+						DoLog(LogLevel.Warning, $"Stacktrace: {e.StackTrace}");
+					}
+				}
 			}
 
 			if ((bool) _tbotInstance.InstanceSettings.Defender.MessageAttacker.Active) {
@@ -409,27 +331,45 @@ namespace Tbot.Workers {
 			}
 
 			if ((bool) _tbotInstance.InstanceSettings.Defender.Autofleet.Active) {
-				try {
-					// If the impact is far enough away that Defender's own next scheduled check will
-					// happen before it (worst case: CheckIntervalMax from now), there's no rush - skip the
-					// fleet save this pass and let a later, closer-to-impact check re-evaluate instead of
-					// moving the fleet prematurely (e.g. in case the attack gets recalled/cancelled).
-					bool delayIfLater = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Defender.Autofleet, "DelayFleetSaveIfImpactOccurLaterThanNextCheck")
-						&& (bool) _tbotInstance.InstanceSettings.Defender.Autofleet.DelayFleetSaveIfImpactOccurLaterThanNextCheck;
-					if (delayIfLater) {
-						long nextCheckWorstCaseSeconds = (long) _tbotInstance.InstanceSettings.Defender.CheckIntervalMax * 60;
-						if (attack.ArriveIn > nextCheckWorstCaseSeconds) {
-							DoLog(LogLevel.Information, $"Impact in {attack.ArriveIn}s is later than Defender's next check (up to {nextCheckWorstCaseSeconds}s) - delaying fleet save, will re-evaluate next check.");
-							return;
+				if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Defender.Autofleet, "DelayFleetSaveIfImpactOccurLaterThanNextCheck") && (bool) _tbotInstance.InstanceSettings.Defender.Autofleet.DelayFleetSaveIfImpactOccurLaterThanNextCheck) {
+					try {
+					int intervalMin = (int) _tbotInstance.InstanceSettings.Defender.CheckIntervalMin;
+					int intervalMax = (int) _tbotInstance.InstanceSettings.Defender.CheckIntervalMax;
+					int delayThreshold = (intervalMax *60) +(intervalMin *60 > 120 ? 120 : intervalMin *60);
+					if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Defender.Autofleet, "MaxDelayMinutes")) {
+						int maxDelaySeconds = (int) _tbotInstance.InstanceSettings.Defender.Autofleet.MaxDelayMinutes * 60;
+						if (maxDelaySeconds > 0 && delayThreshold > maxDelaySeconds) {
+							DoLog(LogLevel.Information, $"Delay threshold ({delayThreshold}s) capped to MaxDelayMinutes ({maxDelaySeconds}s).");
+							delayThreshold = maxDelaySeconds;
 						}
 					}
-
+					DoLog(LogLevel.Warning, $"Attack arrives in {attack.ArriveIn} seconds, next check will be in {delayThreshold} seconds MAX");
+					if (attack.ArriveIn > delayThreshold) {
+							if ((bool) _tbotInstance.InstanceSettings.Defender.TelegramMessenger.Active)
+								await _tbotInstance.SendTelegramMessage($"Delaying FleetSave on {attack.Destination.ToString()} arriving at {attack.ArrivalTime.ToString()}");
+							DoLog(LogLevel.Warning, $"Delaying FleetSave on {attack.Destination.ToString()} arriving at {attack.ArrivalTime.ToString()}");
+							return;
+						} else {
+							if ((bool) _tbotInstance.InstanceSettings.Defender.TelegramMessenger.Active)
+								await _tbotInstance.SendTelegramMessage($"To late to delay fleetsave: impact in {attack.ArriveIn} seconds, under the limite: {delayThreshold} seconds MAX");
+							DoLog(LogLevel.Warning, $"To late to delay fleetsave: impact in {attack.ArriveIn} seconds, under the limite: {delayThreshold} seconds MAX");
+						}
+					} catch (Exception e) {
+						DoLog(LogLevel.Error, $"Could not DELAY fleetsave: an exception has occurred: {e.Message}");
+						DoLog(LogLevel.Warning, $"Stacktrace: {e.StackTrace}");
+					}
+				}
+				try {
 					var minFlightTime = attack.ArriveIn + (attack.ArriveIn / 100 * 30) + (RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds) / 1000);
 					await _fleetScheduler.AutoFleetSave(attackedCelestial, false, minFlightTime);
 				} catch (Exception e) {
 					DoLog(LogLevel.Error, $"Could not fleetsave: an exception has occurred: {e.Message}");
 					DoLog(LogLevel.Warning, $"Stacktrace: {e.StackTrace}");
 				}
+			}
+			} catch (Exception e) {
+				DoLog(LogLevel.Error, $"HandleAttack error for attack {attack?.ID}: {e.Message}");
+				DoLog(LogLevel.Warning, $"Stacktrace: {e.StackTrace}");
 			}
 		}
 	}

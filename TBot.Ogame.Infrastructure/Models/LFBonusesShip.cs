@@ -6,22 +6,22 @@ using System.Threading.Tasks;
 
 namespace TBot.Ogame.Infrastructure.Models {
 	public class LFBonusesShip {
-		public float Armour { get; set; }
-		public float Shield { get; set; }
-        public float Weapon { get; set; }
-        public float Cargo { get; set; }
-        public float Speed { get; set; }
-        public float Consumption { get; set; }
-        public float Duration { get; set; }
+		public int ID { get; set; }
+		public float StructuralIntegrity { get; set; }
+		public float ShieldPower { get; set; }
+		public float WeaponPower { get; set; }
+		public float Speed { get; set; }
+		public float CargoCapacity { get; set; }
+		public float FuelConsumption { get; set; }
 
-		public LFBonusesShip() {
-			Armour = 0;
-			Shield = 0;
-			Weapon = 0;
-			Cargo = 0;
-			Speed = 0;
-			Consumption = 0;
-			Duration = 0;
+		public LFBonusesShip(int id = -1, float armour = 0, float shield = 0, float weapon = 0, float speed = 0, float cargo = 0, float consumption = 0) {
+			ID = id;
+			StructuralIntegrity = armour;
+			ShieldPower = shield;
+			WeaponPower = weapon;
+			Speed = speed;
+			CargoCapacity = cargo;
+			FuelConsumption = consumption;
 		}
     }
 }

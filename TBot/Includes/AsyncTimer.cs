@@ -127,10 +127,7 @@ namespace Tbot.Includes {
 					if (_cts != null) {
 						_cts.Cancel();
 					}
-					try {
-						await _scheduledAction;
-					} catch (OperationCanceledException) {
-					}
+					await _scheduledAction;
 					_cts = null;
 					_scheduledAction = null;
 				}
