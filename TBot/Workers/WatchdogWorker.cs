@@ -23,6 +23,9 @@ namespace Tbot.Workers {
 
 		protected override bool RunsDuringSleep => true;
 
+		// Checks every few minutes by design - logging every tick would flood the log.
+		protected override bool LogNextExecution => false;
+
 		public override bool IsWorkerEnabledBySettings() {
 			try {
 				return (bool) _tbotInstance.InstanceSettings.Watchdog.Active;

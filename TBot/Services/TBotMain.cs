@@ -206,7 +206,15 @@ namespace Tbot.Services {
 				hideAccountNameInLogs = SettingsService.IsSettingSet(InstanceSettings.General, "HideSensitiveDataInLogs") && (bool) InstanceSettings.General.HideSensitiveDataInLogs;
 			} catch { }
 			TBot.Ogame.Infrastructure.Models.LogPrivacy.HideCoordinates = hideAccountNameInLogs;
-			_ogameService.Initialize(GetCredentialsFromSettings(), GetDeviceFromSettings(), proxy, (string) host, int.Parse(port), (string) captchaKey, hideAccountNameInLogs, _telegramSolverBotToken, _telegramSolverChatId);
+			TBot.Ogame.Infrastructure.Models.LogPrivacy.HideAccountInfo = hideAccountNameInLogs;
+
+			int manualModeTimeout = 30;
+			try {
+				if (SettingsService.IsSettingSet(InstanceSettings.General, "ManualModeTimeout"))
+					manualModeTimeout = (int) InstanceSettings.General.ManualModeTimeout;
+			} catch { }
+
+			_ogameService.Initialize(GetCredentialsFromSettings(), GetDeviceFromSettings(), proxy, (string) host, int.Parse(port), (string) captchaKey, hideAccountNameInLogs, _telegramSolverBotToken, _telegramSolverChatId, manualModeTimeout);
 			await Task.Delay(RandomizeHelper.CalcRandomInterval(IntervalType.AFewSeconds));
 		}
 
@@ -239,8 +247,12 @@ namespace Tbot.Services {
 
 			var serverTime = await _tbotOgameBridge.GetDateTime();
 
+			if (LogPrivacy.HideAccountInfo) {
+				_ogameService.PlayerNameForLogs = userData.userInfo.PlayerName;
+			}
+
 			log(LogLevel.Information, LogSender.Tbot, $"Server time: {serverTime.ToString()}");
-			log(LogLevel.Information, LogSender.Tbot, $"Player name: {userData.userInfo.PlayerName}");
+			log(LogLevel.Information, LogSender.Tbot, $"Player name: {(LogPrivacy.HideAccountInfo ? "Player Name" : userData.userInfo.PlayerName)}");
 			log(LogLevel.Information, LogSender.Tbot, $"Player class: {userData.userInfo.Class.ToString()}");
 			log(LogLevel.Information, LogSender.Tbot, $"Alliance class: {userData.allianceClass.ToString()}");
 			log(LogLevel.Information, LogSender.Tbot, $"Player rank: {userData.userInfo.Rank}");
@@ -380,6 +392,8 @@ namespace Tbot.Services {
 		}
 
 		public override string ToString() {
+			if (LogPrivacy.HideAccountInfo)
+				return "Player Name@Server Name";
 			if (loggedIn && (userData.userInfo != null) && (userData.serverData != null))
 				return $"{userData.userInfo.PlayerName}@{userData.serverData.Name}";
 			else
@@ -489,10 +503,10 @@ namespace Tbot.Services {
 				}
 
 				if (feature == Feature.BrainAutoRepatriate || feature == Feature.Null) {
-					jsonObj["Brain"]["AutoRepatriate"]["Target"]["Galaxy"] = (int) celestial.Coordinate.Galaxy;
-					jsonObj["Brain"]["AutoRepatriate"]["Target"]["System"] = (int) celestial.Coordinate.System;
-					jsonObj["Brain"]["AutoRepatriate"]["Target"]["Position"] = (int) celestial.Coordinate.Position;
-					jsonObj["Brain"]["AutoRepatriate"]["Target"]["Type"] = type;
+					jsonObj["Brain"]["AutoRepatriate"]["Target"][0]["Galaxy"] = (int) celestial.Coordinate.Galaxy;
+					jsonObj["Brain"]["AutoRepatriate"]["Target"][0]["System"] = (int) celestial.Coordinate.System;
+					jsonObj["Brain"]["AutoRepatriate"]["Target"][0]["Position"] = (int) celestial.Coordinate.Position;
+					jsonObj["Brain"]["AutoRepatriate"]["Target"][0]["Type"] = type;
 				}
 
 				if (feature == Feature.Expeditions || feature == Feature.Null) {

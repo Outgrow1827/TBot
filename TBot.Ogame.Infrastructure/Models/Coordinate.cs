@@ -9,6 +9,7 @@ using TBot.Ogame.Infrastructure.Enums;
 namespace TBot.Ogame.Infrastructure.Models {
 	public static class LogPrivacy {
 		public static bool HideCoordinates = false;
+		public static bool HideAccountInfo = false;
 	}
 
 	public class Coordinate {

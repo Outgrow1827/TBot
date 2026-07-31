@@ -26,6 +26,8 @@
 	"General": {
 		"Host": "localhost",
 		"Port": "8080",
+		"ManualModeTimeout": 30,
+		"HideSensitiveDataInLogs": false,
 		"Proxy": {
 			"Enabled": false,
 			"Address": "",
@@ -41,7 +43,7 @@
 			"Brain": 2,
 			"Expeditions": 1,
 			"AutoFarm": 3,
-			"AutoColonize": 4,
+			"Colonize": 4,
 			"AutoDiscovery": 10,
 			"AutoHarvest": 99
 		}
@@ -51,6 +53,7 @@
 		"GoToSleep": "23:15",
 		"WakeUp": "07:05",
 		"PreventIfThereAreFleets": true,
+		"LogoutOnSleep": false,
 		"TelegramMessenger": {
 			"Active": false
 		},
@@ -315,9 +318,13 @@
 				"RocketLauncher": 100000,
 				"HeavyLaser": 10000,
 				"GaussCannon": 1000,
+				"IonCannon": 1000,
 				"PlasmaTurret": 1000,
 				"SmallShieldDome": true,
-				"LargeShieldDome": true
+				"LargeShieldDome": true,
+				"LightLaser": 0,
+				"AntiBallisticMissiles": 0,
+				"InterplanetaryMissiles": 0
 			},
 			"Exclude": [
 				{
@@ -557,7 +564,14 @@
 		"MaxSlots": 5,
 		"MaxFailures": 5,
 		"RandomizeDestination": false,
+		"PauseWhenArtifactsAbove": false,
 		"CheckIntervalMin": 30,
 		"CheckIntervalMax": 60
+	},
+	"Watchdog": {
+		"Active": false,
+		"MaxStuckMinutes": 30,
+		"CheckIntervalMin": 5,
+		"CheckIntervalMax": 10
 	}
 }

@@ -4,6 +4,7 @@ using TBot.Ogame.Infrastructure.Models;
 namespace TBot.Ogame.Infrastructure {
 	public interface IOgameService {
 		event EventHandler OnError;
+		string PlayerNameForLogs { get; set; }
 		void Initialize(Credentials credentials,
 				Device device,
 				ProxySettings proxySettings,
@@ -12,7 +13,8 @@ namespace TBot.Ogame.Infrastructure {
 				string captchaKey = "",
 				bool hideAccountNameInLogs = false,
 				string telegramSolverBotToken = "",
-				long telegramSolverChatId = 0);
+				long telegramSolverChatId = 0,
+				int manualModeTimeout = 30);
 		string GetExecutableName();
 		bool ValidatePrerequisites();
 		Task BuildCancelable(Celestial celestial, Buildables buildable);

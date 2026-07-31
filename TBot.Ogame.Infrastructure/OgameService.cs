@@ -57,7 +57,8 @@ namespace TBot.Ogame.Infrastructure {
 				string captchaKey = "",
 				bool hideAccountNameInLogs = false,
 				string telegramSolverBotToken = "",
-				long telegramSolverChatId = 0) {
+				long telegramSolverChatId = 0,
+				int manualModeTimeout = 30) {
 			_credentials = credentials;
 			_device = device;
 			_host = host;
@@ -70,7 +71,7 @@ namespace TBot.Ogame.Infrastructure {
 
 			_username = credentials.Username;
 
-			_ogamedProcess = ExecuteOgamedExecutable(credentials, device, host, port, captchaKey, proxySettings, telegramSolverBotToken, telegramSolverChatId);
+			_ogamedProcess = ExecuteOgamedExecutable(credentials, device, host, port, captchaKey, proxySettings, telegramSolverBotToken, telegramSolverChatId, manualModeTimeout);
 
 			_client = new HttpClient() {
 				BaseAddress = new Uri($"http://{host}:{port}/"),
@@ -112,7 +113,7 @@ namespace TBot.Ogame.Infrastructure {
 			return (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) ? "ogamed.exe" : "ogamed";
 		}
 
-		internal Process ExecuteOgamedExecutable(Credentials credentials, Device device, string host = "localhost", int port = 8080, string captchaKey = "", ProxySettings proxySettings = null, string telegramSolverBotToken = "", long telegramSolverChatId = 0) {
+		internal Process ExecuteOgamedExecutable(Credentials credentials, Device device, string host = "localhost", int port = 8080, string captchaKey = "", ProxySettings proxySettings = null, string telegramSolverBotToken = "", long telegramSolverChatId = 0, int manualModeTimeout = 30) {
 			Process? ogameProc = null;
 			try {
 				// Pass credentials via environment variables, not CLI args, since process arguments
@@ -122,7 +123,9 @@ namespace TBot.Ogame.Infrastructure {
 					["OGAMED_PASSWORD"] = credentials.Password,
 				};
 
-				string args = $"--universe=\"{credentials.Universe}\" --device-name={device.Name} --language={credentials.Language} --auto-login=false --port={port} --host=0.0.0.0";
+				string args = $"--universe=\"{credentials.Universe}\" --device-name={device.Name} --language={credentials.Language} --auto-login=false --port={port} --host=0.0.0.0 --manual-mode-timeout={manualModeTimeout}";
+				if (_hideAccountNameInLogs)
+					args += " --hide-account-info-in-logs=true";
 				if (captchaKey != "")
 					args += $" --nja-api-key={captchaKey}";
 				if (telegramSolverBotToken != "" && telegramSolverChatId != 0) {
@@ -216,8 +219,20 @@ namespace TBot.Ogame.Infrastructure {
 				dump_ogamedProcess_Log(false, e.Data);
 		}
 
+		// Set by TBotMain once the player name is known (after login), so ogamed's own debug
+		// output can be scrubbed too - OgameService itself never learns the player's display name.
+		public string PlayerNameForLogs { get; set; } = "";
+
 		private void dump_ogamedProcess_Log(bool isErr, string? payload) {
-			string label = _hideAccountNameInLogs ? "hidden" : _username;
+			string label = _hideAccountNameInLogs ? "user_mail@player.com" : _username;
+			if (_hideAccountNameInLogs && payload != null) {
+				if (!string.IsNullOrEmpty(_credentials?.Universe)) {
+					payload = System.Text.RegularExpressions.Regex.Replace(payload, System.Text.RegularExpressions.Regex.Escape(_credentials.Universe), "Server Name", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+				}
+				if (!string.IsNullOrEmpty(PlayerNameForLogs)) {
+					payload = System.Text.RegularExpressions.Regex.Replace(payload, System.Text.RegularExpressions.Regex.Escape(PlayerNameForLogs), "Player Name", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+				}
+			}
 			_logger.WriteLog(isErr ? LogLevel.Error : LogLevel.Information, LogSender.OGameD, $"[{label}] \"{payload}\"");
 		}
 
