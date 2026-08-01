@@ -368,7 +368,12 @@ namespace Tbot.Workers {
 			while (freeSlots <= slotsToLeaveFree) {
 				_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
 				if (_tbotInstance.UserData.fleets.Any()) {
-					int interval = (int) ((1000 * _tbotInstance.UserData.fleets.OrderBy(fleet => fleet.BackIn).First().BackIn) + RandomizeHelper.CalcRandomInterval(IntervalType.LessThanASecond));
+					// Floor of MinPollIntervalMs: short farm flights mean the "next fleet back" is
+					// often already due any moment, which without a floor produced a sub-second
+					// retry loop (dozens of log lines and ogamed API calls per minute) instead of
+					// actually waiting for a slot to free up.
+					const int MinPollIntervalMs = 5000;
+					int interval = Math.Max(MinPollIntervalMs, (int) ((1000 * _tbotInstance.UserData.fleets.OrderBy(fleet => fleet.BackIn).First().BackIn) + RandomizeHelper.CalcRandomInterval(IntervalType.LessThanASecond)));
 					_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"Out of fleet slots. Waiting {TimeSpan.FromMilliseconds(interval)} for fleet to return...");
 					await Task.Delay(interval, _ct);
 					_tbotInstance.UserData.slots = await _tbotOgameBridge.UpdateSlots();
@@ -780,7 +785,7 @@ namespace Tbot.Workers {
 							(int) _tbotInstance.InstanceSettings.AutoFarm.MaxSlots,
 							(int) _tbotInstance.UserData.fleets.Count(f => f.Mission == Missions.Attack)),
 						new RankSlotsPriority(Feature.Colonize,
-							(int) _tbotInstance.InstanceSettings.General.SlotPriorityLevel.Colonize,
+							(int) _tbotInstance.InstanceSettings.General.SlotPriorityLevel.AutoColonize,
 							(bool) _tbotInstance.InstanceSettings.AutoColonize.Active,
 							(bool) _tbotInstance.InstanceSettings.AutoColonize.IntensiveResearch.Active ?
 								(int) _tbotInstance.InstanceSettings.AutoColonize.IntensiveResearch.MaxSlots :
@@ -998,7 +1003,8 @@ namespace Tbot.Workers {
 						while (freeSlots <= slotsToLeaveFree) {
 							_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
 							if (_tbotInstance.UserData.fleets.Any()) {
-								int interval = (int) ((1000 * _tbotInstance.UserData.fleets.OrderBy(fleet => fleet.BackIn).First().BackIn) + RandomizeHelper.CalcRandomInterval(IntervalType.AFewSeconds));
+								const int MinPollIntervalMs = 5000;
+								int interval = Math.Max(MinPollIntervalMs, (int) ((1000 * _tbotInstance.UserData.fleets.OrderBy(fleet => fleet.BackIn).First().BackIn) + RandomizeHelper.CalcRandomInterval(IntervalType.AFewSeconds)));
 								if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "MaxWaitTime") && (int) _tbotInstance.InstanceSettings.AutoFarm.MaxWaitTime != 0 && interval > (int) _tbotInstance.InstanceSettings.AutoFarm.MaxWaitTime * 1000) {
 									_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"Out of fleet slots. Time to wait greater than set {(int) _tbotInstance.InstanceSettings.AutoFarm.MaxWaitTime} seconds. Stopping autofarm.");
 									return;

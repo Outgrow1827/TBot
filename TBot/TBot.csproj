@@ -1,8 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <OutputPath>$(LOCALAPPDATA)\TBot-cache\out\</OutputPath>
+    <PublishDir>$(MSBuildProjectDirectory)\bin\</PublishDir>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    <SatelliteResourceLanguages></SatelliteResourceLanguages>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
     <Nullable>disable</Nullable>
     <Authors>TBot</Authors>
     <Version>3.4.6</Version>
@@ -39,6 +45,16 @@
 
   <ItemGroup>
     <Content Include="tbot.ico" />
+    <Content Include="ogamed.exe">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="profiles\**">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\README.md">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <TargetPath>README.md</TargetPath>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>
@@ -77,14 +93,46 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="profiles\**\*.*">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\TBot.Ogame.Infrastructure\TBot.Ogame.Infrastructure.csproj" />
     <ProjectReference Include="..\TBot.WebUI\TBot.WebUI.csproj" />
   </ItemGroup>
+
+  <PropertyGroup>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>portable</DebugType>
+    <StaticWebAssetBasePath>wwwroot\</StaticWebAssetBasePath>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PublishDir>$(MSBuildProjectDirectory)\bin\</PublishDir>
+  </PropertyGroup>
+
+  <Target Name="RemoveRefsFolder" AfterTargets="Build;Publish">
+    <RemoveDir Directories="$(OutputPath)refs" Condition="Exists('$(OutputPath)refs')" />
+    <RemoveDir Directories="$(PublishDir)refs" Condition="Exists('$(PublishDir)refs')" />
+  </Target>
+
+  <!-- Pulled in automatically as Content by the TBot.WebUI project reference; TBot never runs
+       with ASPNETCORE_ENVIRONMENT=Development, so it's dead weight in the deployed folder. -->
+  <Target Name="RemoveDevAppsettings" AfterTargets="Build;Publish">
+    <Delete Files="$(OutputPath)appsettings.Development.json" Condition="Exists('$(OutputPath)appsettings.Development.json')" />
+    <Delete Files="$(PublishDir)appsettings.Development.json" Condition="Exists('$(PublishDir)appsettings.Development.json')" />
+  </Target>
+
+  <!-- IIS in-process hosting module, pulled in by the ASP.NET Core SDK; TBot.WebUI only ever
+       runs via Kestrel, never behind IIS, so this is dead weight. -->
+  <Target Name="RemoveIISModule" AfterTargets="Build;Publish">
+    <Delete Files="$(OutputPath)aspnetcorev2_inprocess.dll" Condition="Exists('$(OutputPath)aspnetcorev2_inprocess.dll')" />
+    <Delete Files="$(PublishDir)aspnetcorev2_inprocess.dll" Condition="Exists('$(PublishDir)aspnetcorev2_inprocess.dll')" />
+  </Target>
+
+  <Target Name="RemoveStaticWebAssets" AfterTargets="Build;Publish">
+    <ItemGroup>
+      <_StaticWebAssets Remove="$(OutputPath)TBot.WebUI.staticwebassets.*" />
+    </ItemGroup>
+    <Delete Files="$(OutputPath)TBot.WebUI.staticwebassets.endpoints.json" Condition="Exists('$(OutputPath)TBot.WebUI.staticwebassets.endpoints.json')" />
+    <Delete Files="$(OutputPath)TBot.WebUI.staticwebassets.runtime.json" Condition="Exists('$(OutputPath)TBot.WebUI.staticwebassets.runtime.json')" />
+  </Target>
 
 </Project>

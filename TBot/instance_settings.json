@@ -43,7 +43,7 @@
 			"Brain": 2,
 			"Expeditions": 1,
 			"AutoFarm": 3,
-			"Colonize": 4,
+			"AutoColonize": 4,
 			"AutoDiscovery": 10,
 			"AutoHarvest": 99
 		}
