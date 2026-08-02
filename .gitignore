@@ -33,12 +33,9 @@ bld/
 # Visual Studio Code
 .vscode/
 
-# Local-only notes, never to be pushed
-_private/
-
-# Browser captures / console exports used for debugging - contain real session
-# tokens, player names/IDs and universe data, never to be pushed
-_processados/
+# Local-only notes, processing/debug captures, and Claude memory now live entirely
+# outside this repo (Z:\github\_claude\{private,local,memory}\), never inside it.
+# Kept as a safety net in case a stray file ever lands here by mistake:
 *.har
 console-export-*.log
 erros.txt
