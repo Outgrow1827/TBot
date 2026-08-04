@@ -295,13 +295,37 @@ We write and build TBot with Visual Studio 2022 Community Edition. The project t
 
 Releases are automated by GitHub Actions, take a look at the [workflows](https://github.com/ogame-tbot/TBot/tree/master/.github/workflows) if you are interested in the build process.
 
+TBot needs its companion daemon, `ogamed`, built and placed as `TBot\ogamed.exe`
+(that exact filename, even on Linux — see below) **before** building TBot itself;
+the `.csproj` packages whatever file is already sitting there. This fork's `ogamed`
+must be built from its own repo's source, not downloaded from upstream's releases
+— see the [`ogame` repo's README](https://github.com/Outgrow1827/ogame#ogamed-service)
+for full instructions. Quick version, from the `ogame` repo root:
+```
+go build -ldflags "-s -w -X main.version=3.4.6" -o ogamed.exe ./cmd/ogamed
+```
+then copy that `ogamed.exe` into `TBot\ogamed.exe` in this repo.
+
 ### Building locally (Windows x64)
 
+**Step 1 — install the .NET 10 SDK** (skip if `dotnet --version` already prints
+`10.x`). Either [download it manually](https://dotnet.microsoft.com/download/dotnet/10.0)
+or, on Windows, install via [winget](https://learn.microsoft.com/windows/package-manager/winget/)
+from a terminal:
+```
+winget install Microsoft.DotNet.SDK.10
+```
+
+**Step 2 — build.** Open a terminal in the solution root (the folder containing
+this `README.md` and `TBot.sln`) and run:
 ```
 dotnet publish TBot\TBot.csproj -c Release
 ```
 
-Run from the solution root (`C:\github\TBot\`). Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) to build. The published `TBot.exe` is self-contained (bundles its own .NET 10 runtime), but the target machine still needs the ASP.NET Core 10 runtime installed for the WebUI (Kestrel) to start:
+**Step 3 — install the runtime on the machine that will *run* TBot** (this can be
+a different machine than the one that built it). `TBot.exe` itself is
+self-contained — it doesn't need .NET installed to run — but the WebUI (built on
+ASP.NET Core/Kestrel) needs the ASP.NET Core 10 runtime present separately:
 ```
 winget install Microsoft.DotNet.AspNetCore.10
 ```
@@ -310,13 +334,48 @@ The output lands in `TBot\bin\` and contains only:
 - `TBot.exe` — single-file, self-contained, compressed bundle (~65MB)
 - `TBot.Common.pdb`, `TBot.Ogame.Infrastructure.pdb`, `TBot.pdb`, `TBot.WebUI.pdb`
 - `appsettings.json`, `appsettings.Development.json`, `instance_settings.json`, `settings.json`
-- `ogamed.exe` — native Go binary (not produced by the .NET build; copy from the official release)
+- `ogamed.exe` — copied in from wherever you placed it before Step 2 (see above)
 - `profiles\` — example configuration profiles
 - `README.md`
 
 No loose DLLs. Intermediate build files go to `%LOCALAPPDATA%\TBot-cache\` and no `obj\` folder is created inside the project directory. `refs\`, unused static web asset manifests, and the IIS in-process hosting module (`aspnetcorev2_inprocess.dll` - dead weight, TBot only ever runs via Kestrel) are removed automatically after both `build` and `publish`.
 
 **Why compressed self-contained, not the simpler single-file option**: a single-file bundle without compression gets memory-mapped directly from wherever `TBot.exe` lives as soon as the native host starts, before any of TBot's own code runs. That doesn't play well with non-local filesystems (e.g. a VMware shared folder) - the process can be killed by the OS with zero output before it even prints its first line. `EnableCompressionInSingleFile` forces the bundle to be extracted to a local disk cache (`%TEMP%`) on startup instead, which avoids that failure mode - but compression only works for self-contained publishes, hence the larger output than a plain framework-dependent single-file would be.
+
+### Building locally (Linux x64)
+
+**Step 1 — install the .NET 10 SDK.** On Ubuntu/Debian:
+```
+sudo apt-get update && sudo apt-get install -y dotnet-sdk-10.0
+```
+(If that package isn't available yet for your distro version, follow Microsoft's
+[official Linux install instructions](https://learn.microsoft.com/dotnet/core/install/linux)
+instead — the exact steps vary by distro.) Confirm with `dotnet --version` — it
+should print `10.x`.
+
+**Step 2 — build `ogamed` for Linux and place it as `TBot/ogamed.exe`** (same
+required filename as on Windows — the `.csproj` doesn't rename it per-OS, so yes,
+the file is named `.exe` even though it's really a Linux binary; that's expected,
+not a mistake). From the `ogame` repo root:
+```
+GOOS=linux GOARCH=amd64 go build -ldflags "-s -w -X main.version=3.4.6" -o TBot/ogamed.exe ./cmd/ogamed
+```
+(adjust the relative path if your `TBot` and `ogame` clones aren't siblings).
+
+**Step 3 — build TBot**, overriding the runtime identifier (the `.csproj` defaults
+to `win-x64`):
+```
+dotnet publish TBot/TBot.csproj -c Release -p:RuntimeIdentifier=linux-x64
+```
+
+The output lands in `TBot/bin/` with the same file list as the Windows build above,
+except the main binary is named `TBot` (no extension) and the native SQLite library
+is `libe_sqlite3.so` instead of `e_sqlite3.dll`. **The build doesn't always mark
+`TBot` as executable** — if you get "Permission denied" trying to run it, fix that
+with:
+```
+chmod +x TBot/bin/TBot
+```
 
 ## Portability
 TBot is currently developed and mantained for Windows 64bit, Windows 32bit, Linux x86_64, MacOS 64bit, MacOS ARM, Linux ARMv7 and Linux ARM64.
