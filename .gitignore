@@ -33,17 +33,10 @@ bld/
 # Visual Studio Code
 .vscode/
 
-# Local-only notes, processing/debug captures, and Claude memory now live entirely
-# outside this repo (Z:\github\_claude\{private,local,memory}\), never inside it.
-# Kept as a safety net in case a stray file ever lands here by mistake:
+# Safety net in case a stray debug capture ever lands here by mistake:
 *.har
 console-export-*.log
 erros.txt
-
-# Local IDE/MCP config - contains machine-specific absolute paths (username, install dirs)
-.cursor/
-.mcp.json
-.claude/
 
 # External Go daemon binary, not built by this solution
 TBot/ogamed.exe

@@ -136,6 +136,7 @@
 			"MaxSlots": 10,
 			"CheckMoonOrPlanetFirst": false,
 			"DoMultipleTransportIsNotEnoughShipButSamePosition": false,
+			"StockpileForRoundTrip": false,
 			"MultipleOrigins": {
 				"Active": false,
 				"OnlyFromMoons": true,

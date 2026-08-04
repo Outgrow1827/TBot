@@ -54,6 +54,11 @@ namespace Tbot.Workers.Brain {
 		}
 
 		protected override async Task Execute() {
+			// Serializes this worker's whole run against the other 3 Brain item types (AutoMine,
+			// AutoResearch, LifeformAutoMine) - see BrainTransportCoordinator and project memory
+			// 2026-08-03.
+			await BrainTransportCoordinator.ResourceDecisionLock.WaitAsync();
+			try {
 			try {
 				DoLog(LogLevel.Information, "Running Lifeform autoresearch...");
 
@@ -126,6 +131,9 @@ namespace Tbot.Workers.Brain {
 				if (!_tbotInstance.UserData.isSleeping) {
 					await _tbotOgameBridge.CheckCelestials();
 				}
+			}
+			} finally {
+				BrainTransportCoordinator.ResourceDecisionLock.Release();
 			}
 		}
 	}

@@ -94,7 +94,7 @@ namespace Tbot {
 			if (!ogameService.ValidatePrerequisites()) {
 				Environment.Exit(-1);
 			} else if (File.Exists(_instanceManager.SettingsAbsoluteFilepath) == false) {
-				_logger.WriteLog(LogLevel.Error, LogSender.Main, $"\"{_instanceManager.SettingsAbsoluteFilepath}\" not found. Cannot proceed...");
+				_logger.WriteLog(LogLevel.Error, LogSender.Main, $"\"{Path.GetFileName(_instanceManager.SettingsAbsoluteFilepath)}\" not found. Cannot proceed...");
 				Environment.Exit(-1);
 			}
 

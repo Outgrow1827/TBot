@@ -207,6 +207,7 @@ namespace Tbot.Services {
 			} catch { }
 			TBot.Ogame.Infrastructure.Models.LogPrivacy.HideCoordinates = hideAccountNameInLogs;
 			TBot.Ogame.Infrastructure.Models.LogPrivacy.HideAccountInfo = hideAccountNameInLogs;
+			LoggerServiceSharedState.HideTimestampPrecision = hideAccountNameInLogs;
 
 			int manualModeTimeout = 30;
 			try {
@@ -253,11 +254,11 @@ namespace Tbot.Services {
 
 			log(LogLevel.Information, LogSender.Tbot, $"Server time: {serverTime.ToString()}");
 			log(LogLevel.Information, LogSender.Tbot, $"Player name: {(LogPrivacy.HideAccountInfo ? "Player Name" : userData.userInfo.PlayerName)}");
-			log(LogLevel.Information, LogSender.Tbot, $"Player class: {userData.userInfo.Class.ToString()}");
-			log(LogLevel.Information, LogSender.Tbot, $"Alliance class: {userData.allianceClass.ToString()}");
-			log(LogLevel.Information, LogSender.Tbot, $"Player rank: {userData.userInfo.Rank}");
-			log(LogLevel.Information, LogSender.Tbot, $"Player points: {userData.userInfo.Points}");
-			log(LogLevel.Information, LogSender.Tbot, $"Player honour points: {userData.userInfo.HonourPoints}");
+			log(LogLevel.Information, LogSender.Tbot, $"Player class: {(LogPrivacy.HideAccountInfo ? "***" : userData.userInfo.Class.ToString())}");
+			log(LogLevel.Information, LogSender.Tbot, $"Alliance class: {(LogPrivacy.HideAccountInfo ? "***" : userData.allianceClass.ToString())}");
+			log(LogLevel.Information, LogSender.Tbot, $"Player rank: {(LogPrivacy.HideAccountInfo ? "***" : userData.userInfo.Rank.ToString())}");
+			log(LogLevel.Information, LogSender.Tbot, $"Player points: {(LogPrivacy.HideAccountInfo ? "***" : userData.userInfo.Points.ToString())}");
+			log(LogLevel.Information, LogSender.Tbot, $"Player honour points: {(LogPrivacy.HideAccountInfo ? "***" : userData.userInfo.HonourPoints.ToString())}");
 		}
 
 		public async Task Init(string settingPath,

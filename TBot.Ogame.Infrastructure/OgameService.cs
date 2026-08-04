@@ -232,6 +232,7 @@ namespace TBot.Ogame.Infrastructure {
 				if (!string.IsNullOrEmpty(PlayerNameForLogs)) {
 					payload = System.Text.RegularExpressions.Regex.Replace(payload, System.Text.RegularExpressions.Regex.Escape(PlayerNameForLogs), "Player Name", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 				}
+				payload = System.Text.RegularExpressions.Regex.Replace(payload, @"Players online: \d+, Players: \d+", "Players online: ***, Players: ***");
 			}
 			_logger.WriteLog(isErr ? LogLevel.Error : LogLevel.Information, LogSender.OGameD, $"[{label}] \"{payload}\"");
 		}

@@ -30,7 +30,9 @@ namespace TBot.WebUI {
 				options.EnableForHttps = true;
 			});
 
-			Console.WriteLine($"Folder: {AppDomain.CurrentDomain.BaseDirectory}");
+			// Folder path intentionally not printed here (was leaking the deploy path into shared
+			// logs/screenshots) - see LoggerServiceSharedState/HideSensitiveDataInLogs if per-instance
+			// diagnostics on the folder path are ever needed again.
 
 			var settingsFile = await SettingsService.GetSettings(SettingsService.GlobalSettingsPath);
 			string urls = (string) settingsFile.WebUI.Urls;

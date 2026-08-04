@@ -34,6 +34,11 @@ namespace Tbot.Workers.Brain {
 			_tbotOgameBridge = tbotOgameBridge;
 		}
 		protected override async Task Execute() {
+			// Serializes this worker's whole run against the other 3 Brain item types (AutoMine,
+			// LifeformAutoMine, LifeformAutoResearch) - see BrainTransportCoordinator and project
+			// memory 2026-08-03.
+			await BrainTransportCoordinator.ResourceDecisionLock.WaitAsync();
+			try {
 			int fleetId = (int) SendFleetCode.GenericError;
 			bool stop = false;
 			bool delay = false;
@@ -184,7 +189,7 @@ namespace Tbot.Workers.Brain {
 								new RankSlotsPriority(Feature.BrainAutoResearch,
 									(int) _tbotInstance.InstanceSettings.General.SlotPriorityLevel.Brain,
 									((bool) _tbotInstance.InstanceSettings.Brain.Active && (bool) _tbotInstance.InstanceSettings.Brain.Transports.Active && ((bool) _tbotInstance.InstanceSettings.Brain.AutoMine.Active || (bool) _tbotInstance.InstanceSettings.Brain.AutoResearch.Active || (bool) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.Active || (bool) _tbotInstance.InstanceSettings.Brain.LifeformAutoResearch.Active)),
-									(int) _tbotInstance.InstanceSettings.Brain.Transports.MaxSlots,
+									BrainTransportCoordinator.GetMaxSlotsForActiveItem(_tbotInstance.InstanceSettings, (int) _tbotInstance.InstanceSettings.Brain.Transports.MaxSlots),
 									(int) _tbotInstance.UserData.fleets.Count(f => f.Mission == Missions.Transport)),
 								new RankSlotsPriority(Feature.Expeditions,
 									(int) _tbotInstance.InstanceSettings.General.SlotPriorityLevel.Expeditions,
@@ -225,7 +230,21 @@ namespace Tbot.Workers.Brain {
 										allCelestials[i] = await _tbotOgameBridge.UpdatePlanet(allCelestials[i], UpdateTypes.Ships);
 										allCelestials[i] = await _tbotOgameBridge.UpdatePlanet(allCelestials[i], UpdateTypes.LFBonuses);
 									}
-									Resources missingResources = cost.Difference(celestial.Resources);
+									Resources costToCover = cost;
+									if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.Transports, "StockpileForRoundTrip") &&
+										(bool) _tbotInstance.InstanceSettings.Brain.Transports.StockpileForRoundTrip) {
+										var cumulativeLabLevel = _calculationService.CalcCumulativeLabLevel(_tbotInstance.UserData.celestials, _tbotInstance.UserData.researches);
+										costToCover = BrainTransportCoordinator.CalcResourcesForRoundTrip(
+											_calculationService, celestial,
+											new Coordinate((int) _tbotInstance.InstanceSettings.Brain.Transports.Origin.Galaxy,
+												(int) _tbotInstance.InstanceSettings.Brain.Transports.Origin.System,
+												(int) _tbotInstance.InstanceSettings.Brain.Transports.Origin.Position,
+												Enum.Parse<Celestials>((string) _tbotInstance.InstanceSettings.Brain.Transports.Origin.Type)),
+											research, level, _tbotInstance.UserData.researches, _tbotInstance.UserData.serverData,
+											celestial.Facilities, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.allianceClass,
+											cumulativeLabLevel);
+									}
+									Resources missingResources = costToCover.Difference(celestial.Resources);
 									if ((bool) _tbotInstance.InstanceSettings.Brain.Transports.CheckMoonOrPlanetFirst) {
 										if (celestial.Coordinate.Type == Celestials.Planet && ((bool) _tbotInstance.InstanceSettings.Brain.Transports.CheckMoonOrPlanetFirst && _calculationService.IsThereMoonHere(allCelestials, celestial))) {
 											origin = allCelestials.Unique()
@@ -307,7 +326,7 @@ namespace Tbot.Workers.Brain {
 														(int) (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.Transports, "RoundTo") ? _tbotInstance.InstanceSettings.Brain.Transports.RoundTo : 1000),
 												(bool)_tbotInstance.InstanceSettings.Brain.Transports.SendToTheMoonIfPossible,
 												origin,
-												(long) _tbotInstance.InstanceSettings.Brain.Transports.MaxSlots,
+												BrainTransportCoordinator.GetMaxSlotsForActiveItem(_tbotInstance.InstanceSettings, (int) _tbotInstance.InstanceSettings.Brain.Transports.MaxSlots),
 												(bool)_tbotInstance.InstanceSettings.Brain.Transports.CheckMoonOrPlanetFirst,
 												(bool)_tbotInstance.InstanceSettings.Brain.Transports.DoMultipleTransportIsNotEnoughShipButSamePosition,
 												new MultipleOrigins((bool) _tbotInstance.InstanceSettings.Brain.Transports.MultipleOrigins.Active,
@@ -511,6 +530,9 @@ namespace Tbot.Workers.Brain {
 					}
 					await _tbotOgameBridge.CheckCelestials();
 				}
+			}
+			} finally {
+				BrainTransportCoordinator.ResourceDecisionLock.Release();
 			}
 		}
 

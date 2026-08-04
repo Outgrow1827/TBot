@@ -305,11 +305,20 @@ namespace Tbot.Workers {
 								foreach (var origin in origins) {
 									int expsToSendFromThisOrigin = originExps[origin];
 									if (expsToSendFromThisOrigin == 0) {
-										if (delayExpedition > 0)
+										// Absorb a slot an earlier origin couldn't actually fulfil (not enough
+										// ships, empty fleet, etc) - previously this just decremented the
+										// counter and moved on without ever sending anything, so a slot that
+										// failed at one origin was silently lost instead of being retried at
+										// another origin that might actually have the ships for it.
+										if (delayExpedition > 0) {
 											delayExpedition--;
-										else
+											expsToSendFromThisOrigin = 1;
+										} else {
 											continue;
-									} else if (origin.Ships.IsEmpty()) {
+										}
+									}
+
+									if (origin.Ships.IsEmpty()) {
 										DoLog(LogLevel.Warning, "Unable to send expeditions: no ships available");
 										delayExpedition++;
 										continue;

@@ -29,11 +29,17 @@ namespace TBot.Common.Logging {
 	// LoggerService<TelegramMessenger>, etc) gets its OWN copy of any ` static` field declared inside it - a classic
 	// generic-static-per-closed-type gotcha. All the state below is meant to describe ONE global logging pipeline
 	// (mirroring Serilog.Log.Logger, which really is process-global), so it lives in this non-generic holder instead.
-	internal static class LoggerServiceSharedState {
+	public static class LoggerServiceSharedState {
 		public static readonly object SyncObject = new object();
 		public static string LogPath = "";
 		public static readonly LoggingLevelSwitch TelegramLevelSwitch = new LoggingLevelSwitch(LogEventLevel.Verbose);
 		public static bool TelegramAdded = false;
+		// Mirrors TBot.Ogame.Infrastructure.Models.LogPrivacy.HideAccountInfo (can't reference it
+		// directly here - TBot.Common doesn't depend on TBot.Ogame.Infrastructure). Set from
+		// TBotMain alongside the other LogPrivacy flags. When true, log timestamps drop to
+		// date-only instead of full HH:mm:ss.fff, so exact activity times aren't exposed in
+		// shared logs/screenshots.
+		public static bool HideTimestampPrecision = false;
 	}
 
 	public class LoggerService<T> : ILoggerService<T> {
@@ -88,7 +94,11 @@ namespace TBot.Common.Logging {
 		}
 
 		private LoggerConfiguration GetDefaultConfiguration() {
-			string outTemplate = "[{Timestamp:HH:mm:ss.fff zzz} {ThreadId} {Level:u3} {LogSender}] {Message:lj}{NewLine}{Exception}";
+			// Full precision by default; date-only when HideTimestampPrecision is set, so shared
+			// logs/screenshots don't reveal exact activity times (hour/minute/second).
+			string timestampToken = LoggerServiceSharedState.HideTimestampPrecision ? "{Timestamp:yyyy-MM-dd}" : "{Timestamp:HH:mm:ss.fff zzz}";
+			string outTemplate = $"[{timestampToken} {{ThreadId}} {{Level:u3}} {{LogSender}}] {{Message:lj}}{{NewLine}}{{Exception}}";
+			string fileTemplate = $"{timestampToken} [{{Level:u3}}] {{Message:lj}}{{NewLine}}{{Exception}}";
 			long maxFileSize = 1 * 1024 * 1024 * 10;
 
 			var logConfig = new LoggerConfiguration()
@@ -101,6 +111,7 @@ namespace TBot.Common.Logging {
 				// Log file
 				.WriteTo.File(
 					path: Path.Combine(LoggerServiceSharedState.LogPath, "TBot.log"),
+					outputTemplate: fileTemplate,
 					buffered: false,
 					shared: true,
 					flushToDiskInterval: TimeSpan.FromSeconds(1),
