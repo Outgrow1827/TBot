@@ -231,7 +231,7 @@ namespace Tbot.Workers {
 								foreach (var f in expFleets) {
 									DoLog(
 								  LogLevel.Warning,
-									  $"[EXP DEBUG] Fleet origin: G{f.Origin.Galaxy}:{f.Origin.System}:{f.Origin.Position} Type={f.Origin.Type}"
+									  $"[EXP DEBUG] Fleet origin: {f.Origin}"
 								 );
 								}
 								int maxPerOrigin = 1;
@@ -249,13 +249,13 @@ namespace Tbot.Workers {
 									int active = CountActiveExpeditionsFromOrigin(o);
 
 									DoLog(LogLevel.Warning,
-										$"[EXP DEBUG] COUNT CHECK origin={o.Coordinate.Galaxy}:{o.Coordinate.System}:{o.Coordinate.Position} Type={o.Coordinate.Type} => active={active}");
+										$"[EXP DEBUG] COUNT CHECK origin={o.Coordinate} => active={active}");
 
 									if (active >= maxPerOrigin) {
 										capacity[o] = 0;
 
 										DoLog(LogLevel.Warning,
-											$"[EXP DEBUG] Origin {o.Coordinate.Galaxy}:{o.Coordinate.System}:{o.Coordinate.Position} Type={o.Coordinate.Type} " +
+											$"[EXP DEBUG] Origin {o.Coordinate} " +
 											$"active={active} maxPerOrigin={maxPerOrigin} cap=0 (SKIPPED)");
 
 										continue;
@@ -265,7 +265,7 @@ namespace Tbot.Workers {
 									capacity[o] = cap;
 
 									DoLog(LogLevel.Warning,
-										$"[EXP DEBUG] Origin {o.Coordinate.Galaxy}:{o.Coordinate.System}:{o.Coordinate.Position} Type={o.Coordinate.Type} " +
+										$"[EXP DEBUG] Origin {o.Coordinate} " +
 										$"active={active} maxPerOrigin={maxPerOrigin} cap={cap}");
 								}
 
@@ -297,7 +297,7 @@ namespace Tbot.Workers {
 
 								foreach (var o in origins) {
 									DoLog(LogLevel.Warning,
-									 $"[EXP DEBUG] PLAN origin {o.Coordinate.Galaxy}:{o.Coordinate.System}:{o.Coordinate.Position} Type={o.Coordinate.Type} " +
+									 $"[EXP DEBUG] PLAN origin {o.Coordinate} " +
 									 $"willSend={originExps[o]} (cap={capacity[o]})");
 								}
 

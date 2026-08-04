@@ -754,8 +754,10 @@ namespace TBot.Ogame.Infrastructure {
 			var planets = await GetPlanets();
 			var moons = await GetMoons();
 			List<Celestial> celestials = new();
-			celestials.AddRange(planets);
-			celestials.AddRange(moons);
+			if (planets != null)
+				celestials.AddRange(planets);
+			if (moons != null)
+				celestials.AddRange(moons);
 			return celestials;
 		}
 

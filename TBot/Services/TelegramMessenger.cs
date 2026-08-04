@@ -130,7 +130,7 @@ namespace Tbot.Services {
 
 		public async Task AddTbotInstance(TBotMain instance, ITBotOgamedBridge tbotOgamedBridge) {
 			_logger.WriteLog(LogLevel.Information, LogSender.Telegram, "Adding instance.....");
-			_logger.WriteLog(LogLevel.Information, LogSender.Telegram, $"[{instance.userData.userInfo.PlayerName}@{instance.userData.serverData.Name}]");
+			_logger.WriteLog(LogLevel.Information, LogSender.Telegram, LogPrivacy.HideAccountInfo ? "[Player Name@Server Name]" : $"[{instance.userData.userInfo.PlayerName}@{instance.userData.serverData.Name}]");
 
 			await instanceSem.WaitAsync(ct);
 
@@ -151,12 +151,12 @@ namespace Tbot.Services {
 
 		public async Task RemoveTBotInstance(TBotMain instance) {
 			_logger.WriteLog(LogLevel.Information, LogSender.Telegram, "Removing instance.....");
-			_logger.WriteLog(LogLevel.Information, LogSender.Telegram, $"[{instance.userData.userInfo.PlayerName}@{instance.userData.serverData.Name}]");
+			_logger.WriteLog(LogLevel.Information, LogSender.Telegram, LogPrivacy.HideAccountInfo ? "[Player Name@Server Name]" : $"[{instance.userData.userInfo.PlayerName}@{instance.userData.serverData.Name}]");
 
 			await instanceSem.WaitAsync(ct);
 			var instanceToRemove = instances.FirstOrDefault(i => i.Instance.InstanceAlias == instance.InstanceAlias);
 			if (instanceToRemove == null || !instances.Remove(instanceToRemove)) {
-				_logger.WriteLog(LogLevel.Information, LogSender.Telegram, $"Error removing [{instance.userData.userInfo.PlayerName}@{instance.userData.serverData.Name}]");
+				_logger.WriteLog(LogLevel.Information, LogSender.Telegram, LogPrivacy.HideAccountInfo ? "Error removing [Player Name@Server Name]" : $"Error removing [{instance.userData.userInfo.PlayerName}@{instance.userData.serverData.Name}]");
 			}
 
 			instanceSem.Release();
