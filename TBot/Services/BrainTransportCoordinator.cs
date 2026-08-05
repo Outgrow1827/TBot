@@ -21,6 +21,14 @@ namespace Tbot.Services {
 	public static class BrainTransportCoordinator {
 		public static readonly SemaphoreSlim ResourceDecisionLock = new SemaphoreSlim(1, 1);
 
+		// A network call stuck inside one worker's locked section (no response, no error - the
+		// kind of silent connection stall seen against Gameforge's servers) would otherwise hold
+		// this semaphore forever, permanently blocking the other 3 Brain workers too and, since
+		// they're awaited from the same scheduling loop, potentially freezing the whole app
+		// (observed 2026-08-05: console stopped responding, had to be force-closed). Bound the
+		// wait so a stuck worker can only ever cost the others this long, not forever.
+		public static readonly TimeSpan ResourceDecisionLockTimeout = TimeSpan.FromMinutes(10);
+
 		public static int GetMaxSlotsForActiveItem(dynamic instanceSettings, int totalMaxSlots) {
 			int activeCount = 0;
 			try { if ((bool) instanceSettings.Brain.AutoMine.Active) activeCount++; } catch { }
