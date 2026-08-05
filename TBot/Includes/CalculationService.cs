@@ -929,6 +929,56 @@ namespace Tbot.Includes {
 			return hourlyProduction;
 		}
 
+		// Port of Vesselin Bontchev's "Optimal Defense" calculator. Only covers
+		// RocketLauncher/LightLaser/HeavyLaser/GaussCannon/PlasmaTurret - AntiBallisticMissiles and
+		// the shield domes always come from the manual DefenceToReach setting regardless of this,
+		// same as the original. See project memory/HISTORICO for the full derivation; re-ported
+		// 2026-08-05 after being lost in the 3.4.6 rebase.
+		public Defences CalcNeededDefenceFromProduction(Planet celestial, Researches researches, ServerData serverData, int coverageHours, CharacterClass playerClass = CharacterClass.NoClass, bool hasGeologist = false, bool hasStaff = false) {
+			Resources hourlyProduction = CalcPlanetHourlyProduction(celestial, serverData.Speed, 1, researches, playerClass, hasGeologist, hasStaff);
+
+			// Fusion Reactor deuterium consumption isn't accounted for in CalcDeuteriumProduction -
+			// subtract it separately, capped so production never goes negative.
+			if (celestial.Buildings.FusionReactor > 0) {
+				long fusionConsumption = (long) Math.Round(10 * celestial.Buildings.FusionReactor * Math.Pow(1.1, celestial.Buildings.FusionReactor), 0, MidpointRounding.ToPositiveInfinity);
+				hourlyProduction.Deuterium = Math.Max(0, hourlyProduction.Deuterium - fusionConsumption);
+			}
+
+			long productionOverPeriod = (hourlyProduction.Metal + hourlyProduction.Crystal + hourlyProduction.Deuterium) * coverageHours;
+			long currentStock = celestial.Resources.Metal + celestial.Resources.Crystal + celestial.Resources.Deuterium;
+
+			// Debris value of the fleet currently sitting idle on this celestial - only a fraction
+			// of a destroyed ship's cost survives as debris (ServerData.DebrisFactor).
+			long fleetCost = 0;
+			foreach (Buildables shipType in Enum.GetValues<Buildables>()) {
+				long amount = celestial.Ships.GetAmount(shipType);
+				if (amount <= 0)
+					continue;
+				Resources unitCost = CalcPrice(shipType, 1);
+				fleetCost += (unitCost.Metal + unitCost.Crystal) * amount;
+			}
+			long fleetDebrisValue = (long) (fleetCost * serverData.DebrisFactor);
+
+			const float lootPercent = 75f;
+			double debrisPct = serverData.DebrisFactorDef * 100;
+			double totalLoot = fleetDebrisValue + (productionOverPeriod + currentStock) * (lootPercent / 100.0);
+
+			double neededPT = Math.Ceiling(5.0658556 * totalLoot * (70.0 / (100.0 - debrisPct)) / 100000.0);
+			double neededGC = Math.Max(0, Math.Ceiling(totalLoot / (10000.0 * (100.0 - debrisPct) / 100.0) - neededPT));
+			double neededHL = Math.Max(0, Math.Ceiling((totalLoot / (4000.0 * (100.0 - debrisPct) / 100.0) - neededPT - neededGC) / 0.6));
+			double neededRLLL = Math.Max(0, Math.Ceiling(totalLoot / (1000.0 * (100.0 - debrisPct) / 100.0) - neededPT - neededGC - neededHL));
+			long neededRL = (long) Math.Ceiling(neededRLLL * 2.0 / 3.0);
+			long neededLL = (long) Math.Ceiling(neededRLLL / 3.0);
+
+			return new Defences(
+				rocketlauncher: neededRL,
+				lightlaser: neededLL,
+				heavylaser: (long) neededHL,
+				gausscannon: (long) neededGC,
+				plasmaturret: (long) neededPT
+			);
+		}
+
 		public Resources CalcPrice(Buildables buildable, int level, LFBonuses lfBonuses = null) {
 			Resources output = new();
 
