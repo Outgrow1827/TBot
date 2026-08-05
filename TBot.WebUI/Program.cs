@@ -47,11 +47,16 @@ namespace TBot.WebUI {
 			// Configure the HTTP request pipeline.
 			if (!_webApplication.Environment.IsDevelopment()) {
 				_webApplication.UseExceptionHandler("/Home/Error");
-				// The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
-				_webApplication.UseHsts();
 			}
 
-			_webApplication.UseHttpsRedirection();
+			// This WebUI is only ever served over plain HTTP locally (settings.json's WebUI.Urls
+			// is an http:// address, no HTTPS binding/certificate is configured anywhere) - both
+			// UseHttpsRedirection() and UseHsts() would tell the browser to force HTTPS on this
+			// host (immediately via a 307 redirect to a scheme nothing is listening on, and/or
+			// cached for future visits via the Strict-Transport-Security header), breaking every
+			// subsequent http://localhost:PORT visit with a connection failure. If the browser
+			// already cached that HSTS policy from before this fix, clearing it
+			// (about:networking#hsts in Firefox) is needed too.
 
 			var filesProvider = new ManifestEmbeddedFileProvider(Assembly.GetExecutingAssembly(), "wwwroot");
 			_webApplication.UseStaticFiles(new StaticFileOptions() {
