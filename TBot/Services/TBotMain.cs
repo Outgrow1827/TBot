@@ -68,7 +68,7 @@ namespace Tbot.Services {
 		public event EventHandler OnError;
 
 		public dynamic InstanceSettings { get; private set; }
-		private string InstanceSettingsPath { get; set; }
+		public string InstanceSettingsPath { get; private set; }
 		public string InstanceAlias { get; private set; }
 		public UserData UserData {
 			set {
@@ -590,10 +590,17 @@ namespace Tbot.Services {
 				await HandleSleepModeAsync(null);
 				_lastReloadFinished = DateTime.Now;
 			}
+			catch (Exception e) {
+				// This is async void (required by the SettingsFileWatcher callback signature) - any
+				// exception that escapes here has no caller to observe it and crashes the whole
+				// process instead of just failing this one reload. Absorb and log instead.
+				log(LogLevel.Error, LogSender.Tbot, $"OnSettingsChanged exception: {e.Message}");
+				log(LogLevel.Warning, LogSender.Tbot, $"Stacktrace: {e.StackTrace}");
+			}
 			finally {
 				_settingsReloadSemaphore.Release();
 			}
-			
+
 		}
 		public async Task ListProfiles() {
 			string profilesDir = Path.Combine(Path.GetDirectoryName(InstanceSettingsPath), "profiles");

@@ -51,6 +51,29 @@ namespace TBot.Ogame.Infrastructure.Models {
 			return output;
 		}
 
+		// Not the same format as ToString() (which can be privacy-masked to "[X:hidden]" when
+		// LogPrivacy.HideCoordinates is on) - callers that need to persist/round-trip a coordinate
+		// (e.g. PlayersDatabase known-coordinates) should serialize with this raw format instead of
+		// ToString(), so storage never depends on a display-only privacy setting.
+		public string ToRawString() {
+			return $"{Galaxy}:{System}:{Position}:{Type}";
+		}
+
+		public static bool TryParse(string raw, out Coordinate coordinate) {
+			coordinate = null;
+			if (string.IsNullOrWhiteSpace(raw))
+				return false;
+			var parts = raw.Split(':');
+			if (parts.Length != 4)
+				return false;
+			if (!int.TryParse(parts[0], out int galaxy) || !int.TryParse(parts[1], out int system) || !int.TryParse(parts[2], out int position))
+				return false;
+			if (!Enum.TryParse(parts[3], out Celestials type))
+				return false;
+			coordinate = new Coordinate(galaxy, system, position, type);
+			return true;
+		}
+
 		private string GetCelestialCode() {
 			return Type switch {
 				Celestials.Planet => "P",
