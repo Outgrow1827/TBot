@@ -102,6 +102,13 @@ namespace Tbot.Workers {
 						blacklisted_until TEXT NOT NULL
 					);
 
+					CREATE TABLE IF NOT EXISTS system_scan_cache (
+						galaxy INTEGER NOT NULL,
+						system INTEGER NOT NULL,
+						scanned_at TEXT NOT NULL,
+						PRIMARY KEY (galaxy, system)
+					);
+
 					CREATE TABLE IF NOT EXISTS attack_history (
 						id INTEGER PRIMARY KEY AUTOINCREMENT,
 						coordinate_key TEXT NOT NULL,
@@ -222,6 +229,34 @@ namespace Tbot.Workers {
 			return _entries.Values
 				.Where(e => e.Coordinate.Galaxy == galaxy && e.Coordinate.System >= startSystem && e.Coordinate.System <= endSystem)
 				.ToList();
+		}
+
+		// --- System scan cache (FastFarmMode: lets AutoFarm skip a live galaxy scan for a system
+		// it already scanned recently, reusing what a normal AutoFarm cycle found instead) ---
+
+		public void MarkSystemScanned(int galaxy, int system) {
+			using var cmd = _db.CreateCommand();
+			cmd.CommandText = @"
+				INSERT INTO system_scan_cache (galaxy, system, scanned_at)
+				VALUES ($galaxy, $system, $scannedAt)
+				ON CONFLICT(galaxy, system) DO UPDATE SET scanned_at = excluded.scanned_at;
+			";
+			cmd.Parameters.AddWithValue("$galaxy", galaxy);
+			cmd.Parameters.AddWithValue("$system", system);
+			cmd.Parameters.AddWithValue("$scannedAt", DateTime.UtcNow.ToString("O"));
+			cmd.ExecuteNonQuery();
+		}
+
+		/// <summary>Time since this system was last scanned, or null if never scanned.</summary>
+		public TimeSpan? GetSystemScanAge(int galaxy, int system) {
+			using var cmd = _db.CreateCommand();
+			cmd.CommandText = "SELECT scanned_at FROM system_scan_cache WHERE galaxy = $galaxy AND system = $system";
+			cmd.Parameters.AddWithValue("$galaxy", galaxy);
+			cmd.Parameters.AddWithValue("$system", system);
+			var result = cmd.ExecuteScalar();
+			if (result == null) return null;
+			var scannedAt = DateTime.Parse((string) result, null, System.Globalization.DateTimeStyles.RoundtripKind);
+			return DateTime.UtcNow - scannedAt;
 		}
 
 		// --- Blacklist (P20: replaces AutoFarmWorker's in-memory-only _farmBlacklist dictionary) ---
