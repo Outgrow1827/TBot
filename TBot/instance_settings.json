@@ -101,7 +101,14 @@
 		],
 		"SpyAttacker": {
 			"Active": true,
-			"Probes": 20
+			"Probes": 20,
+			"SpyAllKnownCoordinates": true,
+			"CooldownMinutes": 60,
+			"MaxKnownCoordinates": 5
+		},
+		"SpyWatch": {
+			"Active": false,
+			"CooldownMinutes": 30
 		},
 		"MessageAttacker": {
 			"Active": false,
@@ -251,7 +258,14 @@
             "MaxTechs34": 0,
             "MaxTechs35": 0,
             "MaxTechs36": 0,
-            "Exclude": [],
+            "Exclude": [
+                {
+                    "Galaxy": 1,
+                    "System": 1,
+                    "Position": 1,
+                    "Type": "Planet"
+                }
+            ],
             "CheckIntervalMin": 60,
             "CheckIntervalMax": 120
         },
@@ -315,6 +329,9 @@
 			"Active": false,
 			"ExcludeMoons": true,
 			"RandomOrder": true,
+			"UseProductionBasedCalculation": false,
+			"ProductionCoverageHours": 24,
+			"MaxConstructionMinutes": 60,
 			"DefenceToReach": {
 				"RocketLauncher": 100000,
 				"HeavyLaser": 10000,
@@ -358,7 +375,14 @@
 			"CargoType": "LargeCargo",
 			"RandomOrder": false,
 			"SkipIfIncomingTransport": true,
-			"Exclude": [],
+			"Exclude": [
+				{
+					"Galaxy": 1,
+					"System": 1,
+					"Position": 1,
+					"Type": "Planet"
+				}
+			],
 			"CheckIntervalMin": 3000,
 			"CheckIntervalMax": 6000
 		},
@@ -449,6 +473,28 @@
 	"AutoFarm": {
 		"Active": false,
 		"ExcludeMoons": true,
+		"AcceptableFleetLossPercentage": 0,
+		"MinLootToRiskRatio": 1.0,
+		"FastFarmMode": false,
+		"FastFarmMaxCacheAge": 1440,
+		"ProbeAttackForDefenseCheck": false,
+		"Ships": {
+			"LightFighter": false,
+			"HeavyFighter": false,
+			"Cruiser": false,
+			"Battleship": false,
+			"Battlecruiser": false,
+			"Bomber": false,
+			"Destroyer": false,
+			"Deathstar": false,
+			"SmallCargo": false,
+			"LargeCargo": false,
+			"ColonyShip": false,
+			"Recycler": false,
+			"EspionageProbe": false,
+			"Reaper": false,
+			"Pathfinder": false
+		},
 		"ScanRange": [
 			{
 				"Galaxy": 5,
@@ -518,6 +564,13 @@
 			"Type": "Planet"
 		},
 		"SlotsToLeaveFree": 0,
+		"Exclude": [
+			{
+				"Galaxy": 1,
+				"System": 1,
+				"Position": 1
+			}
+		],
 		"Abandon": {
 			"Active": true,
 			"MinFields": 280,
@@ -537,7 +590,10 @@
 				"EndSystem": 123,
 				"StartPosition": 7,
 				"EndPosition": 9,
-				"MaxPlanets": 1
+				"MaxPlanets": 1,
+				"TargetEmptySystems": false,
+				"EmptySystemsBuffer": 0,
+				"ExcludeSystems": []
 			},
 			{
 				"Galaxy": 3,
@@ -545,7 +601,10 @@
 				"EndSystem": 350,
 				"StartPosition": 15,
 				"EndPosition": 15,
-				"MaxPlanets": 2
+				"MaxPlanets": 2,
+				"TargetEmptySystems": false,
+				"EmptySystemsBuffer": 0,
+				"ExcludeSystems": []
 			}
 		],
 		"RandomPosition": false,
