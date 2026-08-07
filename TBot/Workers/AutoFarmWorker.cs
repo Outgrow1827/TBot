@@ -23,6 +23,8 @@ namespace Tbot.Workers {
 		private readonly ITBotOgamedBridge _tbotOgameBridge;
 		private readonly AutoFarmBlacklist _blacklist;
 		private readonly AutoFarmSuccessfulTargets _successfulTargets;
+		private readonly AutoFarmEmptySystemCache _emptySystemCache;
+		private static readonly TimeSpan EmptySystemCooldown = TimeSpan.FromHours(6);
 		public AutoFarmWorker(ITBotMain parentInstance,
 			IOgameService ogameService,
 			IFleetScheduler fleetScheduler,
@@ -33,10 +35,12 @@ namespace Tbot.Workers {
 			_fleetScheduler = fleetScheduler;
 			_calculationService = calculationService;
 			_tbotOgameBridge = tbotOgameBridge;
-		string blacklistPath = $"autofarm_blacklist_{_tbotInstance.InstanceAlias}.json";
-		_blacklist = new AutoFarmBlacklist(blacklistPath);
-		string successfulPath = $"autofarm_successful_{_tbotInstance.InstanceAlias}.json";
-		_successfulTargets = new AutoFarmSuccessfulTargets(successfulPath);
+			string blacklistPath = $"autofarm_blacklist_{_tbotInstance.InstanceAlias}.json";
+			_blacklist = new AutoFarmBlacklist(blacklistPath);
+			string successfulPath = $"autofarm_successful_{_tbotInstance.InstanceAlias}.json";
+			_successfulTargets = new AutoFarmSuccessfulTargets(successfulPath);
+			string emptySystemsPath = $"autofarm_empty_systems_{_tbotInstance.InstanceAlias}.json";
+			_emptySystemCache = new AutoFarmEmptySystemCache(emptySystemsPath);
 		}
 		public override bool IsWorkerEnabledBySettings() {
 			try {
@@ -68,15 +72,27 @@ namespace Tbot.Workers {
 			}
 		}
 
-		private async Task<Dictionary<int, long>> GetCelestialProbes() {
-			var localCelestials = await _tbotOgameBridge.UpdateCelestials();
-			Dictionary<int, long> celestialProbes = new Dictionary<int, long>();
-			foreach (var celestial in localCelestials) {
-				Celestial tempCelestial = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.Fast);
-				tempCelestial = await _tbotOgameBridge.UpdatePlanet(tempCelestial, UpdateTypes.Ships);
-				celestialProbes.Add(tempCelestial.ID, tempCelestial.Ships.EspionageProbe);
-			}
-			return celestialProbes;
+		private Dictionary<int, long> GetCachedCelestialProbes(List<Celestial> origins) {
+			return (origins ?? new List<Celestial>())
+				.Where(celestial => celestial != null)
+				.GroupBy(celestial => celestial.ID)
+				.ToDictionary(
+					group => group.Key,
+					group => group.First().Ships?.EspionageProbe ?? 0);
+		}
+
+		private List<Celestial> GetFarmOrigins() {
+			List<Celestial> origins;
+			if (_tbotInstance.InstanceSettings.AutoFarm.Origin.Length > 0)
+				origins = _calculationService.ParseCelestialsList(_tbotInstance.InstanceSettings.AutoFarm.Origin, _tbotInstance.UserData.celestials);
+			else
+				origins = _tbotInstance.UserData.celestials;
+
+			return (origins ?? new List<Celestial>())
+				.Where(celestial => celestial?.Coordinate != null)
+				.GroupBy(celestial => $"{celestial.Coordinate.Galaxy}:{celestial.Coordinate.System}:{celestial.Coordinate.Position}:{celestial.Coordinate.Type}")
+				.Select(group => group.First())
+				.ToList();
 		}
 
 		private bool ShouldExcludeSystem(int galaxy, int system) {
@@ -148,10 +164,13 @@ namespace Tbot.Workers {
 				}
 			}
 
+			if (galaxyInfo?.Planets == null) {
+				_tbotInstance.log(LogLevel.Warning, LogSender.AutoFarm, $"Galaxy scan returned no planet data for {galaxy}:{system}; this system will not be cached as empty.");
+				return null;
+			}
+
 			var planets = galaxyInfo.Planets.Where(p => p != null && p.Inactive && !p.Administrator && !p.Banned && !p.Vacation);
 			List<Celestial> scannedTargets = planets.Cast<Celestial>().ToList();
-			await _fleetScheduler.UpdateFleets();
-			scannedTargets.RemoveAll(t => _tbotInstance.UserData.fleets.Any(f => f.Destination.IsSame(t.Coordinate) && f.Mission == Missions.Attack));
 			return scannedTargets;
 		}
 
@@ -385,6 +404,7 @@ namespace Tbot.Workers {
 			bool stop = false;
 			bool stopAfterFullScan = false;
 			bool finishedFullScan = false;
+			int skippedEmptySystems = 0;
 			try {
 				_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, "Running autofarm...");
 				stopAfterFullScan = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "StopAfterFullScan")
@@ -402,7 +422,9 @@ namespace Tbot.Workers {
 					try {
 						await PruneOldReports();
 
-						var celestialProbes = await GetCelestialProbes();
+						var farmOrigins = GetFarmOrigins();
+						var celestialProbes = GetCachedCelestialProbes(farmOrigins);
+						_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
 
 						int numProbed = 0;
 
@@ -459,8 +481,6 @@ namespace Tbot.Workers {
 							_tbotInstance.UserData.autoFarmLastRangeIndex = startRangeIndex;
 						}
 
-						bool globalOffsetUsed = false;
-
 						for (int rangeIndex = startRangeIndex; rangeIndex < orderedRanges.Count; rangeIndex++) {
 							if (stopAutoFarm)
 								break;
@@ -474,21 +494,16 @@ namespace Tbot.Workers {
 							int originalStartSystem = (int) range.StartSystem;
 							int endSystem = (int) range.EndSystem;
 							int startSystem = originalStartSystem;
-							bool isRandomStart = false;
-
                                  if (_tbotInstance.UserData.autoFarmLastGalaxy == galaxy &&
                                        _tbotInstance.UserData.autoFarmLastSystem >= originalStartSystem &&
                                     _tbotInstance.UserData.autoFarmLastSystem <= endSystem) {
 
                                 startSystem = _tbotInstance.UserData.autoFarmLastSystem;
-                                   isRandomStart = false;
                                        _tbotInstance.log(LogLevel.Information, LogSender.AutoFarm,
                                        $"Resuming scan from Galaxy {galaxy} System {startSystem}");
                            }
                             else {
                                          startSystem = originalStartSystem;
-                                        isRandomStart = false;
-
                                   _tbotInstance.log(LogLevel.Information, LogSender.AutoFarm,
                                $"[START] Galaxy {galaxy} - Ordered start at system {startSystem}");
                               }
@@ -534,11 +549,30 @@ namespace Tbot.Workers {
 								if (excludeSystem)
 									continue;
 
-								var scannedTargets = await GetScannedTargetsFromGalaxy(galaxy, system);
+								if (_emptySystemCache.IsCoolingDown(galaxy, system)) {
+									skippedEmptySystems++;
+									continue;
+								}
+
+								List<Celestial> scannedTargets;
+								try {
+									scannedTargets = await GetScannedTargetsFromGalaxy(galaxy, system);
+								} catch (Exception e) {
+									_tbotInstance.log(LogLevel.Warning, LogSender.AutoFarm, $"Skipping system {galaxy}:{system} after scan failure: {e.Message}");
+									continue;
+								}
+
+								if (scannedTargets == null)
+									continue;
+
 								_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm, $"Found {scannedTargets.Count} targets on System {galaxy}:{system}");
 
-								if (!scannedTargets.Any())
+								if (!scannedTargets.Any()) {
+									_emptySystemCache.MarkEmpty(galaxy, system, EmptySystemCooldown);
 									continue;
+								}
+
+								_emptySystemCache.MarkNonEmpty(galaxy, system);
 
 								if ((bool) _tbotInstance.InstanceSettings.AutoFarm.ExcludeMoons == false) {
 									AddMoons(scannedTargets);
@@ -564,7 +598,7 @@ namespace Tbot.Workers {
 									if (target == null)
 										continue;
 
-									List<Celestial> tempCelestials = (_tbotInstance.InstanceSettings.AutoFarm.Origin.Length > 0) ? _calculationService.ParseCelestialsList(_tbotInstance.InstanceSettings.AutoFarm.Origin, _tbotInstance.UserData.celestials) : _tbotInstance.UserData.celestials;
+									List<Celestial> tempCelestials = farmOrigins;
 
 									List<Celestial> closestCelestials = tempCelestials
 										.OrderByDescending(planet => planet.Coordinate.Type == Celestials.Moon)
@@ -746,6 +780,9 @@ namespace Tbot.Workers {
 						_tbotInstance.log(LogLevel.Warning, LogSender.AutoFarm, $"Stacktrace: {e.StackTrace}");
 						_tbotInstance.log(LogLevel.Warning, LogSender.AutoFarm, "Unable to parse scan range");
 					}
+
+					if (skippedEmptySystems > 0)
+						_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm, $"Skipped {skippedEmptySystems} systems still in the empty-system cooldown.");
 
 					_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
 					Fleet firstReturning = _calculationService.GetLastReturningEspionage(_tbotInstance.UserData.fleets);

@@ -49,7 +49,7 @@ namespace Tbot.Workers {
 			return LogSender.Colonize;
 		}
 
-				protected override async Task Execute() {
+		protected override async Task Execute() {
 			await _tbotOgameBridge.CheckCelestials();
 			bool stop = false;
 			Fields fieldsSettings = new() {

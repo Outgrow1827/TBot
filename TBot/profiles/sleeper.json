@@ -1,0 +1,60 @@
+{
+	"SleepMode": {
+		"Active": true,
+		"GoToSleep": "8:35",
+		"WakeUp": "8:23",
+		"PreventIfThereAreFleets": true,
+		"TelegramMessenger": {
+			"Active": false
+		},
+		"AutoFleetSave": {
+			"Active": true,
+			"OnlyMoons": true,
+			"DeutToLeave": 200000,
+			"Recall": true,
+			"DefaultMission": "Deploy"
+		}
+	},
+	"Defender": {
+		"Active": true
+	},
+	"Brain": {
+		"Active": true,
+		"AutoMine": {
+			"Active": false
+		},
+		"LifeformAutoMine": {
+			"Active": false
+		},
+		"LifeformAutoResearch": {
+			"Active": false
+		},
+		"AutoResearch": {
+			"Active": false
+		},
+		"AutoCargo": {
+			"Active": false
+		},
+		"AutoDefence": {
+			"Active": false
+		},
+		"AutoRepatriate": {
+			"Active": false
+		},
+		"BuyOfferOfTheDay": {
+            "Active": true
+        }
+    },
+	"Expeditions": {
+		"Active": false
+	},
+	"AutoFarm": {
+		"Active": false
+	},
+	"AutoColonize": {
+		"Active": false
+	},
+	"AutoDiscovery": {
+		"Active": false
+	}
+}

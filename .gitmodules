@@ -1,4 +1,4 @@
 [submodule "ogame"]
 	path = ogame
-	url = https://github.com/0xE232FE/ogame.mod.git
-	branch = develop-ogamed-tbot
+	url = https://github.com/ronnie32/ogame.mod.git
+	branch = master
