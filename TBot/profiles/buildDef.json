@@ -1,0 +1,16 @@
+{
+	"Brain": {
+		"Active": true,
+		"AutoDefence": {
+			"Active": true,
+			"DefenceToReach": {
+				"RocketLauncher": 200000,
+				"HeavyLaser": 20000,
+				"GaussCannon": 2000,
+				"PlasmaTurret": 2000,
+				"SmallShieldDome": true,
+				"LargeShieldDome": true
+			}
+		}
+	}
+}

@@ -90,6 +90,12 @@ namespace Tbot.Services {
 				return _fleetScheduler;
 			}
 		}
+		public IWorkerFactory WorkerFactory {
+			get {
+				return _workerFactory;
+			}
+		}
+
 		public long SleepDuration { get; set; }
 		public DateTime NextWakeUpTime { get; set; }
 
@@ -476,10 +482,10 @@ namespace Tbot.Services {
 				}
 
 				if (feature == Feature.AutoDiscovery || feature == Feature.Null) {
-					jsonObj["AutoDiscovery"]["Origin"]["Galaxy"] = (int) celestial.Coordinate.Galaxy;
-					jsonObj["AutoDiscovery"]["Origin"]["System"] = (int) celestial.Coordinate.System;
-					jsonObj["AutoDiscovery"]["Origin"]["Position"] = (int) celestial.Coordinate.Position;
-					jsonObj["AutoDiscovery"]["Origin"]["Type"] = type;
+					jsonObj["AutoDiscovery"]["Origin"][0]["Galaxy"] = (int) celestial.Coordinate.Galaxy;
+					jsonObj["AutoDiscovery"]["Origin"][0]["System"] = (int) celestial.Coordinate.System;
+					jsonObj["AutoDiscovery"]["Origin"][0]["Position"] = (int) celestial.Coordinate.Position;
+					jsonObj["AutoDiscovery"]["Origin"][0]["Type"] = type;
 				}
 
 				if (feature == Feature.Colonize || feature == Feature.Null) {
@@ -552,6 +558,129 @@ namespace Tbot.Services {
 				_settingsReloadSemaphore.Release();
 			}
 			
+		}
+		public async Task ListProfiles() {
+			string profilesDir = Path.Combine(Path.GetDirectoryName(InstanceSettingsPath), "profiles");
+			string profileList = "Available profiles:\n";
+			if (Directory.Exists(profilesDir)) {
+				var profileFiles = Directory.GetFiles(profilesDir, "*.json");
+				log(LogLevel.Information, LogSender.Tbot, "Available profiles:");
+				foreach (var profileFile in profileFiles) {
+					profileList += $"- {Path.GetFileNameWithoutExtension(profileFile)}\n";
+					log(LogLevel.Information, LogSender.Tbot, $"- {Path.GetFileNameWithoutExtension(profileFile)}");
+				}
+			} else {
+				log(LogLevel.Warning, LogSender.Tbot, "Profiles directory not found.");
+				profileList = "No profiles found.";
+			}
+			await SendTelegramMessage(profileList);
+		}
+		public async Task ListRunningProfiles() {
+			List<string> profiles = userData.runningProfiles;
+			if (profiles.Count <= 0 || profiles == null) {
+				await SendTelegramMessage("No profile is currently running.");
+				return;
+			}
+			string txt = profiles.Count > 1 ? "Profiles currently running:\n" : "Profile currently running:\n";
+			foreach (var profile in profiles) {
+				txt += $"- {profile}\n";
+			}
+			await SendTelegramMessage(txt);
+		}
+		public async Task LoadProfile(List<string> profileName) {
+			for (int i = 0; i < profileName.Count; i++)
+				profileName[i] = profileName[i].Trim();
+
+			log(LogLevel.Information, LogSender.Tbot, "Loading profile detected !");
+			await _settingsReloadSemaphore.WaitAsync();
+
+			try {
+				List<string> profilePath = new();
+				for (int i = 0; i < profileName.Count; i++) {
+					string pPath = Path.Combine(Path.GetDirectoryName(InstanceSettingsPath), "profiles", profileName[i] + ".json");
+					profilePath.Add(pPath);
+					if (!File.Exists(pPath)) {
+						log(LogLevel.Warning, LogSender.Tbot, $"Profile {profileName[i]} not found in the profile folder, loading abandoned.");
+						await SendTelegramMessage($"Profile {profileName[i]} not found in the profile folder, loading abandoned.");
+						return;
+					}
+				}
+				string txt = " "+ profileName.First();
+				foreach (var p in profileName.Skip(1)) {
+					txt += " + "+ p;
+				}
+				if (profilePath.Count > 1)
+					log(LogLevel.Information, LogSender.Tbot, $"Loading profiles{txt}. Waiting workers to complete ongoing activities...");
+				else
+					log(LogLevel.Information, LogSender.Tbot, $"Loading profile{txt}. Waiting workers to complete ongoing activities...");
+				
+				cts.Cancel();
+				foreach (var worker in workers) {
+					log(LogLevel.Information, LogSender.Tbot, $"Stopping feature {worker.Key.ToString()}...");
+					await worker.Value.StopWorker();
+					log(LogLevel.Information, LogSender.Tbot, $"Feature {worker.Key.ToString()} stopped for settings reload!");
+				}
+
+				InstanceSettings = await SettingsService.GetMergedSettings(InstanceSettingsPath, profilePath);
+
+				if (profilePath.Count > 1) {
+					log(LogLevel.Information, LogSender.Tbot, $"Profiles{txt} loaded successfully.");
+					await SendTelegramMessage($"Profiles{txt} loaded successfully.");
+				} else {
+					log(LogLevel.Information, LogSender.Tbot, $"Profile{txt} loaded successfully.");
+					await SendTelegramMessage($"Profile{txt} loaded successfully.");
+				}
+				userData.runningProfiles = profileName;
+
+				_lastReloadFinished = DateTime.Now;
+			} catch (Newtonsoft.Json.JsonException jsonEx) {
+				log(LogLevel.Error, LogSender.Tbot, $"Invalid JSON Format: {jsonEx.Message}");
+				await SendTelegramMessage($"Invalid JSON Format: {jsonEx.Message}");
+			} catch (Exception e) {
+				log(LogLevel.Warning, LogSender.Tbot, $"Exception: {e.Message}");
+				log(LogLevel.Warning, LogSender.Tbot, $"Stacktrace: {e.StackTrace}");
+				await SendTelegramMessage($"Error loading profile: refer to logs.");
+			} finally {
+				if (cts.IsCancellationRequested) {
+					cts = new();
+					// If wakeUp, then all features will be restored
+					await HandleSleepModeAsync(null);
+				}
+				_settingsReloadSemaphore.Release();
+			}
+		}
+		public async Task ResetProfile() {
+
+			log(LogLevel.Information, LogSender.Tbot, "Unloading profile detected! Waiting workers to complete ongoing activities...");
+			await _settingsReloadSemaphore.WaitAsync();
+
+			try {
+				// Wait on feature to be shut down
+				cts.Cancel();
+				foreach (var worker in workers) {
+					log(LogLevel.Information, LogSender.Tbot, $"Stopping feature {worker.Key.ToString()}...");
+					await worker.Value.StopWorker();
+					log(LogLevel.Information, LogSender.Tbot, $"Feature {worker.Key.ToString()} stopped for settings reload!");
+				}
+
+				log(LogLevel.Information, LogSender.Tbot, "Loading origin settings file");
+				await SendTelegramMessage($"Loading origin settings file");
+				InstanceSettings = await SettingsService.GetSettings(InstanceSettingsPath);
+				userData.runningProfiles = new List<string>();
+
+				_lastReloadFinished = DateTime.Now;
+			} catch (Exception e) {
+				log(LogLevel.Warning, LogSender.Tbot, $"Exception: {e.Message}");
+				log(LogLevel.Warning, LogSender.Tbot, $"Stacktrace: {e.StackTrace}");
+				await SendTelegramMessage($"Error loading profile: refer to logs.");
+			} finally {
+				if (cts.IsCancellationRequested) {
+					cts = new();
+					// If wakeUp, then all features will be restored
+					await HandleSleepModeAsync(null);
+				}
+				_settingsReloadSemaphore.Release();
+			}
 		}
 
 		private void InitializeSleepMode() {
@@ -898,8 +1027,8 @@ namespace Tbot.Services {
 			Ships ships = origin.Ships;
 			if (mode.Equals("auto")) {
 				float cargoBonus = 0;
-				if (origin.LFBonuses != null && origin.LFBonuses.Ships != null && origin.LFBonuses.Ships.Count > 0 && origin.LFBonuses.Ships.ContainsKey((int) Buildables.SmallCargo)) {
-					cargoBonus = origin.LFBonuses.Ships.GetValueOrDefault((int) Buildables.SmallCargo).CargoCapacity;
+				if (origin.LFBonuses != null && origin.LFBonuses.LfShipBonusesInt != null && origin.LFBonuses.LfShipBonusesInt.Count > 0 && origin.LFBonuses.LfShipBonusesInt.ContainsKey((int) Buildables.SmallCargo)) {
+					cargoBonus = origin.LFBonuses.LfShipBonusesInt.GetValueOrDefault((int) Buildables.SmallCargo).CargoCapacity;
 				}
 				long idealSmallCargo = _helpersService.CalcShipNumberForPayload(payload, Buildables.SmallCargo, userData.researches.HyperspaceTechnology, userData.serverData, cargoBonus, userData.userInfo.Class, userData.serverData.ProbeCargo);
 
@@ -907,8 +1036,8 @@ namespace Tbot.Services {
 					ships.SetAmount(Buildables.SmallCargo, origin.Ships.GetAmount(Buildables.SmallCargo) - (long) idealSmallCargo);
 				} else {
 					cargoBonus = 0;
-					if (origin.LFBonuses != null && origin.LFBonuses.Ships != null && origin.LFBonuses.Ships.Count > 0 && origin.LFBonuses.Ships.ContainsKey((int) Buildables.LargeCargo)) {
-						cargoBonus = origin.LFBonuses.Ships.GetValueOrDefault((int) Buildables.LargeCargo).CargoCapacity;
+					if (origin.LFBonuses != null && origin.LFBonuses.LfShipBonusesInt != null && origin.LFBonuses.LfShipBonusesInt.Count > 0 && origin.LFBonuses.LfShipBonusesInt.ContainsKey((int) Buildables.LargeCargo)) {
+						cargoBonus = origin.LFBonuses.LfShipBonusesInt.GetValueOrDefault((int) Buildables.LargeCargo).CargoCapacity;
 					}
 					long idealLargeCargo = _helpersService.CalcShipNumberForPayload(payload, Buildables.LargeCargo, userData.researches.HyperspaceTechnology, userData.serverData, cargoBonus, userData.userInfo.Class, userData.serverData.ProbeCargo);
 					if (idealLargeCargo <= origin.Ships.GetAmount(Buildables.LargeCargo)) {

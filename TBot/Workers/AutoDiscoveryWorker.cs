@@ -22,11 +22,7 @@ namespace Tbot.Workers {
 		private readonly ICalculationService _calculationService;
 		private readonly ITBotOgamedBridge _tbotOgameBridge;
 
-		private sealed class OriginCursor {
-			public int System;
-			public int NextPosition;
-		}
-		private readonly Dictionary<string, OriginCursor> _originCursors = new();
+		private readonly Dictionary<string, DiscoveryCursorState> _originCursors = new();
 
 		private sealed class DiscoveryRunContext {
 			public int FleetsToSend;
@@ -153,46 +149,32 @@ namespace Tbot.Workers {
 			return $"{origin.Coordinate.Galaxy}:{origin.Coordinate.System}:{origin.Coordinate.Position}:{origin.Coordinate.Type}";
 		}
 
-		private OriginCursor GetOrInitCursor(Celestial origin) {
+		private DiscoveryCursorState GetOrInitCursor(Celestial origin) {
 			var key = OriginKey(origin);
 			if (!_originCursors.TryGetValue(key, out var cursor) || cursor == null) {
-				cursor = new OriginCursor {
-					System = origin.Coordinate.System,
-					NextPosition = 1
-				};
+				cursor = new DiscoveryCursorState(origin.Coordinate.System);
 				_originCursors[key] = cursor;
 			}
 
 			int maxSystem = _tbotInstance.UserData.serverData.Systems;
-			if (cursor.System < 1 || cursor.System > maxSystem) cursor.System = origin.Coordinate.System;
-			if (cursor.NextPosition < 1 || cursor.NextPosition > 15) cursor.NextPosition = 1;
+			cursor.Normalize(origin.Coordinate.System, maxSystem);
 
 			return cursor;
 		}
 
-		private int AdvanceSystem(int system) {
-			int maxSystem = _tbotInstance.UserData.serverData.Systems;
-			system++;
-			if (system > maxSystem) system = 1;
-			return system;
-		}
-
 		private async Task<int> ProcessOneSystemForOrigin(
 			Celestial origin,
-			OriginCursor cursor,
+			DiscoveryCursorState cursor,
 			int discoveries,
 			DiscoveryRunContext ctx) {
 
 			if (origin?.Coordinate == null) return discoveries;
 			if (discoveries <= 0 || ctx.FleetsToSend <= 0 || ctx.Stop) return discoveries;
 
-			int systemToDo = cursor.System;
-
 			DateTime now = await _tbotOgameBridge.GetDateTime();
-			int resumeNextPos = cursor.NextPosition;
+			int systemToDo = cursor.System;
+			int maxSystem = _tbotInstance.UserData.serverData.Systems;
 			for (int pos = cursor.NextPosition; pos <= 15; pos++) {
-				resumeNextPos = pos;
-
 				if (discoveries <= 0 || ctx.FleetsToSend <= 0 || ctx.Stop) break;
 				if (_tbotInstance.UserData.slots.Free <= (int)_tbotInstance.InstanceSettings.General.SlotsToLeaveFree) { ctx.Stop = true; break; }
 
@@ -205,34 +187,30 @@ namespace Tbot.Workers {
 					Type = Celestials.Planet
 				};
 
-				if (IsBlacklistedAndActive(dest, now)) { ctx.Skips++; continue; }
+				// Commit before branching: blacklisted and rejected positions are still examined.
+				// This is the invariant that prevents the cursor from getting stuck at position 15.
+				cursor.CommitPosition(systemToDo, pos, maxSystem);
 
-				var ok = await _ogameService.SendDiscovery(origin, dest);
-				if (!ok) {
-					DoLog(LogLevel.Warning, $"Failed to send discovery fleet to {dest} from {origin}.");
-					UpsertBlacklist(dest, now.AddDays(7));
-				} else {
-					DoLog(LogLevel.Information, $"Discovery fleet sent to {dest} from {origin}.");
-					UpsertBlacklist(dest, now.AddDays(7));
-					discoveries--;
-					ctx.FleetsToSend--;
+				if (IsBlacklistedAndActive(dest, now)) {
+					ctx.Skips++;
+					continue;
 				}
 
-				resumeNextPos = pos + 1;
+				var ok = await _ogameService.SendDiscovery(origin, dest);
+				if (ok) {
+					DoLog(LogLevel.Information, $"Discovery fleet sent to {dest} from {origin}.");
+					discoveries--;
+					ctx.FleetsToSend--;
+				} else {
+					DoLog(LogLevel.Warning, $"Failed to send discovery fleet to {dest} from {origin}.");
+				}
+
+				// A checked position is cooled down regardless of the result. The server can
+				// reject a position for a transient reason, but retrying it every cycle would
+				// otherwise create a tight loop and repeated activity.
+				UpsertBlacklist(dest, now.AddDays(7));
 
 				_tbotInstance.UserData.slots = await _tbotOgameBridge.UpdateSlots();
-			}
-
-			if (!ctx.Stop && resumeNextPos > 15 && discoveries > 0 && ctx.FleetsToSend > 0 &&
-				_tbotInstance.UserData.slots.Free > (int)_tbotInstance.InstanceSettings.General.SlotsToLeaveFree) {
-
-				cursor.System = AdvanceSystem(systemToDo);
-				cursor.NextPosition = 1;
-			} else {
-
-				if (resumeNextPos < 1) resumeNextPos = 1;
-				if (resumeNextPos > 15) resumeNextPos = 15;
-				cursor.NextPosition = resumeNextPos;
 			}
 
 			return discoveries;
@@ -347,24 +325,25 @@ namespace Tbot.Workers {
 					return;
 				}
 
+				int discoveries = await _ogameService.GetAvailableDiscoveries();
+				if (discoveries <= 0) {
+					delay = true;
+					DoLog(LogLevel.Information, "No discoveries available right now.");
+					return;
+				}
+
 				var ctx = new DiscoveryRunContext {
-					FleetsToSend = fleetsToSend,
+					FleetsToSend = Math.Min(fleetsToSend, discoveries),
 					Stop = false,
 					Skips = 0,
 					GlobalAttempts = 0,
 					MaxGlobalAttempts = 600
 				};
-				
+
 				foreach (var origin in origins) {
 					if (ctx.Stop) break;
 					if (ctx.FleetsToSend <= 0) break;
 					if (origin?.Coordinate == null) continue;
-
-					int discoveries = await _ogameService.GetAvailableDiscoveries(origin);
-					if (discoveries <= 0) {
-						DoLog(LogLevel.Information, $"No discoveries available from {origin} right now.");
-						continue;
-					}
 
 					var cursor = GetOrInitCursor(origin);
 					DoLog(LogLevel.Information, $"Origin {origin} cursor system={cursor.System}, nextPos={cursor.NextPosition} (discoveries={discoveries})");

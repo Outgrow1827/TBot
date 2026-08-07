@@ -1,6 +1,7 @@
 using Microsoft.VisualStudio.Threading;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -41,6 +42,37 @@ namespace Tbot.Common.Settings {
 				return file;
 			}
 		}
+
+		public static async Task<dynamic> GetMergedSettings(string baseSettingsPath, List<string> overlaySettingsPath) {
+            string baseJson = await GetSettingsFileContents(baseSettingsPath);
+			List<string> overlayJson = new();
+			foreach (var overlay in overlaySettingsPath) {
+				overlayJson.Add(await GetSettingsFileContents(overlay));
+			}
+            return GetMergedSettingsFromContents(baseJson, overlayJson);
+        }
+
+        public static dynamic GetMergedSettingsFromContents(string baseJson, List<string> overlayJson) {
+            var baseObj = JsonConvert.DeserializeObject<JObject>(baseJson) ?? new JObject();
+			var overlayObj = JsonConvert.DeserializeObject<JObject>(overlayJson.First()) ?? new JObject();
+			foreach (var overlay in overlayJson.Skip(1)) {
+				var nextOverlayObj = JsonConvert.DeserializeObject<JObject>(overlay) ?? new JObject();
+				overlayObj.Merge(nextOverlayObj, new JsonMergeSettings {
+					MergeArrayHandling = MergeArrayHandling.Replace,
+					MergeNullValueHandling = MergeNullValueHandling.Ignore
+				});
+			}
+
+            baseObj.Merge(overlayObj, new JsonMergeSettings {
+                MergeArrayHandling = MergeArrayHandling.Replace,
+                MergeNullValueHandling = MergeNullValueHandling.Ignore
+            });
+
+            string mergedJson = baseObj.ToString(Formatting.None);
+            dynamic settings = JsonConvert.DeserializeObject<ExpandoObject>(mergedJson, new ExpandoObjectConverter());
+            settings = ConfigObject.FromExpando(JsonNetAdapter.Transform(settings));
+            return settings;
+        }
 
 		public static bool IsSettingSet(dynamic setting, string property) {
 			try {
