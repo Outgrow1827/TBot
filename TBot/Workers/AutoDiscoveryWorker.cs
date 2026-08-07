@@ -201,7 +201,11 @@ namespace Tbot.Workers {
 			DateTime now = await _tbotOgameBridge.GetDateTime();
 			int resumeNextPos = cursor.NextPosition;
 			for (int pos = cursor.NextPosition; pos <= 15; pos++) {
-				resumeNextPos = pos;
+				// Always points past the position being attempted this iteration, so a continue
+				// below (blacklisted position) never leaves the cursor stuck retrying the same spot -
+				// previously this was set to pos here and only advanced to pos + 1 on the
+				// non-continue path, so a blacklisted position 15 froze the cursor there forever.
+				resumeNextPos = pos + 1;
 
 				if (discoveries <= 0 || ctx.FleetsToSend <= 0 || ctx.Stop) break;
 				if (_tbotInstance.UserData.slots.Free <= (int)_tbotInstance.InstanceSettings.General.SlotsToLeaveFree) { ctx.Stop = true; break; }
