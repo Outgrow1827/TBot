@@ -20,6 +20,8 @@ using Tbot.Helpers;
 using Serilog.Events;
 using Telegram.Bot.Types.ReplyMarkups;
 using Tbot.Workers;
+using Tbot.Workers.Brain;
+using CsvHelper;
 
 namespace Tbot.Services {
 
@@ -276,7 +278,10 @@ namespace Tbot.Services {
 				"/stopautofarm",
 				"/startautofarm",
 				"/stopautodiscovery",
-				"/startautodiscovery"
+				"/startautodiscovery",
+				"/fleetjumpgate",
+				"/startautodiscovery",
+				"/profile"
 			};
 
 			if (update.Type != UpdateType.Message) {
@@ -352,14 +357,14 @@ namespace Tbot.Services {
 							else {
 								await SendMessage(botClient, message.Chat, "Telegram Logger is disabled.");
 							}
-							
+
 							return;
 						case "/setloglevel":
 							if (args.Length != 2) {
 								await SendMessage(botClient, message.Chat, "Usage is <code>/setloglevel Debug|Information|Warning|Error</code>");
 								return;
 							}
-							
+
 							if (Enum.TryParse<LogEventLevel>(args[1], true, out LogEventLevel newLevel) == true) {
 								await SendMessage(botClient, message.Chat, $"Enabling Telegram logger with level {newLevel.ToString()}");
 								_logger.AddTelegramLogger(Api, Channel);
@@ -455,7 +460,10 @@ namespace Tbot.Services {
 								"/stopautofarm - stop autofarm\n" +
 								"/startautofarm - start autofarm\n" +
 								"/stopautodiscovery - stop autodiscovery\n" +
-								"/startautodiscovery - start autodiscovery\n"
+								"/startautodiscovery - start autodiscovery\n" +
+								"/fleetjumpgate - run jump gate worker immediately\n" +
+								"/startautodiscovery - start autodiscovery\n" +
+								"/profile - able to load one or multiple profiles. Format: <code>/profile ls/ls-r/reset/laod [profilename] [profilenameX] </code>\n"
 							, ParseMode.Html);
 							return;
 						default:
@@ -1097,6 +1105,28 @@ namespace Tbot.Services {
 								await SendMessage(botClient, message.Chat, "Autodiscovery started!");
 								return;
 
+							case "/fleetjumpgate":
+								if (args.Length != 1) {
+									await SendMessage(botClient, message.Chat, "No arguments accepted with this command!");
+									return;
+								}
+
+								AutoFleetJumpGateWorker worker = (AutoFleetJumpGateWorker) currInstance.WorkerFactory.GetWorker(Feature.BrainAutoFleepJumpGate);
+
+								if (worker == null) {
+									await SendMessage(botClient, message.Chat, "JumpGate worker not available.");
+									return;
+								}
+
+								await SendMessage(botClient, message.Chat, "Running JumpGate worker now...");
+								try {
+									await worker.RunFromTelegramAsync();
+									await SendMessage(botClient, message.Chat, "JumpGate worker completed.");
+								} catch (Exception ex) {
+									await SendMessage(botClient, message.Chat, $"Error during JumpGate execution: {ex.Message}");
+								}
+								return;
+
 
 							case "/getinfo":
 								args = message.Text.Split(' ');
@@ -1275,6 +1305,38 @@ namespace Tbot.Services {
 								await SendMessage(botClient, message.Chat, celestialStr);
 
 								return;
+
+							case "/profile":
+								if (message.Text.Split(' ').Length < 2) {
+									await SendMessage(botClient, message.Chat, "Mission argument required!");
+									await SendMessage(botClient, message.Chat, "<code>/profile ls</code> (list of profiles)\n<code>/profile ls-r</code> (list of profile currently running)\n<code>/profile load ProfileName</code> (to load a profile)\n<code>/profile load ProfileName1 ProfilName2 ProfilNameX</code> (to merge and load multiple profiles)\n<code>/profile reset</code> (to reset the default profile)");
+									return;
+								}
+
+								switch (message.Text.Split(' ')[1]) {
+									case "ls":
+										await currInstance.ListProfiles();
+										return;
+
+									case "ls-r":
+										await currInstance.ListRunningProfiles();
+										return;
+
+									case "load":
+										List<string> messageParts = message.Text.Split(" ").ToList();
+										messageParts = messageParts.Skip(2).ToList();
+										await currInstance.LoadProfile(messageParts);
+										return;
+
+									case "reset":
+										await currInstance.ResetProfile();
+										return;
+									default:
+										await SendMessage(botClient, message.Chat, "Unknown argument for /profile command!");
+										await SendMessage(botClient, message.Chat, "<code>/profile ls</code> (list of profiles)\n<code>/profile ls-r</code> (list of profile currently running)\n<code>/profile load ProfileName</code> (to load a profile)\n<code>/profile load ProfileName1 ProfilName2 ProfilNameX</code> (to merge and load multiple profiles)\n<code>/profile reset</code> (to reset the default profile)");
+										return;
+								}
+								
 							default:
 								return;
 						}

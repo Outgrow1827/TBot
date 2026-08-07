@@ -29,6 +29,7 @@ namespace TBot.Ogame.Infrastructure.Models {
 		public ResourceSettings ResourceSettings { get; set; }
 		public ResourcesProduction ResourcesProduction { get; set; }
 		public Debris Debris { get; set; }
+		public Researches Researches { get; set; }
 
 		public override string ToString() {
 			return $"{Name} {Coordinate.ToString()}";

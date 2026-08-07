@@ -32,5 +32,8 @@ namespace Tbot.Services {
 		Task SendTelegramMessage(string fmt);
 		Task<bool> TelegramSwitch(decimal speed, Celestial attacked = null, bool fromTelegram = false);
 		Task SleepNow(DateTime WakeUpTime);
+		Task ListProfiles();
+		Task LoadProfile(List<string> profileName);
+		Task ResetProfile();
 	}
 }
