@@ -302,7 +302,7 @@ must be built from its own repo's source, not downloaded from upstream's release
 — see the [`ogame` repo's README](https://github.com/Outgrow1827/ogame#ogamed-service)
 for full instructions. Quick version, from the `ogame` repo root:
 ```
-go build -ldflags "-s -w -X main.version=3.4.6" -o ogamed.exe ./cmd/ogamed
+go build -ldflags "-s -w -X main.version=3.4.7" -o ogamed.exe ./cmd/ogamed
 ```
 then copy that `ogamed.exe` into `TBot\ogamed.exe` in this repo.
 
@@ -358,7 +358,7 @@ required filename as on Windows — the `.csproj` doesn't rename it per-OS, so y
 the file is named `.exe` even though it's really a Linux binary; that's expected,
 not a mistake). From the `ogame` repo root:
 ```
-GOOS=linux GOARCH=amd64 go build -ldflags "-s -w -X main.version=3.4.6" -o TBot/ogamed.exe ./cmd/ogamed
+GOOS=linux GOARCH=amd64 go build -ldflags "-s -w -X main.version=3.4.7" -o TBot/ogamed.exe ./cmd/ogamed
 ```
 (adjust the relative path if your `TBot` and `ogame` clones aren't siblings).
 
