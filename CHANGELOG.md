@@ -1,5 +1,30 @@
 # Changelog
 
+## v3.4.8
+
+### AutoFarm
+
+- Replaced the six-hour JSON empty-system cache with a persistent SQLite state store.
+- Added configurable `DaysToKeepOldSystemData` (default: 7) and `EmptySystemCooldownDays` (default: 30).
+- Only systems with no planets or only vacation-mode planets receive the long empty-system cooldown.
+- Systems with incomplete or failed responses are never cached as empty.
+- Persisted viewed systems and farm targets across restarts, while reusing fresh cached system data.
+- Counted espionage and attack fleets together against AutoFarm's `MaxSlots` budget.
+- Stopped failed fleet submissions from invalidating targets and allowed the worker to continue using remaining slots.
+- Continued scanning and scheduling eligible targets instead of sleeping until the longest attack returns.
+- Preserved manual and mixed fleets from AutoFarm ownership and fixed circular range progression.
+
+### AutoDiscovery
+
+- Used the system-view discovery availability instead of probing every planet position blindly.
+- Persisted a cursor per origin and advanced it after blacklisted, rejected, or failed positions, including the last position of a system.
+- Kept account-wide discovery-slot accounting and stopped when no eligible discovery slot remains.
+
+### Release
+
+- Published as a patch release because v3.4.7 is already public.
+- Release packages contain clean default settings and the OGame v13-compatible `ogamed` binary.
+
 ## v3.4.7
 
 ### OGame v13

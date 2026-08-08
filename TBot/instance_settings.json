@@ -480,6 +480,8 @@
 		"SlotsToLeaveFree": 1,
 		"CheckIntervalMin": 30,
 		"CheckIntervalMax": 60,
+		"DaysToKeepOldSystemData": 7,
+		"EmptySystemCooldownDays": 30,
 		"Blacklist": {
 			"Active": true,
 			"ResetAfterHours": 20,
