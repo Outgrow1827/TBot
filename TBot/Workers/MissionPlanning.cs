@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Tbot.Workers {
 	/// <summary>
@@ -44,6 +45,30 @@ namespace Tbot.Workers {
 
 			var normalized = index % count;
 			return normalized < 0 ? normalized + count : normalized;
+		}
+	}
+
+	/// <summary>
+	/// Selects discovery positions reported as available by the system view.
+	/// Positions not returned by that view must never be sent blindly.
+	/// </summary>
+	public static class DiscoverySystemPlanner {
+		public static IReadOnlyList<int> SelectAvailablePositions(
+			IEnumerable<int> availablePositions,
+			int nextPosition,
+			IReadOnlySet<int> blacklistedPositions,
+			int maximum) {
+			if (availablePositions == null || maximum <= 0)
+				return Array.Empty<int>();
+
+			var minimum = Math.Clamp(nextPosition, 1, 15);
+			return availablePositions
+				.Where(position => position >= minimum && position <= 15)
+				.Where(position => blacklistedPositions == null || !blacklistedPositions.Contains(position))
+				.Distinct()
+				.OrderBy(position => position)
+				.Take(maximum)
+				.ToList();
 		}
 	}
 

@@ -21,6 +21,7 @@ namespace Tbot.Workers {
 		private readonly IFleetScheduler _fleetScheduler;
 		private readonly ICalculationService _calculationService;
 		private readonly ITBotOgamedBridge _tbotOgameBridge;
+		private readonly AutoDiscoveryCursorStore _cursorStore;
 
 		private readonly Dictionary<string, DiscoveryCursorState> _originCursors = new();
 
@@ -42,6 +43,8 @@ namespace Tbot.Workers {
 			_fleetScheduler = fleetScheduler;
 			_calculationService = calculationService;
 			_tbotOgameBridge = tbotOgameBridge;
+			_cursorStore = new AutoDiscoveryCursorStore(
+				$"autodiscovery_cursors_{_tbotInstance.InstanceAlias}.json");
 		}
 
 		private sealed class CoordinateComparer : IEqualityComparer<Coordinate> {
@@ -152,7 +155,7 @@ namespace Tbot.Workers {
 		private DiscoveryCursorState GetOrInitCursor(Celestial origin) {
 			var key = OriginKey(origin);
 			if (!_originCursors.TryGetValue(key, out var cursor) || cursor == null) {
-				cursor = new DiscoveryCursorState(origin.Coordinate.System);
+				cursor = _cursorStore.Load(key, origin.Coordinate.System);
 				_originCursors[key] = cursor;
 			}
 
@@ -174,7 +177,52 @@ namespace Tbot.Workers {
 			DateTime now = await _tbotOgameBridge.GetDateTime();
 			int systemToDo = cursor.System;
 			int maxSystem = _tbotInstance.UserData.serverData.Systems;
-			for (int pos = cursor.NextPosition; pos <= 15; pos++) {
+			List<Coordinate> availableCoordinates;
+			try {
+				availableCoordinates = await _ogameService.GetPositionsAvailableForDiscoveryFleet(origin, new Coordinate {
+					Galaxy = origin.Coordinate.Galaxy,
+					System = systemToDo,
+					Position = 0,
+					Type = Celestials.Planet
+				});
+			} catch (Exception e) {
+				DoLog(LogLevel.Warning,
+					$"System view failed for {origin.Coordinate.Galaxy}:{systemToDo}; no discovery positions will be probed this cycle: {e.Message}");
+				return discoveries;
+			}
+
+			var availablePositions = new HashSet<int>(
+				(availableCoordinates ?? new List<Coordinate>())
+					.Where(c => c != null && c.Galaxy == origin.Coordinate.Galaxy && c.System == systemToDo && c.Position >= 1 && c.Position <= 15)
+					.Select(c => c.Position));
+			var blacklistedPositions = new HashSet<int>();
+			for (int position = cursor.NextPosition; position <= 15; position++) {
+				var positionCoordinate = new Coordinate {
+					Galaxy = origin.Coordinate.Galaxy,
+					System = systemToDo,
+					Position = position,
+					Type = Celestials.Planet
+				};
+				if (IsBlacklistedAndActive(positionCoordinate, now))
+					blacklistedPositions.Add(position);
+			}
+
+			var plannedPositions = DiscoverySystemPlanner.SelectAvailablePositions(
+				availablePositions,
+				cursor.NextPosition,
+				blacklistedPositions,
+				Math.Min(discoveries, ctx.FleetsToSend));
+
+			DoLog(LogLevel.Debug,
+				$"System {origin.Coordinate.Galaxy}:{systemToDo} reports {availablePositions.Count} available discovery positions; planned {plannedPositions.Count}.");
+
+			if (plannedPositions.Count == 0) {
+				cursor.SkipSystem(systemToDo, maxSystem);
+				_cursorStore.Save(OriginKey(origin), cursor);
+				return discoveries;
+			}
+
+			foreach (int pos in plannedPositions) {
 				if (discoveries <= 0 || ctx.FleetsToSend <= 0 || ctx.Stop) break;
 				if (_tbotInstance.UserData.slots.Free <= (int)_tbotInstance.InstanceSettings.General.SlotsToLeaveFree) { ctx.Stop = true; break; }
 
@@ -187,9 +235,10 @@ namespace Tbot.Workers {
 					Type = Celestials.Planet
 				};
 
-				// Commit before branching: blacklisted and rejected positions are still examined.
-				// This is the invariant that prevents the cursor from getting stuck at position 15.
+				// Commit before sending so a failed request cannot retry the same position
+				// repeatedly. The system view already filtered unavailable positions.
 				cursor.CommitPosition(systemToDo, pos, maxSystem);
+				_cursorStore.Save(OriginKey(origin), cursor);
 
 				if (IsBlacklistedAndActive(dest, now)) {
 					ctx.Skips++;
@@ -205,11 +254,8 @@ namespace Tbot.Workers {
 					DoLog(LogLevel.Warning, $"Failed to send discovery fleet to {dest} from {origin}.");
 				}
 
-				// A checked position is cooled down regardless of the result. The server can
-				// reject a position for a transient reason, but retrying it every cycle would
-				// otherwise create a tight loop and repeated activity.
+				// Keep a failed or sent position out of the next planning pass.
 				UpsertBlacklist(dest, now.AddDays(7));
-
 				_tbotInstance.UserData.slots = await _tbotOgameBridge.UpdateSlots();
 			}
 
