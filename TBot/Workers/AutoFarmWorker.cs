@@ -29,6 +29,11 @@ namespace Tbot.Workers {
 		// cycle (see Execute()), not held open across the worker's whole lifetime.
 		private FarmTargetCache _farmTargetCache;
 
+		// Lazily created once and reused across Execute() cycles (unlike _farmTargetCache) since it
+		// only holds an in-memory, self-refreshing snapshot of /api/highscore.xml - no per-cycle
+		// open/dispose needed.
+		private HighscorePlayerRankCache _highscoreRankCache;
+
 		// Tracks the single expendable probe-as-attack sent per target to detect defenses when a
 		// normal espionage report couldn't reveal them (see SendDefenseProbeAttacks). Static so it
 		// survives worker re-instantiation, matching the cross-cycle nature of "wait for this fleet
@@ -209,14 +214,22 @@ namespace Tbot.Workers {
 			return scannedTargets;
 		}
 
-		private bool IsTargetInMinimumRank(Celestial planet, List<Celestial> scannedTargets) {
+		private async Task<bool> IsTargetInMinimumRank(Celestial planet, List<Celestial> scannedTargets) {
 			if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "MinimumPlayerRank") && _tbotInstance.InstanceSettings.AutoFarm.MinimumPlayerRank != 0) {
 				int rank = 1;
 				if (planet.Coordinate.Type == Celestials.Planet) {
 					rank = (planet as Planet).Player.Rank;
+				} else if (scannedTargets.Any(t => t.HasCoords(new(planet.Coordinate.Galaxy, planet.Coordinate.System, planet.Coordinate.Position, Celestials.Planet)))) {
+					rank = (scannedTargets.Single(t => t.HasCoords(new(planet.Coordinate.Galaxy, planet.Coordinate.System, planet.Coordinate.Position, Celestials.Planet))) as Planet).Player.Rank;
 				} else {
-					if (scannedTargets.Any(t => t.HasCoords(new(planet.Coordinate.Galaxy, planet.Coordinate.System, planet.Coordinate.Position, Celestials.Planet)))) {
-						rank = (scannedTargets.Single(t => t.HasCoords(new(planet.Coordinate.Galaxy, planet.Coordinate.System, planet.Coordinate.Position, Celestials.Planet))) as Planet).Player.Rank;
+					// Sibling planet wasn't in this scan (e.g. a moon whose planet is out of range or
+					// already filtered out). Fall back to the persistent target cache's last known
+					// player name, then resolve a fresh rank for it via highscore.xml instead of
+					// silently defaulting to rank 1 (which always passes the filter).
+					var cachedEntry = _farmTargetCache?.Get(new(planet.Coordinate.Galaxy, planet.Coordinate.System, planet.Coordinate.Position, Celestials.Planet));
+					if (!string.IsNullOrEmpty(cachedEntry?.PlayerName)) {
+						_highscoreRankCache ??= new HighscorePlayerRankCache(_ogameService);
+						rank = await _highscoreRankCache.GetRank(cachedEntry.PlayerName) ?? cachedEntry.PlayerRank;
 					}
 				}
 				if ((int) _tbotInstance.InstanceSettings.AutoFarm.MinimumPlayerRank < rank) {
@@ -947,7 +960,7 @@ namespace Tbot.Workers {
 								foreach (Celestial planet in scannedTargets) {
 									if (stopAutoFarm)
 										break;
-									if (!IsTargetInMinimumRank(planet, scannedTargets)) {
+									if (!await IsTargetInMinimumRank(planet, scannedTargets)) {
 										continue;
 									}
 

@@ -394,6 +394,17 @@ namespace TBot.Ogame.Infrastructure {
 			return await GetAsync<string>("/bot/server-url");
 		}
 
+		// Raw XML passthrough of OGame's public /api/highscore.xml, proxied by ogamed (category: 1=Player,
+		// 2=Alliance; type: 0=Total, 1=Economy, 2=Research, 3=Military, 4=Military Lost, 5=Military Built,
+		// 6=Military Destroyed, 7=Honor). Bypasses GetAsync/ManageResponse since this endpoint returns raw
+		// XML, not ogamed's usual {status, message, result} JSON envelope.
+		public async Task<string> GetHighscoreXml(int category, int type) {
+			var response = await GetRetryPolicy()
+				.ExecuteAsync(async () => await _client.GetAsync($"api/highscore.xml?category={category}&type={type}"));
+			response.EnsureSuccessStatusCode();
+			return await response.Content.ReadAsStringAsync();
+		}
+
 		public async Task<string> GetServerLanguage() {
 			return await GetAsync<string>("/bot/language");
 		}
