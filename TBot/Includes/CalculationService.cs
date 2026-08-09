@@ -4158,10 +4158,25 @@ namespace Tbot.Includes {
 			return nextLFtech;
 		}
 
+		// True when a resource is already sitting at/above its storage cap right now - production is
+		// being wasted every cycle it stays this way, unlike negative energy (which the game throttles
+		// down automatically, a reversible loss, not a destructive one).
+		private bool IsStorageOverflowing(Planet planet) {
+			return planet.Resources.Metal >= CalcDepositCapacity(planet.Buildings.MetalStorage)
+				|| planet.Resources.Crystal >= CalcDepositCapacity(planet.Buildings.CrystalStorage)
+				|| planet.Resources.Deuterium >= CalcDepositCapacity(planet.Buildings.DeuteriumTank);
+		}
+
 		public Buildables GetNextBuildingToBuild(Planet planet, Researches researches, Buildings maxBuildings, Facilities maxFacilities, CharacterClass playerClass, Staff staff, ServerData serverData, AutoMinerSettings settings, float ratio = 1) {
 			Buildables buildableToBuild = Buildables.Null;
 			if (ShouldBuildTerraformer(planet, researches, maxFacilities.Terraformer))
 				buildableToBuild = Buildables.Terraformer;
+			// Storage overflow happening right now takes priority over a negative-energy fix: a stalled
+			// energy source (eg. waiting on resources, or capped by MaxSolarPlant/MaxFusionReactor)
+			// would otherwise starve the deposit indefinitely below while resources keep being wasted
+			// past the cap every cycle. See project memory 2026-08-08.
+			if (buildableToBuild == Buildables.Null && IsStorageOverflowing(planet))
+				buildableToBuild = GetNextDepositToBuild(planet, researches, maxBuildings, playerClass, staff, serverData, settings, ratio);
 			if (buildableToBuild == Buildables.Null && ShouldBuildEnergySource(planet))
 				buildableToBuild = GetNextEnergySourceToBuild(planet, maxBuildings.SolarPlant, maxBuildings.FusionReactor, settings.BuildSolarSatellites);
 			if (buildableToBuild == Buildables.Null)
@@ -4190,12 +4205,33 @@ namespace Tbot.Includes {
 				planet.Facilities.ResearchLab < 5
 			)
 				return depositToBuild;
-			if (depositToBuild == Buildables.Null && ShouldBuildDeuteriumTank(planet, maxBuildings.DeuteriumTank, serverData.Speed, settings.DepositHours, ratio, researches, playerClass, staff.Geologist, staff.IsFull, settings.BuildDepositIfFull))
-				depositToBuild = Buildables.DeuteriumTank;
-			if (depositToBuild == Buildables.Null && ShouldBuildCrystalStorage(planet, maxBuildings.CrystalStorage, serverData.Speed, settings.DepositHours, ratio, researches, playerClass, staff.Geologist, staff.IsFull, settings.BuildDepositIfFull))
-				depositToBuild = Buildables.CrystalStorage;
-			if (depositToBuild == Buildables.Null && ShouldBuildMetalStorage(planet, maxBuildings.MetalStorage, serverData.Speed, settings.DepositHours, ratio, researches, playerClass, staff.Geologist, staff.IsFull, settings.BuildDepositIfFull))
-				depositToBuild = Buildables.MetalStorage;
+			// Pick whichever eligible deposit is relatively furthest behind its own DepositHours target
+			// (needed/capacity ratio), not a fixed Deuterium > Crystal > Metal order - a fixed order lets
+			// whichever resource is checked first (Deuterium, then Crystal) keep re-triggering forever
+			// and starve the ones checked later (confirmed: Crystal kept winning, Metal never got picked
+			// despite being the highest producer - see project memory 2026-08-08).
+			float bestRatio = 0;
+			if (ShouldBuildDeuteriumTank(planet, maxBuildings.DeuteriumTank, serverData.Speed, settings.DepositHours, ratio, researches, playerClass, staff.Geologist, staff.IsFull, settings.BuildDepositIfFull)) {
+				float r = (float) (settings.DepositHours * CalcDeuteriumProduction(planet, serverData.Speed, ratio, researches, playerClass, staff.Geologist, staff.IsFull)) / Math.Max(1, CalcDepositCapacity(planet.Buildings.DeuteriumTank));
+				if (r > bestRatio) {
+					bestRatio = r;
+					depositToBuild = Buildables.DeuteriumTank;
+				}
+			}
+			if (ShouldBuildCrystalStorage(planet, maxBuildings.CrystalStorage, serverData.Speed, settings.DepositHours, ratio, researches, playerClass, staff.Geologist, staff.IsFull, settings.BuildDepositIfFull)) {
+				float r = (float) (settings.DepositHours * CalcCrystalProduction(planet, serverData.Speed, ratio, researches, playerClass, staff.Geologist, staff.IsFull)) / Math.Max(1, CalcDepositCapacity(planet.Buildings.CrystalStorage));
+				if (r > bestRatio) {
+					bestRatio = r;
+					depositToBuild = Buildables.CrystalStorage;
+				}
+			}
+			if (ShouldBuildMetalStorage(planet, maxBuildings.MetalStorage, serverData.Speed, settings.DepositHours, ratio, researches, playerClass, staff.Geologist, staff.IsFull, settings.BuildDepositIfFull)) {
+				float r = (float) (settings.DepositHours * CalcMetalProduction(planet, serverData.Speed, ratio, researches, playerClass, staff.Geologist, staff.IsFull)) / Math.Max(1, CalcDepositCapacity(planet.Buildings.MetalStorage));
+				if (r > bestRatio) {
+					bestRatio = r;
+					depositToBuild = Buildables.MetalStorage;
+				}
+			}
 
 			return depositToBuild;
 		}
