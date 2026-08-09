@@ -753,6 +753,10 @@ namespace TBot.Ogame.Infrastructure {
 			return await GetAsync<LFTechs>($"/bot/planets/{celestial.ID}/lifeform-techs");
 		}
 
+		public async Task<ArtifactInventory> GetArtifactInventory(Celestial celestial) {
+			return await GetAsync<ArtifactInventory>($"/bot/planets/{celestial.ID}/artifacts");
+		}
+
 		public async Task<Facilities> GetFacilities(Celestial celestial) {
 			return await GetAsync<Facilities>($"/bot/planets/{celestial.ID}/facilities");
 		}
