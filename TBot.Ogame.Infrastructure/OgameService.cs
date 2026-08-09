@@ -1057,10 +1057,6 @@ namespace TBot.Ogame.Infrastructure {
             return await PostAsync<List<Coordinate>>($"/bot/planets/{celestial.ID}/get-system-available-discovery", parameters.ToArray());
         }
 
-        public async Task<int> GetAvailableDiscoveries() {
-            return await GetAsync<int>("/bot/get-available-discoveries");
-        }
-
         public async Task<int> GetAvailableDiscoveries(Celestial celestial) {
             return await GetAsync<int>($"/bot/planets/{celestial.ID}/get-available-discoveries");
         }

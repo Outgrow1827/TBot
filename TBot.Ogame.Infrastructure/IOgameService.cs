@@ -99,7 +99,6 @@ namespace TBot.Ogame.Infrastructure {
 		Task SolveCaptcha(string challengeID, int answer);
 		        Task<bool> AbandonCelestial(Celestial celestial);
                 Task<List<Coordinate>> GetPositionsAvailableForDiscoveryFleet(Celestial celestial, Coordinate coordinate);
-        Task<int> GetAvailableDiscoveries();
         Task<int> GetAvailableDiscoveries(Celestial celestial);
 	}
 }
