@@ -43,9 +43,9 @@
 			"Brain": 2,
 			"Expeditions": 1,
 			"AutoFarm": 3,
+			"AutoHarvest": 99,
 			"AutoColonize": 4,
-			"AutoDiscovery": 10,
-			"AutoHarvest": 99
+			"AutoDiscovery": 10
 		}
 	},
 	"SleepMode": {
