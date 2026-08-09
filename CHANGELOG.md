@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Artifact inventory
+
+- Added the ogamed v13 artifact inventory endpoint and exposed collected artifacts and capacity to TBot.
+- Validated the endpoint against a live Xanthippe account (`272 / 3600` returned successfully).
+
 ## v3.4.9
 
 ### AutoDiscovery
