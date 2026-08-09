@@ -38,7 +38,9 @@ namespace Tbot.Workers {
 
 		public static string GetDatabaseFilePath(string instanceSettingsPath, string instanceAlias) {
 			var directory = Path.GetDirectoryName(Path.GetFullPath(instanceSettingsPath));
-			return Path.Combine(directory ?? ".", $"autofarm_{instanceAlias}.db");
+			var dataDir = Path.Combine(directory ?? ".", "data");
+			Directory.CreateDirectory(dataDir);
+			return Path.Combine(dataDir, $"autofarm_{instanceAlias}.db");
 		}
 
 		/// <summary>
