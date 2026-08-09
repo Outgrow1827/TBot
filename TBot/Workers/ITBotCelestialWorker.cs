@@ -14,5 +14,7 @@ namespace Tbot.Workers {
 
 		Celestial celestial { get; }
 		ITBotWorker parentWorker { get; }
+		Task FirstExecutionCompleted { get; }
+		void StartAfter(Task predecessor);
 	}
 }

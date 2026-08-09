@@ -99,9 +99,9 @@ namespace Tbot.Workers.Brain {
 					Min = (int) _tbotInstance.InstanceSettings.AutoColonize.Abandon.MinTemperatureAcceptable,
 					Max = (int) _tbotInstance.InstanceSettings.AutoColonize.Abandon.MaxTemperatureAcceptable
 				};
-				
+
 				await AutoMineCelestial(celestial, maxBuildings, maxFacilities, maxLunarFacilities, autoMinerSettings, fieldsSettings, temperaturesSettings);
-				
+
 			} catch (Exception e) {
 				DoLog(LogLevel.Error, $"AutoMine Exception: {e.Message}");
 				DoLog(LogLevel.Warning, $"Stacktrace: {e.StackTrace}");
@@ -215,8 +215,7 @@ namespace Tbot.Workers.Brain {
 								buildable = Buildables.SolarSatellite;
 								level = _calculationService.CalcNeededSolarSatellites(celestial as Planet, xCostBuildable.Energy - celestial.ResourcesProduction.Energy.CurrentProduction, _tbotInstance.UserData.userInfo.Class == CharacterClass.Collector, _tbotInstance.UserData.staff.Engineer, _tbotInstance.UserData.staff.IsFull);
 								xCostBuildable = _calculationService.CalcPrice(buildable, level, celestial.LFBonuses);
-							}
-							else {
+							} else {
 								DoLog(LogLevel.Information, $"Unable to build SolarSatellites for Terraformer. Stopping AutoMiner for celestial {celestial.ToString()}");
 								stop = true;
 								return;
@@ -338,8 +337,8 @@ namespace Tbot.Workers.Brain {
 									(int) _tbotInstance.InstanceSettings.AutoHarvest.MaxSlots,
 									(int) _tbotInstance.UserData.fleets.Count(f => f.Mission == Missions.Harvest))
 									};
-									int MaxSlots = _calculationService.CalcSlotsPriority(Feature.BrainAutoMine, rankSlotsPriority, _tbotInstance.UserData.slots, _tbotInstance.UserData.fleets, (int) _tbotInstance.InstanceSettings.General.SlotsToLeaveFree);
-							
+							int MaxSlots = _calculationService.CalcSlotsPriority(Feature.BrainAutoMine, rankSlotsPriority, _tbotInstance.UserData.slots, _tbotInstance.UserData.fleets, (int) _tbotInstance.InstanceSettings.General.SlotsToLeaveFree);
+
 							if (MaxSlots > 0) {
 								if (!_calculationService.IsThereTransportTowardsCelestial(celestial, _tbotInstance.UserData.fleets)) {
 									Celestial origin = new() { ID = 0 };
@@ -439,7 +438,7 @@ namespace Tbot.Workers.Brain {
 													(bool) _tbotInstance.InstanceSettings.Brain.Transports.MultipleOrigins.PriorityToProximityOverQuantity,
 													celestialsToExclude)
 												);
-											
+
 											Celestial destination;
 											if ((bool) transportsSettings.SendToTheMoonIfPossible && celestial.Coordinate.Type == Celestials.Planet && _calculationService.IsThereMoonHere(allCelestials, celestial)) {
 												destination = allCelestials
@@ -473,15 +472,16 @@ namespace Tbot.Workers.Brain {
 												return;
 											}
 
-											Ships ships = new();
-											
 											foreach (var item in resultOrigins) {
-												ships = new();
-												ships.Add((Buildables) transportsSettings.CargoType, _calculationService.CalcShipNumberForPayload(item.FirstOrDefault().Value, (Buildables) transportsSettings.CargoType, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, celestial.LFBonuses.GetShipCargoBonus(transportsSettings.CargoType), _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo));
-												if (item.FirstOrDefault().Key.Coordinate.IsSame(destination.Coordinate) && transportsSettings.SendToTheMoonIfPossible && destination.Coordinate.Type == Celestials.Moon)
-													fleetId= await _fleetScheduler.SendFleet(item.FirstOrDefault().Key, ships, celestial.Coordinate, Missions.Transport, Speeds.HundredPercent, item.FirstOrDefault().Value);
+												var shipment = item.FirstOrDefault();
+												var shipmentOrigin = shipment.Key;
+												var shipmentAmount = shipment.Value;
+												var ships = new Ships();
+												ships.Add((Buildables) transportsSettings.CargoType, _calculationService.CalcShipNumberForPayload(shipmentAmount, (Buildables) transportsSettings.CargoType, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, shipmentOrigin.LFBonuses.GetShipCargoBonus(transportsSettings.CargoType), _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo));
+												if (shipmentOrigin.Coordinate.IsSame(destination.Coordinate) && transportsSettings.SendToTheMoonIfPossible && destination.Coordinate.Type == Celestials.Moon)
+													fleetId = await _fleetScheduler.SendFleet(shipmentOrigin, ships, celestial.Coordinate, Missions.Transport, Speeds.HundredPercent, shipmentAmount);
 												else
-													fleetId= await _fleetScheduler.SendFleet(item.FirstOrDefault().Key, ships, destination.Coordinate, Missions.Transport, Speeds.HundredPercent, item.FirstOrDefault().Value);
+													fleetId = await _fleetScheduler.SendFleet(shipmentOrigin, ships, destination.Coordinate, Missions.Transport, Speeds.HundredPercent, shipmentAmount);
 
 												if (fleetId == (int) SendFleetCode.AfterSleepTime) {
 													stop = true;
