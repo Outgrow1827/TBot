@@ -371,7 +371,12 @@ namespace Tbot.Workers {
 					return;
 				}
 
-				int discoveries = await _ogameService.GetAvailableDiscoveries();
+				// OGame exposes discovery availability through the planet-scoped endpoint.
+				// The returned count is account-wide, so query it once instead of asking
+				// every configured origin and creating unnecessary activity.
+				var availabilityOrigin = origins.FirstOrDefault(origin =>
+					origin?.Coordinate?.Type == Celestials.Planet) ?? origins[0];
+				int discoveries = await _ogameService.GetAvailableDiscoveries(availabilityOrigin);
 				if (discoveries <= 0) {
 					delay = true;
 					DoLog(LogLevel.Information, "No discoveries available right now.");

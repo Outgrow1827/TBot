@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.4.9
+
+### AutoDiscovery
+
+- Fixed the v13 availability check to use the supported planet-scoped ogamed endpoint.
+- Removed the obsolete account-level endpoint so future callers cannot reintroduce the same failure.
+- Confirmed with a live Xanthippe account test that AutoDiscovery queries the system view and sends a discovery fleet successfully.
+
 ## v3.4.8
 
 ### AutoFarm
