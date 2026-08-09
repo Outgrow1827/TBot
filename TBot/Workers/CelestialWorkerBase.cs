@@ -23,6 +23,8 @@ namespace Tbot.Workers {
 
 		private SemaphoreSlim _sem = new SemaphoreSlim(1, 1);
 		private AsyncTimer _timer = null;
+		private TaskCompletionSource<bool> _firstExecutionCompletion = CreateCompletionSource();
+		private Task _executionPredecessor = Task.CompletedTask;
 		
 		private Celestial _celestial = null;
 		private ITBotWorker _parentWorker = null;
@@ -49,6 +51,7 @@ namespace Tbot.Workers {
 				return (_timer != null) ? _timer.Period : TimeSpan.Zero;
 			}
 		}
+		public Task FirstExecutionCompleted => _firstExecutionCompletion.Task;
 
 		public ConcurrentDictionary<Celestial, ITBotCelestialWorker> celestialWorkers => throw new NotImplementedException();
 
@@ -68,6 +71,7 @@ namespace Tbot.Workers {
 			DoLog(LogLevel.Information, $"Starting Worker \"{GetWorkerName()}\"..");
 
 			await StopWorker();
+			_firstExecutionCompletion = CreateCompletionSource();
 
 			_ct = ct;
 
@@ -118,6 +122,9 @@ namespace Tbot.Workers {
 			_sem.Dispose();
 			_sem = sem;
 		}
+		public void StartAfter(Task predecessor) {
+			_executionPredecessor = predecessor ?? Task.CompletedTask;
+		}
 		public SemaphoreSlim GetSemaphore() {
 			return _sem;
 		}
@@ -149,18 +156,22 @@ namespace Tbot.Workers {
 		}
 
 		private async Task ExecutionWrapper(CancellationToken ct) {
+			var firstExecutionCompletion = _firstExecutionCompletion;
 
 			if (_tbotInstance.UserData.isSleeping == true) {
 				DoLog(LogLevel.Debug, $"Sleeping... Ending {GetWorkerName()}");
 				await EndExecution();
+				firstExecutionCompletion.TrySetResult(true);
 				return;
 			} else if (IsWorkerEnabledBySettings() == false) {
 				DoLog(LogLevel.Information, $"{GetWorkerName()} not enabled by settings. Ending...");
 				await EndExecution();
+				firstExecutionCompletion.TrySetResult(true);
 				return;
 			}
 
 			try {
+				await _executionPredecessor;
 				await WaitWorker();
 
 				ct.ThrowIfCancellationRequested();
@@ -178,7 +189,12 @@ namespace Tbot.Workers {
 				// OK
 			} finally {
 				ReleaseWorker();
+				firstExecutionCompletion.TrySetResult(true);
 			}
+		}
+
+		private static TaskCompletionSource<bool> CreateCompletionSource() {
+			return new(TaskCreationOptions.RunContinuationsAsynchronously);
 		}
 
 		private void RemoveAllTimers() {

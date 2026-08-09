@@ -81,11 +81,12 @@ namespace Tbot.Workers.Brain {
 					
 					List<Celestial> celestialsToExclude = _calculationService.ParseCelestialsList(_tbotInstance.InstanceSettings.Brain.LifeformAutoResearch.Exclude, _tbotInstance.UserData.celestials);
 					List<Celestial> celestialsToMine = new();
+					List<ConstructionCandidate> constructionCandidates = new();
 
 					foreach (Celestial celestial in _tbotInstance.UserData.celestials.Where(p => p is Planet)) {
 						var cel = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.LFBuildings);
-						cel = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.LFTechs);
-						cel = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.Resources);
+						cel = await _tbotOgameBridge.UpdatePlanet(cel, UpdateTypes.LFTechs);
+						cel = await _tbotOgameBridge.UpdatePlanet(cel, UpdateTypes.Resources);
 
 						if (cel.LFtype == LFTypes.None) {
 							DoLog(LogLevel.Information, $"Skipping {cel.ToString()}: No Lifeform active on this planet.");
@@ -102,19 +103,29 @@ namespace Tbot.Workers.Brain {
 							}
 
 							DoLog(LogLevel.Debug, $"Celestial {cel.ToString()}: Next Lifeform Research: {nextLFTechToBuild.ToString()} lv {level.ToString()}.");
-							celestialsToMine.Add(celestial);
+							constructionCandidates.Add(new ConstructionCandidate {
+								CelestialId = cel.ID,
+								Score = _calculationService.CalcPrice(nextLFTechToBuild, level).ConvertedDeuterium
+							});
+							celestialsToMine.Add(cel);
 						} else {
 							DoLog(LogLevel.Debug, $"Celestial {cel.ToString()}: No Next Lifeform technology to build found. All research reached _tbotInstance.InstanceSettings MaxResearchLevel ?");
 						}
 
 					}
+					celestialsToMine = AccountConstructionPlanner.OrderCelestials(celestialsToMine, constructionCandidates).ToList();
+					var dueTime = TimeSpan.Zero;
+					Task previousExecution = Task.CompletedTask;
 					foreach (Celestial celestial in celestialsToMine) {
 						if (celestialsToExclude.Has(celestial)) {
 							DoLog(LogLevel.Information, $"Skipping {celestial.ToString()}: celestial in exclude list.");
 							continue;
 						}
 						var celestialWorker = _workerFactory.InitializeCelestialWorker(this, Feature.BrainCelestialLifeformAutoResearch, _tbotInstance, _tbotOgameBridge, celestial);
-						await celestialWorker.StartWorker(new CancellationTokenSource().Token, TimeSpan.FromMilliseconds(RandomizeHelper.CalcRandomInterval(IntervalType.AFewSeconds)));
+						celestialWorker.StartAfter(previousExecution);
+						dueTime = OrderedWorkerSchedule.NextDueTime(dueTime, TimeSpan.FromMilliseconds(RandomizeHelper.CalcRandomInterval(IntervalType.AFewSeconds)));
+						await celestialWorker.StartWorker(new CancellationTokenSource().Token, dueTime);
+						previousExecution = celestialWorker.FirstExecutionCompleted;
 					}
 				} else {
 					DoLog(LogLevel.Information, "Skipping: feature disabled");

@@ -219,7 +219,7 @@ namespace Tbot.Workers.Brain {
 											(int) _tbotInstance.UserData.fleets.Count(f => f.Mission == Missions.Harvest))
 									};
 									int MaxSlots = _calculationService.CalcSlotsPriority(Feature.BrainLifeformAutoMine, rankSlotsPriority, _tbotInstance.UserData.slots, _tbotInstance.UserData.fleets, (int) _tbotInstance.InstanceSettings.General.SlotsToLeaveFree);
-									
+
 									if (MaxSlots > 0) {
 										if (!_calculationService.IsThereTransportTowardsCelestial(celestial, _tbotInstance.UserData.fleets)) {
 											Celestial origin = new() { ID = 0 };
@@ -311,7 +311,7 @@ namespace Tbot.Workers.Brain {
 															(bool) _tbotInstance.InstanceSettings.Brain.Transports.MultipleOrigins.PriorityToProximityOverQuantity,
 															celestialsToExclude)
 														);
-													
+
 													Celestial destination;
 													if ((bool) transportsSettings.SendToTheMoonIfPossible && _calculationService.IsThereMoonHere(allCelestials, celestial)) {
 														destination = allCelestials
@@ -326,7 +326,7 @@ namespace Tbot.Workers.Brain {
 													} else {
 														destination = celestial;
 													}
-													
+
 													var resultOrigins = _calculationService.CalcMultipleOrigin(celestial, allCelestials, missingResources, transportsSettings, _tbotInstance.UserData.fleets, _tbotInstance.UserData);
 
 													if (resultOrigins.Count() == 0) {
@@ -339,15 +339,16 @@ namespace Tbot.Workers.Brain {
 														return;
 													}
 
-													Ships ships = new();
-													
 													foreach (var item in resultOrigins) {
-														ships = new();
-														ships.Add((Buildables) transportsSettings.CargoType, _calculationService.CalcShipNumberForPayload(item.FirstOrDefault().Value, (Buildables) transportsSettings.CargoType, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, celestial.LFBonuses.GetShipCargoBonus(transportsSettings.CargoType), _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo));
-														if (item.FirstOrDefault().Key.Coordinate.IsSame(destination.Coordinate) && transportsSettings.SendToTheMoonIfPossible && destination.Coordinate.Type == Celestials.Moon)
-															fleetId= await _fleetScheduler.SendFleet(item.FirstOrDefault().Key, ships, celestial.Coordinate, Missions.Transport, Speeds.HundredPercent, item.FirstOrDefault().Value);
+														var shipment = item.FirstOrDefault();
+														var shipmentOrigin = shipment.Key;
+														var shipmentAmount = shipment.Value;
+														var ships = new Ships();
+														ships.Add((Buildables) transportsSettings.CargoType, _calculationService.CalcShipNumberForPayload(shipmentAmount, (Buildables) transportsSettings.CargoType, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, shipmentOrigin.LFBonuses.GetShipCargoBonus(transportsSettings.CargoType), _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo));
+														if (shipmentOrigin.Coordinate.IsSame(destination.Coordinate) && transportsSettings.SendToTheMoonIfPossible && destination.Coordinate.Type == Celestials.Moon)
+															fleetId = await _fleetScheduler.SendFleet(shipmentOrigin, ships, celestial.Coordinate, Missions.Transport, Speeds.HundredPercent, shipmentAmount);
 														else
-															fleetId= await _fleetScheduler.SendFleet(item.FirstOrDefault().Key, ships, destination.Coordinate, Missions.Transport, Speeds.HundredPercent, item.FirstOrDefault().Value);
+															fleetId = await _fleetScheduler.SendFleet(shipmentOrigin, ships, destination.Coordinate, Missions.Transport, Speeds.HundredPercent, shipmentAmount);
 
 														if (fleetId == (int) SendFleetCode.AfterSleepTime) {
 															stop = true;
@@ -492,7 +493,7 @@ namespace Tbot.Workers.Brain {
 							interval = productionTime + RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
 						} else {
 							if (fleetId > 0) {
-								_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();							
+								_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
 								var transportfleet = _tbotInstance.UserData.fleets.Single(f => f.ID == fleetId && f.Mission == Missions.Transport);
 								interval = (transportfleet.ArriveIn * 1000) + RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
 							} else {

@@ -92,7 +92,8 @@ namespace Tbot.Workers.Brain {
 					MaxDaysOfInvestmentReturn = (float) _tbotInstance.InstanceSettings.Brain.AutoMine.MaxDaysOfInvestmentReturn,
 					DepositHours = (int) _tbotInstance.InstanceSettings.Brain.AutoMine.DepositHours,
 					BuildDepositIfFull = (bool) _tbotInstance.InstanceSettings.Brain.AutoMine.BuildDepositIfFull,
-					DeutToLeaveOnMoons = (int) _tbotInstance.InstanceSettings.Brain.AutoMine.DeutToLeaveOnMoons
+					DeutToLeaveOnMoons = (int) _tbotInstance.InstanceSettings.Brain.AutoMine.DeutToLeaveOnMoons,
+					BuildSolarSatellites = (bool) _tbotInstance.InstanceSettings.Brain.AutoMine.BuildSolarSatellites
 				};
 				Fields fieldsSettings = new() {
 					Total = (int) _tbotInstance.InstanceSettings.AutoColonize.Abandon.MinFields
@@ -105,11 +106,13 @@ namespace Tbot.Workers.Brain {
 				_tbotInstance.UserData.researches = await _ogameService.GetResearches();
 				List<Celestial> celestialsToExclude = _calculationService.ParseCelestialsList(_tbotInstance.InstanceSettings.Brain.AutoMine.Exclude, _tbotInstance.UserData.celestials);
 				List<Celestial> celestialsToMine = new();
+				List<ConstructionCandidate> constructionCandidates = new();
 				foreach (Celestial celestial in _tbotInstance.UserData.celestials.Where(p => p is Planet)) {
 					var cel = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.Buildings);
-					cel = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.LFBuildings);
-					cel = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.LFBonuses);					
-					Planet abaCelestial = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.Fast) as Planet;
+					cel = await _tbotOgameBridge.UpdatePlanet(cel, UpdateTypes.LFBuildings);
+					cel = await _tbotOgameBridge.UpdatePlanet(cel, UpdateTypes.LFBonuses);
+
+					Planet abaCelestial = await _tbotOgameBridge.UpdatePlanet(cel, UpdateTypes.Fast) as Planet;
 					var nextMine = _calculationService.GetNextMineToBuild(cel as Planet, _tbotInstance.UserData.researches, _tbotInstance.UserData.serverData.Speed, maxBuildings.MetalMine, maxBuildings.CrystalMine, maxBuildings.DeuteriumSynthesizer, 1, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.staff.Geologist, _tbotInstance.UserData.staff.IsFull, true, int.MaxValue);
 					if (nextMine != Buildables.Null) {
 						var lv = _calculationService.GetNextLevel(cel, nextMine);
@@ -119,21 +122,65 @@ namespace Tbot.Workers.Brain {
 							_tbotInstance.UserData.nextDOIR = DOIR;
 						}
 					}
-					if (celestial.Coordinate.Type == Celestials.Planet && celestial.Fields.Built == 0 && (bool) _tbotInstance.InstanceSettings.AutoColonize.Abandon.Active) {
-						if (_calculationService.ShouldAbandon(celestial as Planet, celestial.Fields.Total, abaCelestial.Temperature.Max, fieldsSettings, temperaturesSettings)) {
-							DoLog(LogLevel.Debug, $"Skipping {celestial.ToString()}: planet should be abandoned.");
+					bool includeCelestial = true;
+					if (cel.Coordinate.Type == Celestials.Planet && cel.Fields.Built == 0 && (bool) _tbotInstance.InstanceSettings.AutoColonize.Abandon.Active) {
+						if (_calculationService.ShouldAbandon(cel as Planet, cel.Fields.Total, abaCelestial.Temperature.Max, fieldsSettings, temperaturesSettings)) {
+							DoLog(LogLevel.Debug, $"Skipping {cel.ToString()}: planet should be abandoned.");
+							includeCelestial = false;
 						} else {
 							//DoLog(LogLevel.Debug, $"Confirm AutoMine on {celestial.ToString()}.");
-							celestialsToMine.Add(cel);
 						}
 						//DoLog(LogLevel.Debug, $"Because: cases -> {abaCelestial.Fields.Total.ToString()}/{fieldsSettings.Total.ToString()}, MinimumTemp -> {abaCelestial.Temperature.Max.ToString()}>={temperaturesSettings.Min.ToString()}, MaximumTemp -> {abaCelestial.Temperature.Max.ToString()}<={temperaturesSettings.Max.ToString()}");
-					} else {
+					}
+					if (includeCelestial) {
 						celestialsToMine.Add(cel);
+						var shouldBuildCrawlers =
+								(!SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.AutoMine, "BuildCrawlers") || (bool) _tbotInstance.InstanceSettings.Brain.AutoMine.BuildCrawlers) &&
+								cel.Coordinate.Type == Celestials.Planet &&
+								cel.Facilities != null &&
+								cel.Productions != null &&
+								cel.Ships != null &&
+								cel.Constructions != null &&
+								cel.Resources != null &&
+								cel.ResourcesProduction != null &&
+								cel.Resources.Energy >= 0 &&
+								_tbotInstance.UserData.userInfo.Class == CharacterClass.Collector &&
+								cel.Facilities.Shipyard >= 5 &&
+								_tbotInstance.UserData.researches.CombustionDrive >= 4 &&
+								_tbotInstance.UserData.researches.ArmourTechnology >= 4 &&
+								_tbotInstance.UserData.researches.LaserTechnology >= 4 &&
+								!cel.Productions.Any(production => production.ID == (int) Buildables.Crawler) &&
+								cel.Constructions.BuildingID != (int) Buildables.Shipyard &&
+								cel.Constructions.BuildingID != (int) Buildables.NaniteFactory &&
+								cel.Ships.Crawler < _calculationService.CalcMaxCrawlers(cel as Planet, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.staff.Geologist) &&
+								_calculationService.CalcOptimalCrawlers(cel as Planet, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.staff, _tbotInstance.UserData.researches, _tbotInstance.UserData.serverData) > cel.Ships.Crawler;
+						var planningDataAvailable = cel.Fields != null && cel.Constructions != null && cel.Facilities != null && cel.Resources != null && cel.ResourcesProduction != null && cel.Productions != null;
+						if (shouldBuildCrawlers || (planningDataAvailable && cel.Fields.Free > 0 && cel.Constructions.BuildingID == 0)) {
+							var nextConstruction = shouldBuildCrawlers ? Buildables.Crawler : _calculationService.GetNextBuildingToBuild(cel as Planet, _tbotInstance.UserData.researches, maxBuildings, maxFacilities, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.staff, _tbotInstance.UserData.serverData, autoMinerSettings);
+							if (nextConstruction != Buildables.Null) {
+								var nextConstructionLevel = shouldBuildCrawlers
+									? _calculationService.CalcOptimalCrawlers(cel as Planet, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.staff, _tbotInstance.UserData.researches, _tbotInstance.UserData.serverData)
+									: _calculationService.GetNextLevel(cel, nextConstruction, _tbotInstance.UserData.userInfo.Class == CharacterClass.Collector, _tbotInstance.UserData.staff.Engineer, _tbotInstance.UserData.staff.IsFull);
+								var isMine = nextConstruction == Buildables.MetalMine || nextConstruction == Buildables.CrystalMine || nextConstruction == Buildables.DeuteriumSynthesizer;
+								var score = isMine
+									? _calculationService.CalcDaysOfInvestmentReturn(cel as Planet, nextConstruction, _tbotInstance.UserData.researches, _tbotInstance.UserData.serverData.Speed, 1, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.staff.Geologist, _tbotInstance.UserData.staff.IsFull)
+									: _calculationService.CalcPrice(nextConstruction, nextConstructionLevel, cel.LFBonuses).ConvertedDeuterium;
+								var priority = AccountConstructionPlanner.GetAutoMinePriority(nextConstruction);
+								constructionCandidates.Add(new ConstructionCandidate {
+									CelestialId = cel.ID,
+									Priority = priority,
+									Score = score
+								});
+								DoLog(LogLevel.Debug, $"{cel}: Planned construction: {nextConstruction} level {nextConstructionLevel}; priority {priority}; score {score}.");
+							}
+						}
 					}
 				}
-				celestialsToMine = celestialsToMine.OrderBy(cel => _calculationService.CalcNextDaysOfInvestmentReturn(cel as Planet, _tbotInstance.UserData.researches, _tbotInstance.UserData.serverData.Speed, 1, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.staff.Geologist, _tbotInstance.UserData.staff.IsFull)).ToList();
+				celestialsToMine = AccountConstructionPlanner.OrderCelestials(celestialsToMine, constructionCandidates).ToList();
 				celestialsToMine.AddRange(_tbotInstance.UserData.celestials.Where(c => c is Moon));
 
+				var dueTime = TimeSpan.Zero;
+				Task previousExecution = Task.CompletedTask;
 				foreach (Celestial celestial in (bool) _tbotInstance.InstanceSettings.Brain.AutoMine.RandomOrder ? celestialsToMine.Shuffle().ToList() : celestialsToMine) {
 					if (celestialsToExclude.Has(celestial)) {
 						DoLog(LogLevel.Information, $"Skipping {celestial.ToString()}: celestial in exclude list.");
@@ -141,7 +188,10 @@ namespace Tbot.Workers.Brain {
 					}
 
 					var celestialWorker = _workerFactory.InitializeCelestialWorker(this, Feature.BrainCelestialAutoMine, _tbotInstance, _tbotOgameBridge, celestial);
-					await celestialWorker.StartWorker(new CancellationTokenSource().Token, TimeSpan.FromMilliseconds(RandomizeHelper.CalcRandomInterval(IntervalType.AFewSeconds)));
+					celestialWorker.StartAfter(previousExecution);
+					dueTime = OrderedWorkerSchedule.NextDueTime(dueTime, TimeSpan.FromMilliseconds(RandomizeHelper.CalcRandomInterval(IntervalType.AFewSeconds)));
+					await celestialWorker.StartWorker(new CancellationTokenSource().Token, dueTime);
+					previousExecution = celestialWorker.FirstExecutionCompleted;
 
 				}
 			} catch (Exception e) {

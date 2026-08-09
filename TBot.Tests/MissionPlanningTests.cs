@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using TBot.Model;
+using Tbot.Includes;
 using TBot.Ogame.Infrastructure.Enums;
 using TBot.Ogame.Infrastructure.Models;
 using Tbot.Workers;
@@ -38,6 +40,24 @@ namespace TBot.Tests {
 
 			Assert.Equal(1, cursor.System);
 			Assert.Equal(1, cursor.NextPosition);
+		}
+
+		[Fact]
+		public void OrderedWorkerScheduleNeverReversesThePlannedOrder() {
+			var first = OrderedWorkerSchedule.NextDueTime(TimeSpan.Zero, TimeSpan.FromSeconds(2));
+			var second = OrderedWorkerSchedule.NextDueTime(first, TimeSpan.FromSeconds(5));
+			var third = OrderedWorkerSchedule.NextDueTime(second, TimeSpan.FromSeconds(1));
+
+			Assert.True(first < second);
+			Assert.True(second < third);
+			Assert.Equal(TimeSpan.FromSeconds(8), third);
+		}
+
+		[Fact]
+		public void OrderedWorkerScheduleIgnoresAnInvalidNegativeDelay() {
+			Assert.Equal(
+				TimeSpan.FromSeconds(3),
+				OrderedWorkerSchedule.NextDueTime(TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(-1)));
 		}
 
 		[Fact]
@@ -262,6 +282,143 @@ namespace TBot.Tests {
 			} finally {
 				Directory.Delete(dataFolder, true);
 			}
+		}
+
+		[Fact]
+		public void ConstructionPlannerOrdersTheBestReturnFirstAndIgnoresIneligibleCandidates() {
+			var ordered = AccountConstructionPlanner.Order(new[] {
+				new ConstructionCandidate { CelestialId = 2, Priority = 0, Score = 4 },
+				new ConstructionCandidate { CelestialId = 1, Priority = 0, Score = 2 },
+				new ConstructionCandidate { CelestialId = 3, Priority = 0, Score = 1, Eligible = false }
+			});
+
+			Assert.Equal(new[] { 1, 2 }, ordered.Select(candidate => candidate.CelestialId));
+		}
+
+		[Fact]
+		public void ConstructionPlannerPrioritizesUrgentAutoMineWorkBeforeMines() {
+			Assert.True(AccountConstructionPlanner.GetAutoMinePriority(Buildables.FusionReactor) < AccountConstructionPlanner.GetAutoMinePriority(Buildables.MetalMine));
+			Assert.True(AccountConstructionPlanner.GetAutoMinePriority(Buildables.Terraformer) < AccountConstructionPlanner.GetAutoMinePriority(Buildables.FusionReactor));
+			Assert.True(AccountConstructionPlanner.GetAutoMinePriority(Buildables.MetalMine) < AccountConstructionPlanner.GetAutoMinePriority(Buildables.Null));
+		}
+
+		[Fact]
+		public void ConstructionPlannerOrdersCelestialsByTheirBestCandidate() {
+			var celestials = new[] {
+				new Planet { ID = 3 },
+				new Planet { ID = 1 },
+				new Planet { ID = 2 }
+			};
+			var ordered = AccountConstructionPlanner.OrderCelestials(celestials, new[] {
+				new ConstructionCandidate { CelestialId = 1, Priority = 0, Score = 5 },
+				new ConstructionCandidate { CelestialId = 1, Priority = 0, Score = 3 },
+				new ConstructionCandidate { CelestialId = 2, Priority = 0, Score = 1 }
+			});
+
+			Assert.Equal(new[] { 2, 1, 3 }, ordered.Select(celestial => celestial.ID));
+		}
+
+		[Fact]
+		public void ResourcePlannerMergesDemandsForTheSameDestinationIntoOneShipment() {
+			var plan = ResourceShipmentPlanner.Plan(
+				new[] {
+					new ResourceDemand(20, new Resources(metal: 100, crystal: 50), 0, "mine"),
+					new ResourceDemand(20, new Resources(metal: 50, deuterium: 25), 1, "lifeform")
+				},
+				new[] { new ResourceSource(10, new Resources(metal: 150, crystal: 50, deuterium: 25), 225) });
+
+			Assert.True(plan.IsComplete);
+			Assert.Single(plan.Shipments);
+			Assert.Equal(225, plan.Shipments[0].Amount.TotalResources);
+			Assert.Equal(150, plan.Shipments[0].Amount.Metal);
+		}
+
+		[Fact]
+		public void ResourcePlannerNeverReusesResourcesAcrossDestinations() {
+			var plan = ResourceShipmentPlanner.Plan(
+				new[] {
+					new ResourceDemand(20, new Resources(metal: 100), 0),
+					new ResourceDemand(30, new Resources(metal: 100), 1)
+				},
+				new[] { new ResourceSource(10, new Resources(metal: 150), 150) });
+
+			Assert.Single(plan.Shipments);
+			Assert.Single(plan.UnfulfilledDemands);
+			Assert.Equal(20, plan.Shipments[0].DestinationId);
+			Assert.Equal(100, plan.Shipments[0].Amount.Metal);
+		}
+
+		[Fact]
+		public void ResourcePlannerDoesNotCommitPartialDemandWhenTheBatchCannotFundIt() {
+			var plan = ResourceShipmentPlanner.Plan(
+				new[] { new ResourceDemand(20, new Resources(metal: 100, crystal: 100)) },
+				new[] { new ResourceSource(10, new Resources(metal: 100), 100) });
+
+			Assert.False(plan.IsComplete);
+			Assert.Empty(plan.Shipments);
+			Assert.Single(plan.UnfulfilledDemands);
+		}
+
+		[Fact]
+		public void ResourcePlannerIgnoresNegativeResourceAmounts() {
+			var plan = ResourceShipmentPlanner.Plan(
+				new[] { new ResourceDemand(20, new Resources(metal: -100, crystal: 50, deuterium: -10)) },
+				new[] { new ResourceSource(10, new Resources(crystal: 50), 50) });
+
+			Assert.True(plan.IsComplete);
+			Assert.Single(plan.Shipments);
+			Assert.Equal(50, plan.Shipments[0].Amount.Crystal);
+			Assert.Equal(0, plan.Shipments[0].Amount.Metal);
+			Assert.Equal(0, plan.Shipments[0].Amount.Deuterium);
+		}
+
+		[Fact]
+		public void ResourcePlannerDoesNotExceedTheShipmentBudget() {
+			var plan = ResourceShipmentPlanner.Plan(
+				new[] { new ResourceDemand(20, new Resources(metal: 100)) },
+				new[] {
+					new ResourceSource(10, new Resources(metal: 50), 50),
+					new ResourceSource(11, new Resources(metal: 50), 50)
+				},
+				maxShipments: 1);
+
+			Assert.False(plan.IsComplete);
+			Assert.Empty(plan.Shipments);
+			Assert.Single(plan.UnfulfilledDemands);
+		}
+
+		[Fact]
+		public void ResourcePlannerSplitsOneDemandAcrossOriginsWithoutLosingResources() {
+			var plan = ResourceShipmentPlanner.Plan(
+				new[] { new ResourceDemand(20, new Resources(metal: 300)) },
+				new[] {
+					new ResourceSource(10, new Resources(metal: 150), 150),
+					new ResourceSource(11, new Resources(metal: 150), 150)
+				});
+
+			Assert.True(plan.IsComplete);
+			Assert.Equal(2, plan.Shipments.Count);
+			Assert.Equal(300, plan.Shipments.Sum(shipment => shipment.Amount.TotalResources));
+		}
+
+		[Fact]
+		public void ResourcePlannerDoesNotConsumeSubthresholdSimulationCapacity() {
+			var plan = ResourceShipmentPlanner.Plan(
+				new[] {
+					new ResourceDemand(20, new Resources(metal: 30, crystal: 70), 0),
+					new ResourceDemand(21, new Resources(metal: 150), 1)
+				},
+				new[] {
+					new ResourceSource(1, new Resources(metal: 100), 100),
+					new ResourceSource(2, new Resources(metal: 30, crystal: 70), 100),
+					new ResourceSource(3, new Resources(metal: 50), 50)
+				},
+				minimumShipmentResources: 50);
+
+			Assert.True(plan.IsComplete);
+			Assert.Equal(3, plan.Shipments.Count);
+			Assert.Equal(100, plan.Shipments.Single(shipment => shipment.OriginId == 1 && shipment.DestinationId == 21).Amount.Metal);
+			Assert.Equal(50, plan.Shipments.Single(shipment => shipment.OriginId == 3 && shipment.DestinationId == 21).Amount.Metal);
 		}
 	}
 }

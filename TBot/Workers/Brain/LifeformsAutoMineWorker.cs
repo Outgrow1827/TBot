@@ -31,7 +31,6 @@ namespace Tbot.Workers.Brain {
 			_ogameService = ogameService;
 			_fleetScheduler = fleetScheduler;
 			_calculationService = calculationService;
-			_calculationService = calculationService;
 			_tbotOgameBridge = tbotOGameBridge;
 			_workerFactory = workerFactory;
 		}
@@ -72,6 +71,7 @@ namespace Tbot.Workers.Brain {
 
 					List<Celestial> celestialsToExclude = _calculationService.ParseCelestialsList(_tbotInstance.InstanceSettings.Brain.LifeformAutoMine.Exclude, _tbotInstance.UserData.celestials);
 					List<Celestial> celestialsToMine = new();
+					List<ConstructionCandidate> constructionCandidates = new();
 					LFBuildings maxLFBuildings = new();
 					foreach (Celestial celestial in _tbotInstance.UserData.celestials.Where(p => p is Planet)) {
 						var cel = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.Buildings);
@@ -80,14 +80,12 @@ namespace Tbot.Workers.Brain {
 							DoLog(LogLevel.Debug, $"Celestial {cel.ToString()} did not reach required CrystalMine level. Skipping..");
 							continue;
 						}
-						int maxTechFactory = (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.MaxBaseTechBuilding;
-						int maxPopuFactory = (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.MaxBasePopulationBuilding;
-						int maxFoodFactory = (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.MaxBaseFoodBuilding;
 						bool preventIfMoreExpensiveThanNextMine = (bool) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.PreventIfMoreExpensiveThanNextMine;
 
-						cel = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.LFBuildings);
-						cel = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.Resources);
-						cel = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.ResourcesProduction);
+						cel = await _tbotOgameBridge.UpdatePlanet(cel, UpdateTypes.LFBuildings);
+						cel = await _tbotOgameBridge.UpdatePlanet(cel, UpdateTypes.Resources);
+						cel = await _tbotOgameBridge.UpdatePlanet(cel, UpdateTypes.ResourcesProduction);
+						maxLFBuildings = new();
 						switch (cel.LFtype) {
 							case LFTypes.Humans:
 								maxLFBuildings.ResidentialSector = (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.MaxBasePopulationBuilding;
@@ -150,22 +148,38 @@ namespace Tbot.Workers.Brain {
 						}
 						var nextLFBuilding = _calculationService.GetNextLFBuildingToBuild(cel, maxLFBuildings, preventIfMoreExpensiveThanNextMine);
 						if (nextLFBuilding != LFBuildables.None) {
-							var lv = _calculationService.GetNextLevel(celestial, nextLFBuilding);
+							var lv = _calculationService.GetNextLevel(cel, nextLFBuilding);
 							DoLog(LogLevel.Debug, $"Celestial {cel.ToString()}: Next Lifeform building: {nextLFBuilding.ToString()} lv {lv.ToString()}.");
-
-							celestialsToMine.Add(celestial);
+							constructionCandidates.Add(new ConstructionCandidate {
+								CelestialId = cel.ID,
+								Score = _calculationService.CalcPrice(
+									nextLFBuilding,
+									lv,
+									_calculationService.CalcLFBuildingsResourcesCostBonus(cel),
+									0,
+									_calculationService.CalcLFBuildingsPopulationCostBonus(cel)
+								).ConvertedDeuterium
+							});
+							celestialsToMine.Add(cel);
 						} else {
 							DoLog(LogLevel.Debug, $"Celestial {cel.ToString()}: No Next Lifeform building to build found.");
 						}
 					}
 
+					celestialsToMine = AccountConstructionPlanner.OrderCelestials(celestialsToMine, constructionCandidates).ToList();
+
+					var dueTime = TimeSpan.Zero;
+					Task previousExecution = Task.CompletedTask;
 					foreach (Celestial celestial in celestialsToMine) {
 						if (celestialsToExclude.Has(celestial)) {
 							DoLog(LogLevel.Information, $"Skipping {celestial.ToString()}: celestial in exclude list.");
 							continue;
 						}
 						var celestialWorker = _workerFactory.InitializeCelestialWorker(this, Feature.BrainCelestialLifeformAutoMine, _tbotInstance, _tbotOgameBridge, celestial);
-						await celestialWorker.StartWorker(new CancellationTokenSource().Token, TimeSpan.FromMilliseconds(RandomizeHelper.CalcRandomInterval(IntervalType.AFewSeconds)));
+						celestialWorker.StartAfter(previousExecution);
+						dueTime = OrderedWorkerSchedule.NextDueTime(dueTime, TimeSpan.FromMilliseconds(RandomizeHelper.CalcRandomInterval(IntervalType.AFewSeconds)));
+						await celestialWorker.StartWorker(new CancellationTokenSource().Token, dueTime);
+						previousExecution = celestialWorker.FirstExecutionCompleted;
 					}
 				} else {
 					DoLog(LogLevel.Information, "Skipping: feature disabled");

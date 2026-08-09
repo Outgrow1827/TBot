@@ -91,8 +91,8 @@ namespace Tbot.Workers.Brain {
 			foreach (var p in _tbotInstance.UserData.celestials) {
 				if (p.Coordinate.Type == Celestials.Planet) {
 					var newPlanet = await _tbotOgameBridge.UpdatePlanet(p, UpdateTypes.Facilities);
-					newPlanet = await _tbotOgameBridge.UpdatePlanet(p, UpdateTypes.Buildings);
-					newPlanet = await _tbotOgameBridge.UpdatePlanet(p, UpdateTypes.LFBonuses);
+					newPlanet = await _tbotOgameBridge.UpdatePlanet(newPlanet, UpdateTypes.Buildings);
+					newPlanet = await _tbotOgameBridge.UpdatePlanet(newPlanet, UpdateTypes.LFBonuses);
 					planets.Add(newPlanet);
 				}
 			}
@@ -126,7 +126,7 @@ namespace Tbot.Workers.Brain {
 				int maxTechs36 = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.LifeformAutoResearch, "MaxTechs36") ? (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoResearch.MaxTechs36 : maxResearchLevel;
 
 				LFTechs maxLFTechs = new();
-				maxLFTechs.IntergalacticEnvoys = maxLFTechs.VolcanicBatteries = maxLFTechs.CatalyserTechnology = maxLFTechs.HeatRecovery =  maxTechs11;
+				maxLFTechs.IntergalacticEnvoys = maxLFTechs.VolcanicBatteries = maxLFTechs.CatalyserTechnology = maxLFTechs.HeatRecovery = maxTechs11;
 				maxLFTechs.HighPerformanceExtractors = maxLFTechs.AcousticScanning = maxLFTechs.PlasmaDrive = maxLFTechs.SulphideProcess = maxTechs12;
 				maxLFTechs.FusionDrives = maxLFTechs.HighEnergyPumpSystems = maxLFTechs.EfficiencyModule = maxLFTechs.PsionicNetwork = maxTechs13;
 				maxLFTechs.StealthFieldGenerator = maxLFTechs.CargoHoldExpansionCivilianShips = maxLFTechs.DepotAI = maxLFTechs.TelekineticTractorBeam = maxTechs14;
@@ -144,8 +144,8 @@ namespace Tbot.Workers.Brain {
 				maxLFTechs.BattlecruiserMkII = maxLFTechs.ObsidianShieldReinforcement = maxLFTechs.GeneralOverhaulDestroyer = maxLFTechs.OverclockingBattleship = maxTechs34;
 				maxLFTechs.RobotAssistants = maxLFTechs.RuneShields = maxLFTechs.ExperimentalWeaponsTechnology = maxLFTechs.PsionicShieldMatrix = maxTechs35;
 				maxLFTechs.Supercomputer = maxLFTechs.RocktalCollectorEnhancement = maxLFTechs.MechanGeneralEnhancement = maxLFTechs.KaeleshDiscovererEnhancement = maxTechs36;
-				
-				
+
+
 				if (celestial.Constructions.LFResearchID != 0) {
 					DoLog(LogLevel.Information, $"Skipping {celestial.ToString()}: there is already a Lifeform research in production.");
 					delayProduction = true;
@@ -229,7 +229,7 @@ namespace Tbot.Workers.Brain {
 										(int) _tbotInstance.UserData.fleets.Count(f => f.Mission == Missions.Harvest))
 								};
 								int MaxSlots = _calculationService.CalcSlotsPriority(Feature.BrainLifeformAutoResearch, rankSlotsPriority, _tbotInstance.UserData.slots, _tbotInstance.UserData.fleets, (int) _tbotInstance.InstanceSettings.General.SlotsToLeaveFree);
-								
+
 								if (MaxSlots > 0) {
 									if (!_calculationService.IsThereTransportTowardsCelestial(celestial, _tbotInstance.UserData.fleets)) {
 										Celestial origin = new() { ID = 0 };
@@ -321,7 +321,7 @@ namespace Tbot.Workers.Brain {
 														(bool) _tbotInstance.InstanceSettings.Brain.Transports.MultipleOrigins.PriorityToProximityOverQuantity,
 														celestialsToExclude)
 													);
-												
+
 												Celestial destination;
 												if ((bool) transportsSettings.SendToTheMoonIfPossible && _calculationService.IsThereMoonHere(allCelestials, celestial)) {
 													destination = allCelestials
@@ -336,7 +336,7 @@ namespace Tbot.Workers.Brain {
 												} else {
 													destination = celestial;
 												}
-												
+
 												var resultOrigins = _calculationService.CalcMultipleOrigin(celestial, allCelestials, missingResources, transportsSettings, _tbotInstance.UserData.fleets, _tbotInstance.UserData);
 
 												if (resultOrigins.Count() == 0) {
@@ -349,15 +349,16 @@ namespace Tbot.Workers.Brain {
 													return;
 												}
 
-												Ships ships = new();
-												
 												foreach (var item in resultOrigins) {
-													ships = new();
-													ships.Add((Buildables) transportsSettings.CargoType, _calculationService.CalcShipNumberForPayload(item.FirstOrDefault().Value, (Buildables) transportsSettings.CargoType, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, celestial.LFBonuses.GetShipCargoBonus(transportsSettings.CargoType), _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo));
-													if (item.FirstOrDefault().Key.Coordinate.IsSame(destination.Coordinate) && transportsSettings.SendToTheMoonIfPossible && destination.Coordinate.Type == Celestials.Moon)
-														fleetId= await _fleetScheduler.SendFleet(item.FirstOrDefault().Key, ships, celestial.Coordinate, Missions.Transport, Speeds.HundredPercent, item.FirstOrDefault().Value);
+													var shipment = item.FirstOrDefault();
+													var shipmentOrigin = shipment.Key;
+													var shipmentAmount = shipment.Value;
+													var ships = new Ships();
+													ships.Add((Buildables) transportsSettings.CargoType, _calculationService.CalcShipNumberForPayload(shipmentAmount, (Buildables) transportsSettings.CargoType, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, shipmentOrigin.LFBonuses.GetShipCargoBonus(transportsSettings.CargoType), _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo));
+													if (shipmentOrigin.Coordinate.IsSame(destination.Coordinate) && transportsSettings.SendToTheMoonIfPossible && destination.Coordinate.Type == Celestials.Moon)
+														fleetId = await _fleetScheduler.SendFleet(shipmentOrigin, ships, celestial.Coordinate, Missions.Transport, Speeds.HundredPercent, shipmentAmount);
 													else
-														fleetId= await _fleetScheduler.SendFleet(item.FirstOrDefault().Key, ships, destination.Coordinate, Missions.Transport, Speeds.HundredPercent, item.FirstOrDefault().Value);
+														fleetId = await _fleetScheduler.SendFleet(shipmentOrigin, ships, destination.Coordinate, Missions.Transport, Speeds.HundredPercent, shipmentAmount);
 
 													if (fleetId == (int) SendFleetCode.AfterSleepTime) {
 														stop = true;
@@ -459,7 +460,7 @@ namespace Tbot.Workers.Brain {
 						interval = ((long) celestial.Constructions.LFResearchCountdown * (long) 1000) + (long) RandomizeHelper.CalcRandomInterval(IntervalType.AFewSeconds);
 					} else {
 						if (fleetId > 0) {
-							_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();							
+							_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
 							var transportfleet = _tbotInstance.UserData.fleets.Single(f => f.ID == fleetId && f.Mission == Missions.Transport);
 							interval = (transportfleet.ArriveIn * 1000) + RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
 						} else {
@@ -478,7 +479,7 @@ namespace Tbot.Workers.Brain {
 							}
 						}
 					}
-					
+
 					time = await _tbotOgameBridge.GetDateTime();
 					newTime = time.AddMilliseconds(interval);
 					ChangeWorkerPeriod(interval);

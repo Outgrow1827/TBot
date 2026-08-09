@@ -1,6 +1,37 @@
 # Changelog
 
-## Unreleased
+## v3.5.0-beta
+
+> **Beta warning:** This release contains a substantial rework of the mine, research, Lifeforms and resource-planning workers. It has been tested with automated tests and live OGame sessions, but regressions or edge-case bugs may still remain.
+>
+> If you need the known functional stable version, use **v3.4.9**. It remains functional and is the recommended fallback while this beta is being validated.
+
+### Brain planning rework
+
+- Added a centralized account planner for AutoMine, AutoResearch, LifeformsAutoMine and LifeformsAutoResearch.
+- Prioritized urgent infrastructure and energy work before ordinary mines, then ranked equivalent candidates by their calculated return or cost.
+- Chained each celestial worker's first execution in the planned order, preventing concurrent workers from racing on shared resources while keeping randomized gaps.
+- Reused the freshly returned celestial snapshot after every update, including lifeform buildings, lifeform research, facilities, buildings, resources, production and bonuses.
+- Reset per-planet lifeform limits and applied the real lifeform cost reductions when comparing construction candidates.
+- Added defensive planning guards for incomplete Fast snapshots so a missing optional payload cannot crash AutoMine.
+- Fixed the AutoResearch plasma prerequisite check using a logical operator.
+- Reworked multiple-origin resource planning to reserve resources and cargo capacity before sending fleets, merge demands for the same destination and reject incomplete batches instead of sending unusable partial transports.
+- Fixed multi-origin cargo calculation to use the bonuses of the actual sending origin and stopped the planner from mutating destination snapshots.
+- Added regression tests for deterministic construction ordering, resource reservation, multi-origin splitting, incomplete transport batches and sub-threshold allocation rollback.
+
+#### Before vs What to expect now
+
+| Situation | Before | What to expect now |
+| --- | --- | --- |
+| P1 has a Terraformer candidate while P2 has a profitable Crystal Mine | Each celestial worker could start independently, so the effective order depended on timing and semaphore acquisition. | P1 is selected first because the Terraformer has account-level priority; P2 follows after P1's first action. |
+| A priority building competes with a profitable mine | The mine return could determine the order even when infrastructure or energy was the real bottleneck. | Terraformer, energy, storage/crawler and infrastructure needs are considered before ordinary mine ROI. |
+| Mine, research and Lifeforms workers run in the same cycle | Workers could read stale data from the previous update or race while using shared resource state. | Each update is based on the latest returned snapshot, and celestial workers are chained so one first action completes before the next begins. |
+| Lifeform limits are evaluated across planets | Limits calculated for one planet could leak into the next planet's decision. | Every planet gets a fresh set of lifeform limits and its own bonuses/cost reductions. |
+| A Fast planet response lacks optional planning data | AutoMine could throw a null-reference exception while deciding whether to build crawlers or the next building. | The planet is skipped for that planning branch until the required data exists; the worker continues safely. |
+| One destination needs 300k resources and two origins can provide 150k each | The same resources could be considered more than once, or a partial fleet could be sent even though the construction still could not start. | The planner reserves 150k from each origin and creates two complete planned shipments. |
+| A target needs 100k metal plus 100k crystal, but an origin has only 100k metal | A partial allocation could be sent even though the construction still could not start. | The incomplete allocation is rejected; no known-incomplete batch is sent. |
+| A source contributes less than the configured minimum shipment size | A sub-threshold partial allocation could consume simulated capacity and make the rest of the plan incorrect. | The partial allocation is rolled back and the planner tries another valid source or sends nothing. |
+| Origin A has a +20% lifeform cargo bonus while Origin B has +0% | Cargo requirements could be calculated with the destination or current celestial's bonus instead of the real sender's bonus. | Each fleet uses the cargo bonus of its actual origin, so A and B are evaluated independently. |
 
 ### Artifact inventory
 
