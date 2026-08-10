@@ -21,9 +21,13 @@ namespace TBot.Model {
 		public int ReportId { get; init; }
 		public string TargetName { get; init; }
 		public Coordinate Coordinate { get; init; }
+		public Coordinate OriginCoordinate { get; init; }
+		public string Mission { get; init; } = "Attack";
 		public DateTime DispatchedAtUtc { get; init; }
 		public Resources Loot { get; init; } = new();
 	}
+
+	public sealed record AutoFarmScanCursor(int RangeIndex, int Galaxy, int System);
 
 	/// <summary>
 	/// Durable AutoFarm state. System snapshots and target decisions survive a
@@ -215,9 +219,9 @@ FROM targets;";
 			}
 		}
 
-		public void RecordAttack(FarmTarget target, Resources loot, DateTime dispatchedAtUtc) {
+		public bool RecordAttack(FarmTarget target, Resources loot, DateTime dispatchedAtUtc, Coordinate origin = null, string mission = "Attack") {
 			if (!_enabled || target?.Celestial?.Coordinate == null || target.Report?.ID <= 0)
-				return;
+				return false;
 
 			try {
 				var coordinate = target.Celestial.Coordinate;
@@ -244,9 +248,11 @@ VALUES ($report_id, $galaxy, $system, $position, $celestial_type, $consumed_at_u
 					attack.CommandText = @"
 INSERT OR IGNORE INTO attacks (
   report_id, galaxy, system, position, celestial_type, target_name,
-  dispatched_at_utc, metal, crystal, deuterium)
+  dispatched_at_utc, metal, crystal, deuterium,
+  origin_galaxy, origin_system, origin_position, origin_celestial_type, mission)
 VALUES ($report_id, $galaxy, $system, $position, $celestial_type, $target_name,
-  $dispatched_at_utc, $metal, $crystal, $deuterium);";
+  $dispatched_at_utc, $metal, $crystal, $deuterium,
+  $origin_galaxy, $origin_system, $origin_position, $origin_celestial_type, $mission);";
 					attack.Parameters.AddWithValue("$report_id", target.Report.ID);
 					attack.Parameters.AddWithValue("$galaxy", coordinate.Galaxy);
 					attack.Parameters.AddWithValue("$system", coordinate.System);
@@ -257,12 +263,19 @@ VALUES ($report_id, $galaxy, $system, $position, $celestial_type, $target_name,
 					attack.Parameters.AddWithValue("$metal", loot?.Metal ?? 0);
 					attack.Parameters.AddWithValue("$crystal", loot?.Crystal ?? 0);
 					attack.Parameters.AddWithValue("$deuterium", loot?.Deuterium ?? 0);
+					attack.Parameters.AddWithValue("$origin_galaxy", origin?.Galaxy ?? (object) DBNull.Value);
+					attack.Parameters.AddWithValue("$origin_system", origin?.System ?? (object) DBNull.Value);
+					attack.Parameters.AddWithValue("$origin_position", origin?.Position ?? (object) DBNull.Value);
+					attack.Parameters.AddWithValue("$origin_celestial_type", origin == null ? (object) DBNull.Value : (int) origin.Type);
+					attack.Parameters.AddWithValue("$mission", string.IsNullOrWhiteSpace(mission) ? "Attack" : mission);
 					attack.ExecuteNonQuery();
 				}
 
 				transaction.Commit();
+				return true;
 			} catch {
 				// Persistence must never stop AutoFarm.
+				return false;
 			}
 		}
 
@@ -276,7 +289,8 @@ VALUES ($report_id, $galaxy, $system, $position, $celestial_type, $target_name,
 				using var command = connection.CreateCommand();
 				command.CommandText = @"
 SELECT report_id, galaxy, system, position, celestial_type, target_name,
-  dispatched_at_utc, metal, crystal, deuterium
+  dispatched_at_utc, metal, crystal, deuterium,
+  origin_galaxy, origin_system, origin_position, origin_celestial_type, mission
 FROM attacks
 ORDER BY dispatched_at_utc DESC
 LIMIT $limit;";
@@ -284,12 +298,18 @@ LIMIT $limit;";
 
 				using var reader = command.ExecuteReader();
 				while (reader.Read()) {
+					Coordinate origin = null;
+					if (!reader.IsDBNull(10) && !reader.IsDBNull(11) && !reader.IsDBNull(12) && !reader.IsDBNull(13))
+						origin = new Coordinate(reader.GetInt32(10), reader.GetInt32(11), reader.GetInt32(12), (Celestials) reader.GetInt32(13));
+
 					attacks.Add(new AutoFarmAttackRecord {
 						ReportId = reader.GetInt32(0),
 						Coordinate = new Coordinate(reader.GetInt32(1), reader.GetInt32(2), reader.GetInt32(3), (Celestials) reader.GetInt32(4)),
 						TargetName = reader.GetString(5),
 						DispatchedAtUtc = ParseUtc(reader.GetString(6)),
-						Loot = new Resources(reader.GetInt64(7), reader.GetInt64(8), reader.GetInt64(9))
+						Loot = new Resources(reader.GetInt64(7), reader.GetInt64(8), reader.GetInt64(9)),
+						OriginCoordinate = origin,
+						Mission = reader.IsDBNull(14) ? "Attack" : reader.GetString(14)
 					});
 				}
 			} catch {
@@ -297,6 +317,53 @@ LIMIT $limit;";
 			}
 
 			return attacks;
+		}
+
+		public AutoFarmScanCursor LoadScanCursor() {
+			if (!_enabled)
+				return null;
+
+			try {
+				using var connection = OpenConnection();
+				using var command = connection.CreateCommand();
+				command.CommandText = @"
+SELECT range_index, galaxy, system
+FROM scan_cursor
+WHERE id = 1;";
+
+				using var reader = command.ExecuteReader();
+				if (!reader.Read())
+					return null;
+
+				return new AutoFarmScanCursor(reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2));
+			} catch {
+				return null;
+			}
+		}
+
+		public void SaveScanCursor(int rangeIndex, int galaxy, int system, DateTime updatedAtUtc) {
+			if (!_enabled)
+				return;
+
+			try {
+				using var connection = OpenConnection();
+				using var command = connection.CreateCommand();
+				command.CommandText = @"
+INSERT INTO scan_cursor (id, range_index, galaxy, system, updated_at_utc)
+VALUES (1, $range_index, $galaxy, $system, $updated_at_utc)
+ON CONFLICT(id) DO UPDATE SET
+  range_index = excluded.range_index,
+  galaxy = excluded.galaxy,
+  system = excluded.system,
+  updated_at_utc = excluded.updated_at_utc;";
+				command.Parameters.AddWithValue("$range_index", rangeIndex);
+				command.Parameters.AddWithValue("$galaxy", galaxy);
+				command.Parameters.AddWithValue("$system", system);
+				command.Parameters.AddWithValue("$updated_at_utc", FormatUtc(updatedAtUtc));
+				command.ExecuteNonQuery();
+			} catch {
+				// Persistence must never stop AutoFarm.
+			}
 		}
 
 		public void ReplaceTargets(IEnumerable<FarmTarget> targets, DateTime updatedAtUtc) {
@@ -391,7 +458,19 @@ CREATE TABLE IF NOT EXISTS attacks (
   dispatched_at_utc TEXT NOT NULL,
   metal INTEGER NOT NULL,
   crystal INTEGER NOT NULL,
-  deuterium INTEGER NOT NULL
+  deuterium INTEGER NOT NULL,
+  origin_galaxy INTEGER NULL,
+  origin_system INTEGER NULL,
+  origin_position INTEGER NULL,
+  origin_celestial_type INTEGER NULL,
+  mission TEXT NULL
+);
+CREATE TABLE IF NOT EXISTS scan_cursor (
+  id INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
+  range_index INTEGER NOT NULL,
+  galaxy INTEGER NOT NULL,
+  system INTEGER NOT NULL,
+  updated_at_utc TEXT NOT NULL
 );";
 				command.ExecuteNonQuery();
 
@@ -401,6 +480,22 @@ CREATE TABLE IF NOT EXISTS attacks (
 					migration.ExecuteNonQuery();
 				} catch (SqliteException ex) when (ex.Message.Contains("duplicate column", StringComparison.OrdinalIgnoreCase)) {
 					// Existing AutoFarm databases already have the new column.
+				}
+
+				foreach (var column in new[] {
+					"origin_galaxy INTEGER NULL",
+					"origin_system INTEGER NULL",
+					"origin_position INTEGER NULL",
+					"origin_celestial_type INTEGER NULL",
+					"mission TEXT NULL"
+				}) {
+					try {
+						using var migration = connection.CreateCommand();
+						migration.CommandText = $"ALTER TABLE attacks ADD COLUMN {column};";
+						migration.ExecuteNonQuery();
+					} catch (SqliteException ex) when (ex.Message.Contains("duplicate column", StringComparison.OrdinalIgnoreCase)) {
+						// Existing AutoFarm databases already have this column.
+					}
 				}
 
 				using var backfill = connection.CreateCommand();

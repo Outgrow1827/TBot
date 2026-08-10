@@ -85,11 +85,25 @@ namespace Tbot.Workers {
 				current.Report = persisted.Report;
 				current.ConsumedReportId = persisted.ConsumedReportId;
 			}
+
+			var cursor = _stateStore.LoadScanCursor();
+			if (cursor != null) {
+				_tbotInstance.UserData.autoFarmLastRangeIndex = cursor.RangeIndex;
+				_tbotInstance.UserData.autoFarmLastGalaxy = cursor.Galaxy;
+				_tbotInstance.UserData.autoFarmLastSystem = cursor.System;
+			}
 			_stateLoaded = true;
 		}
 
 		private void PersistTargets() {
 			_stateStore.ReplaceTargets(_tbotInstance.UserData.farmTargets, DateTime.UtcNow);
+		}
+
+		private void SaveScanCursor(int rangeIndex, int galaxy, int system) {
+			_tbotInstance.UserData.autoFarmLastRangeIndex = rangeIndex;
+			_tbotInstance.UserData.autoFarmLastGalaxy = galaxy;
+			_tbotInstance.UserData.autoFarmLastSystem = system;
+			_stateStore.SaveScanCursor(rangeIndex, galaxy, system, DateTime.UtcNow);
 		}
 
 		private TimeSpan GetSystemDataTtl() {
@@ -611,9 +625,7 @@ namespace Tbot.Workers {
 									break;
 								if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "TargetsProbedBeforeAttack") && ((int) _tbotInstance.InstanceSettings.AutoFarm.TargetsProbedBeforeAttack != 0) && numProbed >= (int) _tbotInstance.InstanceSettings.AutoFarm.TargetsProbedBeforeAttack) {
 									_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, "Maximum number of targets to probe reached, proceeding to attack.");
-									_tbotInstance.UserData.autoFarmLastRangeIndex = rangeIndex;
-									_tbotInstance.UserData.autoFarmLastGalaxy = galaxy;
-									_tbotInstance.UserData.autoFarmLastSystem = system;
+									SaveScanCursor(rangeIndex, galaxy, system);
 									stopAutoFarm = true;
 									break;
 								}
@@ -655,9 +667,7 @@ namespace Tbot.Workers {
 									if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "TargetsProbedBeforeAttack") &&
 										_tbotInstance.InstanceSettings.AutoFarm.TargetsProbedBeforeAttack != 0 && numProbed >= (int) _tbotInstance.InstanceSettings.AutoFarm.TargetsProbedBeforeAttack) {
 										_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, "Maximum number of targets to probe reached, proceeding to attack.");
-										_tbotInstance.UserData.autoFarmLastRangeIndex = rangeIndex;
-										_tbotInstance.UserData.autoFarmLastGalaxy = galaxy;
-										_tbotInstance.UserData.autoFarmLastSystem = system;
+										SaveScanCursor(rangeIndex, galaxy, system);
 										stopAutoFarm = true;
 										break;
 									}
@@ -691,6 +701,7 @@ namespace Tbot.Workers {
 									if (slotBudget.AvailableSlots <= 0) {
 										_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm,
 											$"AutoFarm slot budget exhausted ({slotBudget.OwnedSlots}/{slotBudget.MaxSlots}); pausing further probes.");
+										SaveScanCursor(rangeIndex, galaxy, system);
 										stopAutoFarm = true;
 										break;
 									}
@@ -729,12 +740,14 @@ namespace Tbot.Workers {
 											if (tempCelestial.Constructions.BuildingID == (int) Buildables.Shipyard || tempCelestial.Constructions.BuildingID == (int) Buildables.NaniteFactory) {
 												Buildables buildingInProgress = (Buildables) tempCelestial.Constructions.BuildingID;
 												_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"Skipping {tempCelestial.ToString()}: {buildingInProgress.ToString()} is upgrading.");
+												SaveScanCursor(rangeIndex, galaxy, system);
 												break;
 											}
 
 											tempCelestial = await _tbotOgameBridge.UpdatePlanet(bestOrigin.Origin, UpdateTypes.Productions);
 											if (tempCelestial.Productions.Any(p => p.ID == (int) Buildables.EspionageProbe)) {
 												_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"Skipping {tempCelestial.ToString()}: Probes already building.");
+												SaveScanCursor(rangeIndex, galaxy, system);
 												break;
 											}
 
@@ -764,6 +777,7 @@ namespace Tbot.Workers {
 													await Task.Delay(interval);
 												} else {
 													_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"There are not enough probes or resources to build them. Skipping this AutoFarm Execution.");
+													SaveScanCursor(rangeIndex, galaxy, system);
 													stopAutoFarm = true;
 													break;
 												}
@@ -781,12 +795,13 @@ namespace Tbot.Workers {
 										_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
 										_tbotInstance.UserData.slots = await _tbotOgameBridge.UpdateSlots();
 										slotBudget = GetCurrentSlotBudget(GetConfiguredCargoType());
-										if (slotBudget.AvailableSlots <= 0) {
-											_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm,
-												$"AutoFarm slot budget exhausted ({slotBudget.OwnedSlots}/{slotBudget.MaxSlots}); no probe dispatched.");
-											stopAutoFarm = true;
-											break;
-										}
+									if (slotBudget.AvailableSlots <= 0) {
+										_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm,
+											$"AutoFarm slot budget exhausted ({slotBudget.OwnedSlots}/{slotBudget.MaxSlots}); no probe dispatched.");
+										SaveScanCursor(rangeIndex, galaxy, system);
+										stopAutoFarm = true;
+										break;
+									}
 
 										bestOrigin.Origin = await _tbotOgameBridge.UpdatePlanet(bestOrigin.Origin, UpdateTypes.Ships);
 										var availableProbes = bestOrigin.Origin.Ships.EspionageProbe;
@@ -817,6 +832,7 @@ namespace Tbot.Workers {
 											return;
 										} else if (fleetId == (int) SendFleetCode.NotEnoughSlots) {
 											_tbotInstance.log(LogLevel.Warning, LogSender.AutoFarm, "Another worker took the last available slot; pausing AutoFarm instead of retrying repeatedly.");
+											SaveScanCursor(rangeIndex, galaxy, system);
 											stopAutoFarm = true;
 											break;
 										} else {
@@ -826,11 +842,8 @@ namespace Tbot.Workers {
 								}
 							}
 						}
-							  if (!stopAutoFarm && orderedRanges.Any()) {
-								 _tbotInstance.UserData.autoFarmLastGalaxy = 0;
-								 _tbotInstance.UserData.autoFarmLastSystem = 0;
-
-								 _tbotInstance.UserData.autoFarmLastRangeIndex = 0;
+							if (!stopAutoFarm && orderedRanges.Any()) {
+								SaveScanCursor(0, 0, 0);
 								 finishedFullScan = true;
 
 								 _tbotInstance.log(LogLevel.Information, LogSender.AutoFarm,
@@ -1159,7 +1172,9 @@ namespace Tbot.Workers {
 								target.State = FarmState.AttackSent;
 								target.ConsumedReportId = target.Report?.ID > 0 ? target.Report.ID : target.ConsumedReportId;
 								_tbotInstance.UserData.farmTargets.Add(target);
-								_stateStore.RecordAttack(target, loot, DateTime.UtcNow);
+								if (!_stateStore.RecordAttack(target, loot, DateTime.UtcNow, fromCelestial.Coordinate, Missions.Attack.ToString()))
+									_tbotInstance.log(LogLevel.Warning, LogSender.AutoFarm,
+										$"Attack sent to {target.Celestial.Coordinate}, but it could not be recorded in the AutoFarm database.");
 								PersistTargets();
 							} else if (fleetId == (int) SendFleetCode.AfterSleepTime) {
 								stop = true;
@@ -1259,6 +1274,12 @@ namespace Tbot.Workers {
 							continue;
 						}
 
+						if (AutoFarmAttackPolicy.IsRepeatedNonActionableReport(target, report)) {
+							_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm,
+								$"Ignoring previously handled non-actionable espionage report {report.ID} for {report.Coordinate}; deletion may have failed.");
+							continue;
+						}
+
 						var newFarmTarget = target;
 
 						if (target.Report != null && DateTime.Compare(report.Date, target.Report.Date) < 0) {
@@ -1333,6 +1354,12 @@ namespace Tbot.Workers {
 									_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm,
 										$"Ignoring already consumed or still active espionage report {report.ID} for {report.Coordinate}.");
 									await _ogameService.DeleteReport(report.ID);
+									continue;
+								}
+
+								if (AutoFarmAttackPolicy.IsRepeatedNonActionableReport(target, report)) {
+									_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm,
+										$"Ignoring previously handled non-actionable espionage report {report.ID} for {report.Coordinate}; deletion may have failed.");
 									continue;
 								}
 
