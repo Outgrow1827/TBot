@@ -6,6 +6,7 @@ using TBot.Model;
 using Tbot.Includes;
 using TBot.Ogame.Infrastructure.Enums;
 using TBot.Ogame.Infrastructure.Models;
+using TBot.WebUI.Services;
 using Tbot.Workers;
 using Xunit;
 
@@ -228,6 +229,47 @@ namespace TBot.Tests {
 		}
 
 		[Fact]
+		public void AutoFarmTreatsAnAttackFromAnyOriginAsActive() {
+			var target = new FarmTarget(
+				new Planet { Coordinate = new Coordinate(2, 200, 8, Celestials.Planet) },
+				FarmState.AttackSent);
+			var fleets = new[] {
+				new Fleet {
+					Mission = Missions.Attack,
+					Origin = new Coordinate(2, 10, 3, Celestials.Planet),
+					Destination = new Coordinate(2, 200, 8, Celestials.Planet),
+					ReturnFlight = true
+				}
+			};
+
+			Assert.True(AutoFarmAttackPolicy.IsAttackInProgress(target, fleets));
+		}
+
+		[Fact]
+		public void AutoFarmNeverReusesAConsumedEspionageReport() {
+			var target = new FarmTarget(
+				new Planet { Coordinate = new Coordinate(2, 200, 8, Celestials.Planet) },
+				FarmState.ProbesPending) {
+				ConsumedReportId = 42
+			};
+
+			Assert.False(AutoFarmAttackPolicy.CanProcessReport(target, new EspionageReport { ID = 42 }));
+			Assert.True(AutoFarmAttackPolicy.CanProcessReport(target, new EspionageReport { ID = 43 }));
+		}
+
+		[Fact]
+		public void AutoFarmDoesNotProcessReportsWhileThePreviousAttackIsStillSent() {
+			var target = new FarmTarget(
+				new Planet { Coordinate = new Coordinate(2, 200, 8, Celestials.Planet) },
+				FarmState.AttackSent) {
+				ConsumedReportId = 42
+			};
+
+			Assert.False(AutoFarmAttackPolicy.CanProcessReport(target, new EspionageReport { ID = 42 }));
+			Assert.False(AutoFarmAttackPolicy.CanProcessReport(target, new EspionageReport { ID = 43 }));
+		}
+
+		[Fact]
 		public void AutoFarmStateStorePersistsSystemSnapshotsAndPendingTargets() {
 			var dataFolder = Path.Combine(Path.GetTempPath(), "tbot-tests", Guid.NewGuid().ToString("N"));
 			Directory.CreateDirectory(dataFolder);
@@ -243,13 +285,17 @@ namespace TBot.Tests {
 						}
 					});
 
-					store.UpsertTarget(new FarmTarget(
+					var persistedTarget = new FarmTarget(
 						new Planet { Name = "Inactive Planet", Coordinate = new Coordinate(5, 123, 7, Celestials.Planet) },
 						FarmState.AttackPending,
 						new EspionageReport {
 							Coordinate = new Coordinate(5, 123, 7, Celestials.Planet),
-							Metal = 1000000
-						}),
+							Metal = 1000000,
+							ID = 42
+						}) {
+						ConsumedReportId = 42
+					};
+					store.UpsertTarget(persistedTarget,
 						observedAt);
 				}
 
@@ -262,9 +308,82 @@ namespace TBot.Tests {
 					Assert.Single(targets);
 					Assert.Equal(FarmState.AttackPending, targets[0].State);
 					Assert.Equal(1000000, targets[0].Report.Metal);
+					Assert.Equal(42, targets[0].ConsumedReportId);
 				}
 			} finally {
 				Directory.Delete(dataFolder, true);
+			}
+		}
+
+		[Fact]
+		public void AutoFarmStateStorePersistsConsumedReportsAndDeduplicatesAttackHistory() {
+			var dataFolder = Path.Combine(Path.GetTempPath(), "tbot-tests", Guid.NewGuid().ToString("N"));
+			Directory.CreateDirectory(dataFolder);
+
+			try {
+				var dispatchedAt = new DateTime(2026, 8, 8, 12, 0, 0, DateTimeKind.Utc);
+				var target = new FarmTarget(
+					new Planet { Name = "Inactive Planet", Coordinate = new Coordinate(5, 123, 7, Celestials.Planet) },
+					FarmState.AttackSent,
+					new EspionageReport {
+						Coordinate = new Coordinate(5, 123, 7, Celestials.Planet),
+						ID = 99
+					});
+
+				using (var store = new AutoFarmStateStore("autofarm.db", dataFolder)) {
+					store.RecordAttack(target, new Resources(metal: 100, crystal: 50, deuterium: 25), dispatchedAt);
+					store.RecordAttack(target, new Resources(metal: 100, crystal: 50, deuterium: 25), dispatchedAt);
+				}
+
+				using (var store = new AutoFarmStateStore("autofarm.db", dataFolder)) {
+					Assert.True(store.HasConsumedReport(99));
+					var history = store.LoadAttackHistory();
+					Assert.Single(history);
+					Assert.Equal(99, history[0].ReportId);
+					Assert.Equal(175, history[0].Loot.TotalResources);
+				}
+			} finally {
+				Directory.Delete(dataFolder, true);
+			}
+		}
+
+		[Fact]
+		public void AutoFarmDashboardReaderShowsCurrentReportsAndAttackHistory() {
+			var dataFolder = Path.Combine(AppContext.BaseDirectory, "data");
+			Directory.CreateDirectory(dataFolder);
+			var databasePath = Path.Combine(dataFolder, "autofarm_dashboard-test.db");
+
+			try {
+				var observedAt = new DateTime(2026, 8, 8, 12, 0, 0, DateTimeKind.Utc);
+				var target = new FarmTarget(
+					new Planet { Name = "Dashboard Target", Coordinate = new Coordinate(5, 123, 7, Celestials.Planet) },
+					FarmState.AttackSent,
+					new EspionageReport {
+						ID = 101,
+						Date = observedAt,
+						Coordinate = new Coordinate(5, 123, 7, Celestials.Planet),
+						Metal = 1000,
+						Crystal = 500,
+						Deuterium = 250
+					});
+
+				using (var store = new AutoFarmStateStore("autofarm_dashboard-test.db", dataFolder)) {
+					store.SaveSystemSnapshot(5, 123, observedAt, false, new List<Planet>());
+					store.UpsertTarget(target, observedAt);
+					store.RecordAttack(target, new Resources(metal: 100, crystal: 50, deuterium: 25), observedAt);
+				}
+
+				var dashboard = new AutoFarmDashboardReader().Read("dashboard-test");
+
+				Assert.True(dashboard.DatabaseAvailable);
+				Assert.Equal(1, dashboard.CachedSystemCount);
+				Assert.Single(dashboard.Reports);
+				Assert.Equal("AttackSent", dashboard.Reports[0].State);
+				Assert.Single(dashboard.Attacks);
+				Assert.Equal(101, dashboard.Attacks[0].ReportId);
+			} finally {
+				if (File.Exists(databasePath))
+					File.Delete(databasePath);
 			}
 		}
 

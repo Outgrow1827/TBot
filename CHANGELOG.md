@@ -1,6 +1,6 @@
 # Changelog
 
-## v3.5.0-beta
+## v3.5.0-beta2
 
 > **Beta warning:** This release contains a substantial rework of the mine, research, Lifeforms and resource-planning workers. It has been tested with automated tests and live OGame sessions, but regressions or edge-case bugs may still remain.
 >
@@ -37,6 +37,22 @@
 
 - Added the ogamed v13 artifact inventory endpoint and exposed collected artifacts and capacity to TBot.
 - Validated the endpoint against a live Xanthippe account (`272 / 3600` returned successfully).
+
+### AutoFarm report integrity and activity view
+
+- Prevented AutoFarm from processing an espionage report after its report ID has already been used for an attack.
+- Kept targets in `AttackSent` while an attack fleet is still in progress, including attacks sent from another configured origin.
+- Persisted consumed report IDs and an idempotent attack history in the existing AutoFarm SQLite database.
+- Added a read-only English AutoFarm page showing current reports, pending attacks, recent dispatches and the cached system count.
+
+#### Before vs What to expect now
+
+| Situation | Before | What to expect now |
+| --- | --- | --- |
+| OGame keeps an old espionage report after a delete request fails | The report could be read again in a later cycle and become attackable again. | The report ID is persisted as consumed and is skipped permanently for AutoFarm processing. |
+| An attack is still travelling or returning when the next AutoFarm cycle starts | The target could be reset too early and compete with the old report again. | The target stays in `AttackSent` until no matching attack fleet remains. |
+| TBot is restarted after an attack | The in-memory target state was not enough to prove that a report had already been used. | The consumed report ledger and attack history are reloaded from SQLite. |
+| You need to understand what AutoFarm has done | The information was spread across logs and raw SQLite rows. | The WebUI has a simple read-only AutoFarm page with reports, statuses, coordinates and attack history. |
 
 ## v3.4.9
 

@@ -65,6 +65,14 @@ namespace Tbot.Workers {
 
 			_tbotInstance.UserData.farmTargets ??= new List<FarmTarget>();
 			foreach (var persisted in _stateStore.LoadTargets()) {
+				if (!persisted.ConsumedReportId.HasValue &&
+					persisted.State == FarmState.AttackSent &&
+					persisted.Report?.ID > 0) {
+					// Databases created before report consumption was persisted still
+					// contain the report that was used for this completed dispatch.
+					persisted.ConsumedReportId = persisted.Report.ID;
+				}
+
 				var current = _tbotInstance.UserData.farmTargets.FirstOrDefault(target =>
 					target?.Celestial?.Coordinate?.IsSame(persisted.Celestial.Coordinate) == true);
 				if (current == null) {
@@ -75,6 +83,7 @@ namespace Tbot.Workers {
 				current.Celestial = persisted.Celestial;
 				current.State = persisted.State;
 				current.Report = persisted.Report;
+				current.ConsumedReportId = persisted.ConsumedReportId;
 			}
 			_stateLoaded = true;
 		}
@@ -95,10 +104,16 @@ namespace Tbot.Workers {
 			return TimeSpan.FromDays(Math.Max(1, days));
 		}
 
-		private async Task PruneOldReports() {
+		private async Task PruneOldReports(List<Fleet> fleets) {
 			var newTime = await _tbotOgameBridge.GetDateTime();
 			var removeReports = _tbotInstance.UserData.farmTargets.Where(t => t.State == FarmState.AttackSent || (t.Report != null && DateTime.Compare(t.Report.Date.AddMinutes((double) _tbotInstance.InstanceSettings.AutoFarm.KeepReportFor), newTime) < 0)).ToList();
 			foreach (var remove in removeReports) {
+				if (remove.State == FarmState.AttackSent && AutoFarmAttackPolicy.IsAttackInProgress(remove, fleets)) {
+					_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm,
+						$"Keeping {remove} in AttackSent state while an attack fleet is still in progress.");
+					continue;
+				}
+
 				var updateReport = remove;
 				updateReport.State = FarmState.ProbesPending;
 				updateReport.Report = null;
@@ -326,7 +341,7 @@ namespace Tbot.Workers {
 					return null;
 				}
 
-				if (target.State == FarmState.ProbesSent || target.State == FarmState.AttackPending) {
+				if (target.State == FarmState.ProbesSent || target.State == FarmState.AttackPending || target.State == FarmState.AttackSent) {
 					_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm, $"Target {planet.ToString()} marked as {target.State.ToString()}. Skipping...");
 					return null;
 				}
@@ -499,7 +514,8 @@ namespace Tbot.Workers {
 					}
 
 					try {
-						await PruneOldReports();
+						_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
+						await PruneOldReports(_tbotInstance.UserData.fleets);
 						PersistTargets();
 
 						var farmOrigins = GetFarmOrigins();
@@ -1140,8 +1156,10 @@ namespace Tbot.Workers {
 
 								_successfulTargets.RecordAttack(target.Celestial.Coordinate, loot);
 								_tbotInstance.UserData.farmTargets.Remove(target);
-								 target.State = FarmState.AttackSent;
+								target.State = FarmState.AttackSent;
+								target.ConsumedReportId = target.Report?.ID > 0 ? target.Report.ID : target.ConsumedReportId;
 								_tbotInstance.UserData.farmTargets.Add(target);
+								_stateStore.RecordAttack(target, loot, DateTime.UtcNow);
 								PersistTargets();
 							} else if (fleetId == (int) SendFleetCode.AfterSleepTime) {
 								stop = true;
@@ -1204,6 +1222,12 @@ namespace Tbot.Workers {
 
 				try {
 					var report = await _ogameService.GetEspionageReport(summary.ID);
+					if (_stateStore.HasConsumedReport(report.ID)) {
+						_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm,
+							$"Ignoring consumed espionage report {report.ID} for {report.Coordinate}.");
+						await _ogameService.DeleteReport(report.ID);
+						continue;
+					}
 					if (DateTime.Compare(report.Date.AddMinutes((double) _tbotInstance.InstanceSettings.AutoFarm.KeepReportFor), await _tbotOgameBridge.GetDateTime()) < 0) {
 						await _ogameService.DeleteReport(report.ID);
 						continue;
@@ -1227,6 +1251,14 @@ namespace Tbot.Workers {
 						} else {
 							target = matchingTarget.First();
 						}
+
+						if (!AutoFarmAttackPolicy.CanProcessReport(target, report)) {
+							_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm,
+								$"Ignoring already consumed or still active espionage report {report.ID} for {report.Coordinate}.");
+							await _ogameService.DeleteReport(report.ID);
+							continue;
+						}
+
 						var newFarmTarget = target;
 
 						if (target.Report != null && DateTime.Compare(report.Date, target.Report.Date) < 0) {
@@ -1297,6 +1329,13 @@ namespace Tbot.Workers {
 						if (planet != null) {
 							var target = GetFarmTarget(planet);
 							if (target != null) {
+								if (!AutoFarmAttackPolicy.CanProcessReport(target, report)) {
+									_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm,
+										$"Ignoring already consumed or still active espionage report {report.ID} for {report.Coordinate}.");
+									await _ogameService.DeleteReport(report.ID);
+									continue;
+								}
+
 								var newFarmTarget = target;
 								Buildables cargoShip;
 								Enum.TryParse<Buildables>((string) _tbotInstance.InstanceSettings.AutoFarm.CargoType, true, out cargoShip);
