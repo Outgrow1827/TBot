@@ -18,6 +18,7 @@ namespace TBot.Ogame.Infrastructure.Models {
 		public Celestial Celestial { get; set; }
 		public FarmState State { get; set; }
 		public EspionageReport Report { get; set; }
+		public int? ConsumedReportId { get; set; }
 		public bool HasCoords(Coordinate coords) {
 			return coords.Galaxy == Celestial.Coordinate.Galaxy
 				&& coords.System == Celestial.Coordinate.System

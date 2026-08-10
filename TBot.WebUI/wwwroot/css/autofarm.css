@@ -1,0 +1,270 @@
+.autofarm-page {
+    min-height: calc(100vh - 82px);
+    margin: -1rem -0.75rem 0;
+    padding: 48px 24px 72px;
+    color: #242321;
+    background: #f7f6f3;
+    font-family: "Avenir Next", "Helvetica Neue", sans-serif;
+}
+
+.autofarm-shell {
+    width: min(1120px, 100%);
+    margin: 0 auto;
+}
+
+.autofarm-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 32px;
+    padding-bottom: 36px;
+    border-bottom: 1px solid #deddd9;
+}
+
+.eyebrow {
+    margin: 0 0 10px;
+    color: #77736b;
+    font-family: "SF Mono", "Cascadia Mono", monospace;
+    font-size: 11px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+.autofarm-header h1,
+.panel-heading h2 {
+    margin: 0;
+    font-family: Georgia, "Times New Roman", serif;
+    font-weight: 400;
+    letter-spacing: -.025em;
+}
+
+.autofarm-header h1 {
+    font-size: clamp(2.2rem, 5vw, 4rem);
+    line-height: 1;
+}
+
+.intro {
+    max-width: 560px;
+    margin: 16px 0 0;
+    color: #6e6b65;
+    line-height: 1.6;
+}
+
+.instance-picker {
+    display: grid;
+    min-width: 160px;
+    gap: 8px;
+}
+
+.instance-picker label,
+.summary-label {
+    color: #77736b;
+    font-size: 12px;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+
+.instance-picker select {
+    min-height: 38px;
+    padding: 0 32px 0 10px;
+    border: 1px solid #c9c7c1;
+    border-radius: 4px;
+    color: #242321;
+    background: #fff;
+}
+
+.notice {
+    margin: 24px 0 -4px;
+    padding: 14px 16px;
+    border-left: 3px solid #c99936;
+    color: #6d5524;
+    background: #fbf3db;
+    line-height: 1.5;
+}
+
+.summary-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    margin: 32px 0;
+    border: 1px solid #deddd9;
+    background: #deddd9;
+}
+
+.summary-item {
+    min-height: 112px;
+    padding: 20px;
+    background: #fff;
+}
+
+.summary-item strong {
+    display: block;
+    margin-top: 14px;
+    font-size: 30px;
+    font-weight: 400;
+}
+
+.summary-item small {
+    display: block;
+    margin-top: 6px;
+    color: #77736b;
+    font-size: 11px;
+}
+
+.panel {
+    margin-top: 24px;
+    border: 1px solid #deddd9;
+    background: #fff;
+}
+
+.panel-heading {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 24px;
+    border-bottom: 1px solid #deddd9;
+}
+
+.panel-heading h2 {
+    font-size: 28px;
+}
+
+.panel-count {
+    color: #77736b;
+    font-family: "SF Mono", "Cascadia Mono", monospace;
+    font-size: 12px;
+}
+
+.table-wrap {
+    overflow-x: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+th,
+td {
+    padding: 15px 18px;
+    border-bottom: 1px solid #ecebe8;
+    text-align: left;
+    vertical-align: middle;
+}
+
+th {
+    color: #77736b;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.target-name,
+.coordinate {
+    display: block;
+}
+
+.target-name {
+    max-width: 240px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.coordinate,
+.muted,
+.consumed {
+    margin-top: 4px;
+    color: #77736b;
+    font-size: 11px;
+}
+
+.mono {
+    font-family: "SF Mono", "Cascadia Mono", monospace;
+    font-size: 12px;
+}
+
+.resources {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.status {
+    display: inline-block;
+    padding: 4px 7px;
+    border-radius: 999px;
+    font-size: 11px;
+    letter-spacing: .02em;
+}
+
+.status.attackpending {
+    color: #346538;
+    background: #edf3ec;
+}
+
+.status.attacksent {
+    color: #1f6c9f;
+    background: #e1f3fe;
+}
+
+.status.probessent,
+.status.probesrequired,
+.status.failedprobesrequired {
+    color: #956400;
+    background: #fbf3db;
+}
+
+.status.notsuitable {
+    color: #9f2f2d;
+    background: #fdebec;
+}
+
+.consumed {
+    display: block;
+    color: #346538;
+}
+
+.empty-state {
+    margin: 0;
+    padding: 28px 24px;
+    color: #77736b;
+}
+
+.dashboard-footnote {
+    margin: 24px 0 0;
+    color: #77736b;
+    font-size: 12px;
+}
+
+@media (max-width: 720px) {
+    .autofarm-page {
+        padding: 32px 16px 56px;
+    }
+
+    .autofarm-header {
+        display: block;
+    }
+
+    .instance-picker {
+        margin-top: 24px;
+    }
+
+    .summary-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .panel-heading,
+    th,
+    td {
+        padding-left: 14px;
+        padding-right: 14px;
+    }
+}

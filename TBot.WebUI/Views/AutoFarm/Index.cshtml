@@ -1,0 +1,178 @@
+@using System.Globalization
+@model TBot.WebUI.Models.AutoFarmDashboardModel
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/autofarm.css" asp-append-version="true" />
+}
+
+<div class="autofarm-page">
+    <div class="autofarm-shell">
+        <header class="autofarm-header">
+            <div>
+                <p class="eyebrow">T-Bot / AutoFarm</p>
+                <h1>Reports and activity</h1>
+                <p class="intro">A read-only view of the reports AutoFarm knows about and the attacks it has dispatched.</p>
+            </div>
+            <form method="get" class="instance-picker">
+                <label for="instance">Instance</label>
+                <select id="instance" name="instance" onchange="this.form.submit()">
+                    @foreach (var instance in Model.Instances)
+                    {
+                        if (string.Equals(instance, Model.SelectedInstance, StringComparison.OrdinalIgnoreCase))
+                        {
+                            <option value="@instance" selected>@instance</option>
+                        }
+                        else
+                        {
+                            <option value="@instance">@instance</option>
+                        }
+                    }
+                </select>
+            </form>
+        </header>
+
+        @if (!Model.DatabaseAvailable)
+        {
+            <div class="notice">
+                No AutoFarm database is available for this instance yet. This page will populate after AutoFarm has run once.
+            </div>
+        }
+
+        <section class="summary-grid" aria-label="AutoFarm summary">
+            <div class="summary-item">
+                <span class="summary-label">Current reports</span>
+                <strong>@Model.Reports.Count</strong>
+            </div>
+            <div class="summary-item">
+                <span class="summary-label">Pending attacks</span>
+                <strong>@Model.PendingAttackCount</strong>
+            </div>
+            <div class="summary-item">
+                <span class="summary-label">Recorded attacks</span>
+                <strong>@Model.Attacks.Count</strong>
+            </div>
+            <div class="summary-item">
+                <span class="summary-label">Cached systems</span>
+                <strong>@Model.CachedSystemCount</strong>
+                @if (Model.LastSystemObservedAtUtc.HasValue)
+                {
+                    <small>Last update @FormatDate(Model.LastSystemObservedAtUtc)</small>
+                }
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-heading">
+                <div>
+                    <p class="eyebrow">Dispatch history</p>
+                    <h2>Recent attacks</h2>
+                </div>
+                <span class="panel-count">@Model.Attacks.Count</span>
+            </div>
+
+            @if (Model.Attacks.Count == 0)
+            {
+                <p class="empty-state">No AutoFarm attack has been recorded for this instance.</p>
+            }
+            else
+            {
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>When</th>
+                                <th>Target</th>
+                                <th>Report</th>
+                                <th>Loot reported</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var attack in Model.Attacks)
+                            {
+                                <tr>
+                                    <td class="muted">@FormatDate(attack.DispatchedAtUtc)</td>
+                                    <td>
+                                        <span class="target-name">@(string.IsNullOrWhiteSpace(attack.TargetName) ? "Unnamed target" : attack.TargetName)</span>
+                                        <span class="coordinate">@attack.Coordinate</span>
+                                    </td>
+                                    <td class="mono">#@attack.ReportId</td>
+                                    <td class="resources">@FormatNumber(attack.TotalResources)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+
+        <section class="panel">
+            <div class="panel-heading">
+                <div>
+                    <p class="eyebrow">Current state</p>
+                    <h2>Reports kept by AutoFarm</h2>
+                </div>
+                <span class="panel-count">@Model.Reports.Count</span>
+            </div>
+
+            @if (Model.Reports.Count == 0)
+            {
+                <p class="empty-state">There are no current reports in the AutoFarm state store.</p>
+            }
+            else
+            {
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Target</th>
+                                <th>Status</th>
+                                <th>Report</th>
+                                <th>Resources in report</th>
+                                <th>Updated</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var report in Model.Reports)
+                            {
+                                var statusClass = report.State.ToLowerInvariant();
+                                <tr>
+                                    <td>
+                                        <span class="target-name">@(string.IsNullOrWhiteSpace(report.TargetName) ? "Unnamed target" : report.TargetName)</span>
+                                        <span class="coordinate">@report.Coordinate</span>
+                                    </td>
+                                    <td>
+                                        <span class="status @statusClass">@report.State</span>
+                                        @if (report.ConsumedReportId == report.ReportId && report.ReportId > 0)
+                                        {
+                                            <span class="consumed">Consumed once</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        <span class="mono">#@report.ReportId</span>
+                                        <span class="coordinate">@FormatDate(report.ReportDateUtc)</span>
+                                    </td>
+                                    <td class="resources">@FormatNumber(report.TotalResources)</td>
+                                    <td class="muted">@FormatDate(report.UpdatedAtUtc)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+
+        <p class="dashboard-footnote">This page does not query OGame and does not change AutoFarm state.</p>
+    </div>
+</div>
+
+@functions {
+    private static string FormatDate(DateTime? value)
+    {
+        return value.HasValue ? value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) : "—";
+    }
+
+    private static string FormatNumber(long value)
+    {
+        return value.ToString("N0", CultureInfo.InvariantCulture);
+    }
+}
