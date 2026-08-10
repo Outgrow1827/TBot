@@ -24,9 +24,10 @@ namespace TBot.WebUI.Services {
 			var storage = new AutoFarmDashboardStorage();
 			var settings = ReadSettings(instanceAlias);
 			var logs = ReadLogs();
+			var autoFarmLogs = logs.Where(IsAutoFarmLog).ToList();
 
-			storage.Logs.AddRange(ToLogRows(logs.TakeLast(120).Reverse()));
-			storage.Errors.AddRange(ToLogRows(logs
+			storage.Logs.AddRange(ToLogRows(autoFarmLogs.TakeLast(120).Reverse()));
+			storage.Errors.AddRange(ToLogRows(autoFarmLogs
 				.Where(log => IsError(log) || log.Message.Contains("503", StringComparison.OrdinalIgnoreCase) || log.Message.Contains("302", StringComparison.OrdinalIgnoreCase))
 				.TakeLast(40)
 				.Reverse()));
@@ -484,6 +485,8 @@ WHERE id = 1;";
 		}
 
 		private static bool IsError(LogRecord log) => log.Level.Equals("Error", StringComparison.OrdinalIgnoreCase) || log.Level.Equals("Warning", StringComparison.OrdinalIgnoreCase) || log.Message.Contains("Exception", StringComparison.OrdinalIgnoreCase);
+
+		private static bool IsAutoFarmLog(LogRecord log) => log.Sender.Equals("AutoFarm", StringComparison.OrdinalIgnoreCase);
 
 		private static string? ExtractCoordinate(string message) {
 			var match = CoordinatePattern.Match(message ?? string.Empty);

@@ -65,6 +65,7 @@
         const instance = root.dataset.instance;
         const snapshotUrl = '@Url.Action("Snapshot", "AutoFarm")';
         let snapshot = @Html.Raw(initialSnapshot);
+        let renderedSnapshotKey = "";
         let requestInProgress = false;
 
         function escapeHtml(value) {
@@ -189,7 +190,7 @@
         function renderErrors(errors) {
             const rows = errors.length ? errors.map(log => `<tr><td>${formatDate(log.dateTimeUtc)}</td><td>${escapeHtml(log.sender)}</td><td class="log-message">${escapeHtml(log.message)}</td></tr>`).join("") : emptyRow(3, "No recent AutoFarm errors or warnings.");
             return `<section class="panel">
-                <div class="panel-heading"><h2>Recent errors</h2><button type="button" class="plain-button copy-errors">Copy errors</button></div>
+                <div class="panel-heading"><h2>Recent errors</h2><button type="button" class="plain-button copy-errors" id="copy-errors">Copy errors</button></div>
                 <div class="table-wrap"><table><thead><tr><th>When</th><th>Source</th><th>Message</th></tr></thead><tbody>${rows}</tbody></table></div>
             </section>`;
         }
@@ -197,16 +198,44 @@
         function renderLogs(logs) {
             const text = logs.map(log => log.copyText).join("\n");
             return `<section class="panel">
-                <details class="logs-details">
-                    <summary>Recent AutoFarm logs (${formatNumber(logs.length)})</summary>
+                <details class="logs-details" id="autofarm-log-details">
+                    <summary id="autofarm-log-summary">Recent AutoFarm logs (${formatNumber(logs.length)})</summary>
                     <pre>${escapeHtml(text || "No logs available.")}</pre>
                 </details>
             </section>`;
         }
 
+        function captureUiState() {
+            const activeElement = document.activeElement;
+            return {
+                activeId: activeElement && activeElement.id ? activeElement.id : null,
+                details: Array.from(content.querySelectorAll("details[id]")).map(details => ({ id: details.id, open: details.open })),
+                scrollTop: window.scrollY
+            };
+        }
+
+        function restoreUiState(state) {
+            state.details.forEach(item => {
+                const details = document.getElementById(item.id);
+                if (details) details.open = item.open;
+            });
+
+            if (state.activeId) {
+                const activeElement = document.getElementById(state.activeId);
+                if (activeElement) activeElement.focus({ preventScroll: true });
+            }
+
+            window.scrollTo(0, state.scrollTop);
+        }
+
         function render(data) {
             snapshot = data;
+            const nextSnapshotKey = JSON.stringify(data);
             notice.innerHTML = data.databaseAvailable ? "" : `<div class="notice">No AutoFarm database is available for this instance yet. The page will populate after AutoFarm has run once.</div>`;
+
+            if (nextSnapshotKey === renderedSnapshotKey) return;
+
+            const uiState = captureUiState();
             content.innerHTML = [
                 renderWorker(data.worker, data.databaseAvailable),
                 renderSlots(data.slots),
@@ -217,22 +246,24 @@
                 renderErrors(data.errors),
                 renderLogs(data.logs)
             ].join("");
+            renderedSnapshotKey = nextSnapshotKey;
+            restoreUiState(uiState);
         }
 
         async function copyText(text, button) {
+            const original = button.textContent;
             if (!text) {
                 button.textContent = "Nothing to copy";
-                setTimeout(() => button.textContent = "Copy logs", 1800);
+                setTimeout(() => button.textContent = original, 1800);
                 return;
             }
             try {
                 await navigator.clipboard.writeText(text);
-                const original = button.textContent;
                 button.textContent = "Copied";
                 setTimeout(() => button.textContent = original, 1800);
             } catch {
                 button.textContent = "Copy failed";
-                setTimeout(() => button.textContent = "Copy logs", 1800);
+                setTimeout(() => button.textContent = original, 1800);
             }
         }
 
