@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using Microsoft.Data.Sqlite;
+using Tbot.Common.Settings;
 using TBot.Model;
 using Tbot.Includes;
 using TBot.Ogame.Infrastructure.Enums;
@@ -439,6 +441,32 @@ namespace TBot.Tests {
 			} finally {
 				if (File.Exists(databasePath))
 					File.Delete(databasePath);
+			}
+		}
+
+		[Fact]
+		public void AutoFarmDashboardOnlyExposesAutoFarmLogs() {
+			var logsPath = Path.Combine(Path.GetTempPath(), "tbot-tests", Guid.NewGuid().ToString("N"));
+			Directory.CreateDirectory(logsPath);
+			var logFile = Path.Combine(logsPath, $"TBot{DateTime.Now:yyyyMMdd}.csv");
+			var timestamp = DateTime.Now.ToString(CultureInfo.InvariantCulture);
+			File.WriteAllText(logFile,
+				$"type,sender,datetime,message{Environment.NewLine}" +
+				$"Information,AutoFarm,{timestamp},AutoFarm decision{Environment.NewLine}" +
+				$"Information,Expeditions,{timestamp},Expedition activity{Environment.NewLine}" +
+				$"Error,FleetScheduler,{timestamp},Unrelated scheduler error{Environment.NewLine}");
+
+			var previousLogsPath = SettingsService.LogsPath;
+			try {
+				SettingsService.LogsPath = logsPath;
+				var dashboard = new AutoFarmDashboardReader().Read("log-filter-test");
+
+				Assert.Single(dashboard.Logs);
+				Assert.Equal("AutoFarm", dashboard.Logs[0].Sender);
+				Assert.Empty(dashboard.Errors);
+			} finally {
+				SettingsService.LogsPath = previousLogsPath;
+				Directory.Delete(logsPath, true);
 			}
 		}
 
