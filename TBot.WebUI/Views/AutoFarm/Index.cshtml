@@ -1,178 +1,267 @@
-@using System.Globalization
+@using System.Text.Json
+@using System.Text.Encodings.Web
+@using System.Text.Json.Serialization
 @model TBot.WebUI.Models.AutoFarmDashboardModel
+
+@{
+    var jsonOptions = new JsonSerializerOptions {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        Encoder = JavaScriptEncoder.Default
+    };
+    var initialSnapshot = JsonSerializer.Serialize(Model, jsonOptions);
+}
 
 @section Styles {
     <link rel="stylesheet" href="~/css/autofarm.css" asp-append-version="true" />
 }
 
-<div class="autofarm-page">
+<div class="autofarm-page" id="autofarm-dashboard" data-instance="@Model.SelectedInstance">
     <div class="autofarm-shell">
         <header class="autofarm-header">
             <div>
-                <p class="eyebrow">T-Bot / AutoFarm</p>
-                <h1>Reports and activity</h1>
-                <p class="intro">A read-only view of the reports AutoFarm knows about and the attacks it has dispatched.</p>
+                <h1>AutoFarm</h1>
+                <p class="intro">Read-only diagnostic information about scans, decisions and fleets sent by AutoFarm.</p>
             </div>
             <form method="get" class="instance-picker">
                 <label for="instance">Instance</label>
-                <select id="instance" name="instance" onchange="this.form.submit()">
-                    @foreach (var instance in Model.Instances)
-                    {
-                        if (string.Equals(instance, Model.SelectedInstance, StringComparison.OrdinalIgnoreCase))
+                <div class="instance-controls">
+                    <select id="instance" name="instance">
+                        @foreach (var instance in Model.Instances)
                         {
-                            <option value="@instance" selected>@instance</option>
+                            if (string.Equals(instance, Model.SelectedInstance, StringComparison.OrdinalIgnoreCase))
+                            {
+                                <option value="@instance" selected>@instance</option>
+                            }
+                            else
+                            {
+                                <option value="@instance">@instance</option>
+                            }
                         }
-                        else
-                        {
-                            <option value="@instance">@instance</option>
-                        }
-                    }
-                </select>
+                    </select>
+                    <button type="submit" class="refresh-button">Open</button>
+                </div>
             </form>
         </header>
 
-        @if (!Model.DatabaseAvailable)
-        {
-            <div class="notice">
-                No AutoFarm database is available for this instance yet. This page will populate after AutoFarm has run once.
-            </div>
-        }
+        <div class="dashboard-toolbar" role="status" aria-live="polite">
+            <span id="poll-status">Loading current data...</span>
+            <span id="last-updated"></span>
+            <button type="button" class="plain-button" id="copy-logs">Copy logs</button>
+        </div>
 
-        <section class="summary-grid" aria-label="AutoFarm summary">
-            <div class="summary-item">
-                <span class="summary-label">Current reports</span>
-                <strong>@Model.Reports.Count</strong>
-            </div>
-            <div class="summary-item">
-                <span class="summary-label">Pending attacks</span>
-                <strong>@Model.PendingAttackCount</strong>
-            </div>
-            <div class="summary-item">
-                <span class="summary-label">Recorded attacks</span>
-                <strong>@Model.Attacks.Count</strong>
-            </div>
-            <div class="summary-item">
-                <span class="summary-label">Cached systems</span>
-                <strong>@Model.CachedSystemCount</strong>
-                @if (Model.LastSystemObservedAtUtc.HasValue)
-                {
-                    <small>Last update @FormatDate(Model.LastSystemObservedAtUtc)</small>
-                }
-            </div>
-        </section>
-
-        <section class="panel">
-            <div class="panel-heading">
-                <div>
-                    <p class="eyebrow">Dispatch history</p>
-                    <h2>Recent attacks</h2>
-                </div>
-                <span class="panel-count">@Model.Attacks.Count</span>
-            </div>
-
-            @if (Model.Attacks.Count == 0)
-            {
-                <p class="empty-state">No AutoFarm attack has been recorded for this instance.</p>
-            }
-            else
-            {
-                <div class="table-wrap">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>When</th>
-                                <th>Target</th>
-                                <th>Report</th>
-                                <th>Loot reported</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var attack in Model.Attacks)
-                            {
-                                <tr>
-                                    <td class="muted">@FormatDate(attack.DispatchedAtUtc)</td>
-                                    <td>
-                                        <span class="target-name">@(string.IsNullOrWhiteSpace(attack.TargetName) ? "Unnamed target" : attack.TargetName)</span>
-                                        <span class="coordinate">@attack.Coordinate</span>
-                                    </td>
-                                    <td class="mono">#@attack.ReportId</td>
-                                    <td class="resources">@FormatNumber(attack.TotalResources)</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-            }
-        </section>
-
-        <section class="panel">
-            <div class="panel-heading">
-                <div>
-                    <p class="eyebrow">Current state</p>
-                    <h2>Reports kept by AutoFarm</h2>
-                </div>
-                <span class="panel-count">@Model.Reports.Count</span>
-            </div>
-
-            @if (Model.Reports.Count == 0)
-            {
-                <p class="empty-state">There are no current reports in the AutoFarm state store.</p>
-            }
-            else
-            {
-                <div class="table-wrap">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Target</th>
-                                <th>Status</th>
-                                <th>Report</th>
-                                <th>Resources in report</th>
-                                <th>Updated</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var report in Model.Reports)
-                            {
-                                var statusClass = report.State.ToLowerInvariant();
-                                <tr>
-                                    <td>
-                                        <span class="target-name">@(string.IsNullOrWhiteSpace(report.TargetName) ? "Unnamed target" : report.TargetName)</span>
-                                        <span class="coordinate">@report.Coordinate</span>
-                                    </td>
-                                    <td>
-                                        <span class="status @statusClass">@report.State</span>
-                                        @if (report.ConsumedReportId == report.ReportId && report.ReportId > 0)
-                                        {
-                                            <span class="consumed">Consumed once</span>
-                                        }
-                                    </td>
-                                    <td>
-                                        <span class="mono">#@report.ReportId</span>
-                                        <span class="coordinate">@FormatDate(report.ReportDateUtc)</span>
-                                    </td>
-                                    <td class="resources">@FormatNumber(report.TotalResources)</td>
-                                    <td class="muted">@FormatDate(report.UpdatedAtUtc)</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-            }
-        </section>
-
-        <p class="dashboard-footnote">This page does not query OGame and does not change AutoFarm state.</p>
+        <div id="dashboard-notice"></div>
+        <div id="dashboard-content"></div>
     </div>
 </div>
 
-@functions {
-    private static string FormatDate(DateTime? value)
-    {
-        return value.HasValue ? value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) : "—";
-    }
+<script>
+    (() => {
+        const root = document.getElementById("autofarm-dashboard");
+        const content = document.getElementById("dashboard-content");
+        const notice = document.getElementById("dashboard-notice");
+        const pollStatus = document.getElementById("poll-status");
+        const lastUpdated = document.getElementById("last-updated");
+        const copyLogsButton = document.getElementById("copy-logs");
+        const instance = root.dataset.instance;
+        const snapshotUrl = '@Url.Action("Snapshot", "AutoFarm")';
+        let snapshot = @Html.Raw(initialSnapshot);
+        let requestInProgress = false;
 
-    private static string FormatNumber(long value)
-    {
-        return value.ToString("N0", CultureInfo.InvariantCulture);
-    }
-}
+        function escapeHtml(value) {
+            return String(value ?? "")
+                .replaceAll("&", "&amp;")
+                .replaceAll("<", "&lt;")
+                .replaceAll(">", "&gt;")
+                .replaceAll('"', "&quot;")
+                .replaceAll("'", "&#039;");
+        }
+
+        function formatDate(value) {
+            if (!value) return "Not available";
+            const date = new Date(value);
+            return Number.isNaN(date.getTime()) ? "Not available" : date.toLocaleString();
+        }
+
+        function formatNumber(value) {
+            return Number(value || 0).toLocaleString();
+        }
+
+        function statusClass(value) {
+            return String(value || "unknown").toLowerCase().replace(/[^a-z0-9]+/g, "-");
+        }
+
+        function emptyRow(columns, message) {
+            return `<tr><td colspan="${columns}" class="empty-cell">${escapeHtml(message)}</td></tr>`;
+        }
+
+        function reasonHtml(label, detail) {
+            return `<div class="reason"><span class="reason-label reason-${statusClass(label)}">${escapeHtml(label || "No reason recorded")}</span><span class="reason-detail">${escapeHtml(detail || "")}</span></div>`;
+        }
+
+        function renderWorker(worker, databaseAvailable) {
+            return `<section class="panel">
+                <div class="panel-heading"><h2>Worker status</h2><span class="status status-${statusClass(worker.state)}">${escapeHtml(worker.state)}</span></div>
+                <dl class="facts-grid">
+                    <div><dt>Last execution</dt><dd>${formatDate(worker.lastExecutionUtc)}</dd></div>
+                    <div><dt>Last activity</dt><dd>${formatDate(worker.lastActivityUtc)}</dd></div>
+                    <div><dt>Next execution</dt><dd>${escapeHtml(worker.nextExecutionText || "Not available")}</dd></div>
+                    <div><dt>Database</dt><dd>${databaseAvailable ? "Available" : "Not available"}</dd></div>
+                </dl>
+            </section>`;
+        }
+
+        function renderSlots(slots) {
+            const max = slots.maxSlots == null ? "Not available" : formatNumber(slots.maxSlots);
+            const used = slots.usedSlots == null ? "Not available" : formatNumber(slots.usedSlots);
+            const available = slots.availableSlots == null ? "Not available" : formatNumber(slots.availableSlots);
+            return `<section class="panel">
+                <div class="panel-heading"><h2>Fleet slots</h2><span class="panel-count">AutoFarm budget</span></div>
+                <div class="metric-grid">
+                    <div class="metric"><span>Used</span><strong>${used}</strong></div>
+                    <div class="metric"><span>Available</span><strong>${available}</strong></div>
+                    <div class="metric"><span>Maximum</span><strong>${max}</strong></div>
+                    <div class="metric"><span>Probes observed</span><strong>${formatNumber(slots.probesInFlight)}</strong></div>
+                    <div class="metric"><span>Attacks observed</span><strong>${formatNumber(slots.attacksInFlight)}</strong></div>
+                </div>
+                <p class="panel-note">Slot values come from the latest AutoFarm budget message. Probe and attack counts are observed in the current cycle.</p>
+            </section>`;
+        }
+
+        function renderScan(scan) {
+            const percent = Math.max(0, Math.min(100, Number(scan.progressPercent || 0)));
+            const cursor = scan.cursorGalaxy > 0 ? `${scan.cursorGalaxy}:${scan.cursorSystem}` : "Not available";
+            return `<section class="panel">
+                <div class="panel-heading"><h2>Scan progress</h2><span class="panel-count">${formatNumber(percent)}%</span></div>
+                <div class="progress-line"><progress max="100" value="${percent}"></progress><strong>${formatNumber(scan.scannedSystemsInRange)} / ${formatNumber(scan.totalSystemsInRange)} systems</strong></div>
+                <dl class="facts-grid compact-facts">
+                    <div><dt>Current cursor</dt><dd>${escapeHtml(cursor)}</dd></div>
+                    <div><dt>Cached systems</dt><dd>${formatNumber(scan.cachedSystems)}</dd></div>
+                    <div><dt>Cursor updated</dt><dd>${formatDate(scan.cursorUpdatedAtUtc)}</dd></div>
+                    <div><dt>Last system observed</dt><dd>${formatDate(scan.lastSystemObservedAtUtc)}</dd></div>
+                </dl>
+            </section>`;
+        }
+
+        function renderReports(reports) {
+            const rows = reports.length ? reports.map(report => `<tr>
+                <td><strong>${escapeHtml(report.targetName || "Unnamed target")}</strong><span class="coordinate">${escapeHtml(report.coordinate)}</span></td>
+                <td><span class="status status-${statusClass(report.state)}">${escapeHtml(report.state)}</span><span class="coordinate">Report #${formatNumber(report.reportId)}</span></td>
+                <td class="resources">${formatNumber(report.totalResources)}</td>
+                <td>${reasonHtml(report.reason, report.reasonDetail)}</td>
+                <td class="muted">${formatDate(report.updatedAtUtc)}</td>
+            </tr>`).join("") : emptyRow(5, "No reports are currently stored.");
+            return `<section class="panel panel-primary">
+                <div class="panel-heading"><h2>Targets and decisions</h2><span class="panel-count">${formatNumber(reports.length)}</span></div>
+                <p class="panel-note">The reason column explains why AutoFarm sent, postponed or ignored each target.</p>
+                <div class="table-wrap"><table><thead><tr><th>Target</th><th>State</th><th>Reported resources</th><th>Reason</th><th>Updated</th></tr></thead><tbody>${rows}</tbody></table></div>
+            </section>`;
+        }
+
+        function renderSystems(systems) {
+            const rows = systems.length ? systems.map(system => `<tr>
+                <td class="mono">${escapeHtml(system.coordinate)}</td>
+                <td><span class="status status-${statusClass(system.status)}">${escapeHtml(system.status)}</span></td>
+                <td>${formatDate(system.lastScannedUtc)}</td>
+                <td>${formatDate(system.nextRefreshUtc)}</td>
+                <td>${escapeHtml(system.reason)}</td>
+            </tr>`).join("") : emptyRow(5, "No cached systems are stored.");
+            return `<section class="panel">
+                <div class="panel-heading"><h2>Cached systems</h2><span class="panel-count">${formatNumber(systems.length)}</span></div>
+                <div class="table-wrap"><table><thead><tr><th>System</th><th>Status</th><th>Last scan</th><th>Next refresh</th><th>Reason</th></tr></thead><tbody>${rows}</tbody></table></div>
+            </section>`;
+        }
+
+        function renderAttacks(attacks) {
+            const rows = attacks.length ? attacks.map(attack => `<tr>
+                <td>${formatDate(attack.dispatchedAtUtc)}</td>
+                <td><strong>${escapeHtml(attack.origin)}</strong><span class="coordinate">${escapeHtml(attack.mission)}</span></td>
+                <td><strong>${escapeHtml(attack.targetName || "Unnamed target")}</strong><span class="coordinate">${escapeHtml(attack.coordinate)}</span></td>
+                <td class="mono">#${formatNumber(attack.reportId)}</td>
+                <td class="resources">${formatNumber(attack.totalResources)}</td>
+            </tr>`).join("") : emptyRow(5, "No fleet dispatch has been recorded yet.");
+            return `<section class="panel">
+                <div class="panel-heading"><h2>Recorded attacks</h2><span class="panel-count">${formatNumber(attacks.length)}</span></div>
+                <p class="panel-note">Only dispatches successfully recorded after a fleet was sent are shown here.</p>
+                <div class="table-wrap"><table><thead><tr><th>When</th><th>Origin</th><th>Destination</th><th>Report</th><th>Reported resources</th></tr></thead><tbody>${rows}</tbody></table></div>
+            </section>`;
+        }
+
+        function renderErrors(errors) {
+            const rows = errors.length ? errors.map(log => `<tr><td>${formatDate(log.dateTimeUtc)}</td><td>${escapeHtml(log.sender)}</td><td class="log-message">${escapeHtml(log.message)}</td></tr>`).join("") : emptyRow(3, "No recent AutoFarm errors or warnings.");
+            return `<section class="panel">
+                <div class="panel-heading"><h2>Recent errors</h2><button type="button" class="plain-button copy-errors">Copy errors</button></div>
+                <div class="table-wrap"><table><thead><tr><th>When</th><th>Source</th><th>Message</th></tr></thead><tbody>${rows}</tbody></table></div>
+            </section>`;
+        }
+
+        function renderLogs(logs) {
+            const text = logs.map(log => log.copyText).join("\n");
+            return `<section class="panel">
+                <details class="logs-details">
+                    <summary>Recent AutoFarm logs (${formatNumber(logs.length)})</summary>
+                    <pre>${escapeHtml(text || "No logs available.")}</pre>
+                </details>
+            </section>`;
+        }
+
+        function render(data) {
+            snapshot = data;
+            notice.innerHTML = data.databaseAvailable ? "" : `<div class="notice">No AutoFarm database is available for this instance yet. The page will populate after AutoFarm has run once.</div>`;
+            content.innerHTML = [
+                renderWorker(data.worker, data.databaseAvailable),
+                renderSlots(data.slots),
+                renderScan(data.scan),
+                renderReports(data.reports),
+                renderSystems(data.systems),
+                renderAttacks(data.attacks),
+                renderErrors(data.errors),
+                renderLogs(data.logs)
+            ].join("");
+        }
+
+        async function copyText(text, button) {
+            if (!text) {
+                button.textContent = "Nothing to copy";
+                setTimeout(() => button.textContent = "Copy logs", 1800);
+                return;
+            }
+            try {
+                await navigator.clipboard.writeText(text);
+                const original = button.textContent;
+                button.textContent = "Copied";
+                setTimeout(() => button.textContent = original, 1800);
+            } catch {
+                button.textContent = "Copy failed";
+                setTimeout(() => button.textContent = "Copy logs", 1800);
+            }
+        }
+
+        copyLogsButton.addEventListener("click", () => copyText(snapshot.logs.map(log => log.copyText).join("\n"), copyLogsButton));
+        document.addEventListener("click", event => {
+            const button = event.target.closest(".copy-errors");
+            if (!button) return;
+            copyText(snapshot.errors.map(log => log.copyText).join("\n"), button);
+        });
+
+        async function refresh() {
+            if (requestInProgress || document.hidden) return;
+            requestInProgress = true;
+            try {
+                const response = await fetch(`${snapshotUrl}?instance=${encodeURIComponent(instance)}`, { cache: "no-store" });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                render(await response.json());
+                pollStatus.textContent = "Live updates enabled";
+                lastUpdated.textContent = `Last updated ${new Date().toLocaleTimeString()}`;
+            } catch (error) {
+                pollStatus.textContent = "Live update failed. The last known data is still shown.";
+                lastUpdated.textContent = error.message;
+            } finally {
+                requestInProgress = false;
+            }
+        }
+
+        render(snapshot);
+        refresh();
+        window.setInterval(refresh, 5000);
+    })();
+</script>

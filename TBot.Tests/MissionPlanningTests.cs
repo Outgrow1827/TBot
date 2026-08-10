@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Microsoft.Data.Sqlite;
 using TBot.Model;
 using Tbot.Includes;
 using TBot.Ogame.Infrastructure.Enums;
@@ -348,6 +349,51 @@ namespace TBot.Tests {
 		}
 
 		[Fact]
+		public void AutoFarmStateStorePersistsScanCursorAcrossRestart() {
+			var dataFolder = Path.Combine(Path.GetTempPath(), "tbot-tests", Guid.NewGuid().ToString("N"));
+			Directory.CreateDirectory(dataFolder);
+
+			try {
+				var updatedAt = new DateTime(2026, 8, 10, 12, 0, 0, DateTimeKind.Utc);
+				using (var store = new AutoFarmStateStore("autofarm.db", dataFolder))
+					store.SaveScanCursor(0, 1, 139, updatedAt);
+
+				using (var store = new AutoFarmStateStore("autofarm.db", dataFolder)) {
+					var cursor = store.LoadScanCursor();
+					Assert.NotNull(cursor);
+					Assert.Equal(new AutoFarmScanCursor(0, 1, 139), cursor);
+				}
+			} finally {
+				Directory.Delete(dataFolder, true);
+			}
+		}
+
+		[Fact]
+		public void AutoFarmDoesNotReprocessTheSameNonActionableReportWhenDeletionFails() {
+			var coordinate = new Coordinate(1, 139, 7, Celestials.Planet);
+			var target = new FarmTarget(
+				new Planet { Name = "Inactive Planet", Coordinate = coordinate },
+				FarmState.NotSuitable,
+				new EspionageReport { ID = 42, Coordinate = coordinate });
+
+			Assert.True(AutoFarmAttackPolicy.IsRepeatedNonActionableReport(target,
+				new EspionageReport { ID = 42, Coordinate = coordinate }));
+			Assert.False(AutoFarmAttackPolicy.IsRepeatedNonActionableReport(target,
+				new EspionageReport { ID = 43, Coordinate = coordinate }));
+		}
+
+		[Fact]
+		public void AutoFarmDoesNotCrashWhenAFoundTargetHasNoPreviousReport() {
+			var coordinate = new Coordinate(1, 139, 7, Celestials.Planet);
+			var target = new FarmTarget(
+				new Planet { Name = "Inactive Planet", Coordinate = coordinate },
+				FarmState.ProbesPending);
+
+			Assert.False(AutoFarmAttackPolicy.IsRepeatedNonActionableReport(target,
+				new EspionageReport { ID = 42, Coordinate = coordinate }));
+		}
+
+		[Fact]
 		public void AutoFarmDashboardReaderShowsCurrentReportsAndAttackHistory() {
 			var dataFolder = Path.Combine(AppContext.BaseDirectory, "data");
 			Directory.CreateDirectory(dataFolder);
@@ -370,17 +416,26 @@ namespace TBot.Tests {
 				using (var store = new AutoFarmStateStore("autofarm_dashboard-test.db", dataFolder)) {
 					store.SaveSystemSnapshot(5, 123, observedAt, false, new List<Planet>());
 					store.UpsertTarget(target, observedAt);
-					store.RecordAttack(target, new Resources(metal: 100, crystal: 50, deuterium: 25), observedAt);
+					store.RecordAttack(
+						target,
+						new Resources(metal: 100, crystal: 50, deuterium: 25),
+						observedAt,
+						new Coordinate(5, 120, 4, Celestials.Planet),
+						Missions.Attack.ToString());
 				}
 
 				var dashboard = new AutoFarmDashboardReader().Read("dashboard-test");
 
 				Assert.True(dashboard.DatabaseAvailable);
 				Assert.Equal(1, dashboard.CachedSystemCount);
+				Assert.Equal("Cached no targets", dashboard.Systems[0].Status);
 				Assert.Single(dashboard.Reports);
 				Assert.Equal("AttackSent", dashboard.Reports[0].State);
+				Assert.Equal("Attack sent", dashboard.Reports[0].Reason);
 				Assert.Single(dashboard.Attacks);
 				Assert.Equal(101, dashboard.Attacks[0].ReportId);
+				Assert.Equal("[P:5:120:4]", dashboard.Attacks[0].Origin);
+				Assert.Equal("Attack", dashboard.Attacks[0].Mission);
 			} finally {
 				if (File.Exists(databasePath))
 					File.Delete(databasePath);
@@ -538,6 +593,42 @@ namespace TBot.Tests {
 			Assert.Equal(3, plan.Shipments.Count);
 			Assert.Equal(100, plan.Shipments.Single(shipment => shipment.OriginId == 1 && shipment.DestinationId == 21).Amount.Metal);
 			Assert.Equal(50, plan.Shipments.Single(shipment => shipment.OriginId == 3 && shipment.DestinationId == 21).Amount.Metal);
+		}
+
+		[Fact]
+		public void AutoFarmDashboardReaderReadsLegacyAttackHistoryWithoutOriginColumns() {
+			var dataFolder = Path.Combine(AppContext.BaseDirectory, "data");
+			Directory.CreateDirectory(dataFolder);
+			var databasePath = Path.Combine(dataFolder, "autofarm_legacy-dashboard.db");
+
+			try {
+				if (File.Exists(databasePath))
+					File.Delete(databasePath);
+
+				SQLitePCL.Batteries_V2.Init();
+				using (var connection = new SqliteConnection($"Data Source={databasePath};Pooling=False")) {
+					connection.Open();
+					using var command = connection.CreateCommand();
+					command.CommandText = @"
+CREATE TABLE systems (galaxy INTEGER, system INTEGER, observed_at_utc TEXT, is_empty INTEGER, planets_json TEXT);
+CREATE TABLE targets (galaxy INTEGER, system INTEGER, position INTEGER, celestial_type INTEGER, name TEXT, state INTEGER, report_json TEXT, updated_at_utc TEXT);
+CREATE TABLE attacks (report_id INTEGER PRIMARY KEY, galaxy INTEGER, system INTEGER, position INTEGER, celestial_type INTEGER, target_name TEXT, dispatched_at_utc TEXT, metal INTEGER, crystal INTEGER, deuterium INTEGER);
+CREATE TABLE scan_cursor (id INTEGER PRIMARY KEY, range_index INTEGER, galaxy INTEGER, system INTEGER, updated_at_utc TEXT);
+INSERT INTO systems VALUES (1, 139, '2026-08-10T12:00:00.0000000Z', 1, '[]');
+INSERT INTO attacks VALUES (77, 1, 139, 7, 1, 'Legacy target', '2026-08-10T12:01:00.0000000Z', 100, 50, 25);";
+					command.ExecuteNonQuery();
+				}
+
+				var dashboard = new AutoFarmDashboardReader().Read("legacy-dashboard");
+
+				Assert.True(dashboard.DatabaseAvailable);
+				Assert.Single(dashboard.Attacks);
+				Assert.Equal("Unknown origin", dashboard.Attacks[0].Origin);
+				Assert.Equal("Attack", dashboard.Attacks[0].Mission);
+			} finally {
+				if (File.Exists(databasePath))
+					File.Delete(databasePath);
+			}
 		}
 	}
 }

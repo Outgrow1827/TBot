@@ -1,5 +1,59 @@
 # Changelog
 
+## v3.5.0-beta3
+
+> **Beta warning:** This release contains further AutoFarm state-management and diagnostic changes. It is still experimental and edge-case bugs may remain. If you need the known functional version, use **v3.4.9**.
+
+### Fixed
+
+#### AutoFarm report handling
+
+- Prevented the same non-actionable espionage report from being processed repeatedly when report deletion fails or OGame keeps the report visible.
+- Added null-safe handling when a stored target has no previous report.
+- Kept previously processed reports permanently excluded through their report ID.
+- Improved handling of interrupted AutoFarm cycles so the worker does not restart from an invalid scan position.
+- Persisted the scan cursor when AutoFarm stops because of slot exhaustion, unavailable probes, production constraints or another worker taking the last slot.
+- Restored the persisted scan cursor when AutoFarm starts again.
+
+### Added
+
+#### AutoFarm diagnostic dashboard
+
+- Added a read-only AutoFarm diagnostic page focused on explaining worker decisions.
+- Added worker status, last activity, next execution and database availability.
+- Added AutoFarm slot usage, available slots, probes observed and attacks observed.
+- Added scan progress, current cursor, cached systems and last observed system.
+- Added target decisions with detailed reasons, including:
+  - `Cached empty`
+  - `Cached no targets`
+  - `Blacklisted until...`
+  - `Report already processed`
+  - `Attack pending`
+  - `Attack sent`
+  - `Blocked: ... required`
+  - `No suitable origin`
+  - `Attack dispatch failed`
+- Added cached-system status, last scan date and next refresh date.
+- Added recent AutoFarm errors and warnings.
+- Added a collapsible recent-log view.
+- Added `Copy logs` and `Copy errors` buttons for easier bug reports.
+- Added automatic dashboard updates every five seconds without a full page refresh.
+- Added the `/AutoFarm/Snapshot` JSON endpoint used by the live dashboard.
+
+#### AutoFarm attack history
+
+- Added the real origin coordinate to newly recorded attack history.
+- Added the mission type to newly recorded attack history.
+- Kept the history limited to fleets successfully dispatched and recorded by AutoFarm.
+
+### To be determined
+
+- Scan resumption after an abrupt TBot shutdown remains to be monitored in wider use.
+- Every slot and probe interruption path remains to be monitored in wider use.
+- Dashboard behavior with multiple active instances and continuous log rotation remains to be monitored.
+- Historical attack records created before this version cannot recover their original origin; they will display `Unknown origin`.
+- Further user testing is required before considering the AutoFarm rework stable.
+
 ## v3.5.0-beta2
 
 > **Beta warning:** This release contains a substantial rework of the mine, research, Lifeforms and resource-planning workers. It has been tested with automated tests and live OGame sessions, but regressions or edge-case bugs may still remain.
