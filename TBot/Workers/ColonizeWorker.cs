@@ -26,7 +26,13 @@ namespace Tbot.Workers {
 		// TargetEmptySystems both re-check the same handful of systems every single Colonize
 		// cycle otherwise). Static so it survives across worker re-instantiations, not just
 		// across Execute() calls on the same instance. Keyed by "Galaxy:System".
+		// Stale entries were previously only ever overwritten, never removed, so a wide
+		// AutoColonize.Targets range (many distinct Galaxy:System keys) left this growing for
+		// the whole process lifetime. GetGalaxyInfoCached now actively evicts on every write.
 		private static readonly Dictionary<string, (GalaxyInfo Info, DateTime FetchedAt)> _galaxyScanCache = new();
+		// Hard cap independent of CheckIntervalMax, in case a very wide scan range (many
+		// galaxies) is configured - bounds worst-case memory instead of growing unbounded.
+		private const int MaxGalaxyScanCacheEntries = 1000;
 
 		public ColonizeWorker(ITBotMain parentInstance,
 			IOgameService ogameService,
@@ -70,11 +76,24 @@ namespace Tbot.Workers {
 		private async Task<GalaxyInfo> GetGalaxyInfoCached(Coordinate coordinate) {
 			string key = $"{coordinate.Galaxy}:{coordinate.System}";
 			TimeSpan maxAge = TimeSpan.FromMinutes((int) _tbotInstance.InstanceSettings.AutoColonize.CheckIntervalMax);
-			if (_galaxyScanCache.TryGetValue(key, out var cached) && DateTime.UtcNow - cached.FetchedAt < maxAge) {
-				return cached.Info;
+			if (_galaxyScanCache.TryGetValue(key, out var cached)) {
+				if (DateTime.UtcNow - cached.FetchedAt < maxAge) {
+					return cached.Info;
+				}
+				// Stale - remove instead of leaving it to be silently overwritten below, so a
+				// key that stops being scanned (eg. AutoColonize.Targets reconfigured) doesn't
+				// linger in the dictionary forever.
+				_galaxyScanCache.Remove(key);
 			}
 			GalaxyInfo info = await GetGalaxyInfoWithRetry(coordinate);
 			await Task.Delay(RandomizeHelper.CalcRandomInterval(IntervalType.LessThanFiveSeconds));
+			if (_galaxyScanCache.Count >= MaxGalaxyScanCacheEntries) {
+				// Hard cap hit (very wide scan range) - drop the oldest entries to make room
+				// instead of growing past the cap.
+				foreach (var oldKey in _galaxyScanCache.OrderBy(kv => kv.Value.FetchedAt).Take(_galaxyScanCache.Count - MaxGalaxyScanCacheEntries + 1).Select(kv => kv.Key).ToList()) {
+					_galaxyScanCache.Remove(oldKey);
+				}
+			}
 			_galaxyScanCache[key] = (info, DateTime.UtcNow);
 			return info;
 		}
