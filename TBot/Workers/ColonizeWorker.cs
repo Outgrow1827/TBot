@@ -357,7 +357,22 @@ namespace Tbot.Workers {
 									}
 
 									int targetsBeforeThisRange = targets.Count;
+									// Stop scanning this range once enough candidates are already found instead
+									// of always doing the full StartSystem-EndSystem sweep - with wide ranges
+									// (eg. 1-499) that full sweep alone can mean ~500 galaxy scans per range,
+									// which at up to 60s each (HttpClient.Timeout) on a slow/unresponsive server
+									// easily blows past the worker's stuck-detection window before ever placing
+									// a single colony. A few extra candidates beyond the strict minimum are kept
+									// as a safety margin, since some will still get discarded by the live
+									// re-check below (someone else colonized it since this scan, etc.).
+									int neededForThisRange = maxPlanetsInThisRange - planetsInThisRange;
+									int candidateSafetyMargin = Math.Max(5, neededForThisRange * 3);
 									for (int i = (int) t.StartSystem; i <= (int) t.EndSystem; i++) {
+										if (targets.Count - targetsBeforeThisRange >= candidateSafetyMargin) {
+											DoLog(LogLevel.Debug, $"Enough candidates found for range [{t.Galaxy}:{t.StartSystem}-{t.EndSystem}:{t.StartPosition}-{t.EndPosition}] ({targets.Count - targetsBeforeThisRange}/{candidateSafetyMargin}) - stopping scan early at system {i}.");
+											break;
+										}
+
 										if (excludeSystems.Contains(i)) {
 											continue;
 										}
@@ -405,7 +420,7 @@ namespace Tbot.Workers {
 									}
 
 									int candidatesFoundThisRange = targets.Count - targetsBeforeThisRange;
-									DoLog(LogLevel.Information, $"Full scan of range [{t.Galaxy}:{t.StartSystem}-{t.EndSystem}:{t.StartPosition}-{t.EndPosition}] complete: {candidatesFoundThisRange} valid candidate coordinate(s) found.");
+									DoLog(LogLevel.Information, $"Scan of range [{t.Galaxy}:{t.StartSystem}-{t.EndSystem}:{t.StartPosition}-{t.EndPosition}] complete: {candidatesFoundThisRange} valid candidate coordinate(s) found.");
 								}
 								List<Coordinate> filteredTargets = new();
 								foreach (Coordinate t in targets) {
