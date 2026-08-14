@@ -105,20 +105,6 @@ namespace Tbot.Workers {
 				: origins;
 		}
 
-		private List<Celestial> FilterExpeditionCandidates(List<Celestial> origins) {
-			// A cached empty fleet is useful information: do not open that origin just
-			// to discover again that it cannot send. A null Ships value means that the
-			// cache is incomplete, so the origin remains eligible for one live check.
-			var candidates = origins
-				.Where(origin => origin.Ships == null || !origin.Ships.GetMovableShips().IsEmpty())
-				.ToList();
-
-			foreach (var skipped in origins.Except(candidates))
-				DoLog(LogLevel.Debug, $"Skipping {skipped.Coordinate}: no movable ships in the cached snapshot.");
-
-			return candidates;
-		}
-
 		private Ships BuildManualExpeditionFleet() {
 			return new Ships(
 				(long)_tbotInstance.InstanceSettings.Expeditions.ManualShips.Ships.LightFighter,
@@ -303,13 +289,6 @@ namespace Tbot.Workers {
 					return;
 				}
 
-				origins = FilterExpeditionCandidates(origins);
-				if (origins.Count == 0) {
-					DoLog(LogLevel.Information, "No configured expedition origin currently has movable ships.");
-					delay = true;
-					return;
-				}
-
 				// LF bonuses are account-wide. They must not be refreshed once per origin.
 				var lfBonuses = await _ogameService.GetLFBonuses();
 				int maxPerOrigin = (int?)_tbotInstance.InstanceSettings.Expeditions.MaxExpeditionsPerOrigin ?? 1;
@@ -355,8 +334,10 @@ namespace Tbot.Workers {
 							return;
 						}
 
-						// Only an origin that is about to send is refreshed. Multiple
-						// sends from the same origin are real activity and are expected.
+						// The cached Ships snapshot may still be empty while a fleet is
+						// returning. Refresh only the origin that is about to send so a
+						// stale cache cannot hide a usable origin, without checking every
+						// origin on every cycle.
 						var originUpdated = await _tbotOgameBridge.UpdatePlanet(origin, UpdateTypes.Ships);
 						var fleet = BuildExpeditionFleet(originUpdated, lfBonuses);
 						if (fleet == null || fleet.IsEmpty() || originUpdated.Ships == null || !originUpdated.Ships.HasAtLeast(fleet, 1)) {

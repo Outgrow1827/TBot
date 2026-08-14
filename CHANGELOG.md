@@ -1,5 +1,32 @@
 # Changelog
 
+## v3.5.0-beta4
+
+> **Beta warning:** This release contains a substantial AutoHarvest rework and an Expeditions cache fix. It is still experimental and edge-case bugs may remain. If you need the known functional version, use **v3.4.9**.
+
+### Fixed
+
+#### AutoHarvest
+
+- Reworked target discovery and fleet planning into a deterministic planning phase followed by a separate dispatch phase.
+- Fixed `Collection was modified; enumeration operation may not execute` during harvest slot budgeting.
+- Prevented the worker from mutating its target collection while deciding which harvest fleets to send.
+- Enforced the harvest slot budget before planning and dispatching fleets.
+- Prevented duplicate harvest targets and destinations already covered by an active harvest fleet.
+- Reused the best available Recycler or Pathfinder origin instead of forcing each target to use the origin that discovered it.
+- Reserved ships during planning so one cycle cannot schedule more ships than an origin actually has.
+- Used the sending origin’s lifeform cargo bonus when calculating the required fleet size.
+- Supported partial harvesting when no origin has enough ships to collect a complete debris field.
+- Continued planning other targets when one target has no usable origin or fleet capacity.
+- Improved next-cycle scheduling so the worker can continue using available slots instead of waiting unnecessarily for every harvest fleet to return.
+
+#### Expeditions
+
+- Fixed configured Origins being discarded when their cached `Ships` snapshot was empty.
+- Refreshed an Origin live immediately before attempting to send from it, allowing fleets that returned while the worker was asleep to be used again.
+- Kept the live refresh limited to the Origin being considered, avoiding a full ship refresh on every Origin during every cycle.
+- Kept the round-robin and `MaxExpeditionsPerOrigin` planning logic intact while allowing genuinely empty Origins to be skipped for the rest of the cycle.
+
 ## v3.5.0-beta3
 
 > **Beta warning:** This release contains further AutoFarm state-management and diagnostic changes. It is still experimental and edge-case bugs may remain. If you need the known functional version, use **v3.4.9**.
