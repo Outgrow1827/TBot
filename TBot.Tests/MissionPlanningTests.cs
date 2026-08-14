@@ -658,5 +658,108 @@ INSERT INTO attacks VALUES (77, 1, 139, 7, 1, 'Legacy target', '2026-08-10T12:01
 					File.Delete(databasePath);
 			}
 		}
+
+		[Fact]
+		public void HarvestPlannerNeverMutatesItsCandidateCollectionWhileApplyingTheSlotBudget() {
+			var origin = new HarvestOriginState(
+				new Moon {
+					Coordinate = new Coordinate(1, 400, 8, Celestials.Moon),
+					Ships = new Ships(pathfinder: 10000)
+				});
+			var targets = new[] {
+				new HarvestTarget(new Coordinate(1, 400, 16, Celestials.DeepSpace), new Resources(metal: 100000)),
+				new HarvestTarget(new Coordinate(1, 401, 16, Celestials.DeepSpace), new Resources(metal: 100000)),
+				new HarvestTarget(new Coordinate(1, 402, 16, Celestials.DeepSpace), new Resources(metal: 100000))
+			};
+
+			var plan = HarvestPlanner.Build(
+				targets,
+				new[] { origin },
+				maxSlots: 2,
+				(target, candidateOrigin) => 1000,
+				(target, candidateOrigin) => Math.Abs(target.Destination.System - candidateOrigin.Celestial.Coordinate.System));
+
+			Assert.Equal(2, plan.Count);
+			Assert.Equal(8000, origin.AvailableShips(Buildables.Pathfinder));
+		}
+
+		[Fact]
+		public void HarvestPlannerCanUseTheBestGlobalOriginInsteadOfTheOriginThatDiscoveredTheSystem() {
+			var startMoon = new HarvestOriginState(
+				new Moon {
+					Coordinate = new Coordinate(1, 400, 8, Celestials.Moon),
+					Ships = new Ships(pathfinder: 7000)
+				});
+			var localMoon = new HarvestOriginState(
+				new Moon {
+					Coordinate = new Coordinate(1, 415, 7, Celestials.Moon),
+					Ships = new Ships()
+				});
+			var target = new HarvestTarget(
+				new Coordinate(1, 415, 16, Celestials.DeepSpace),
+				new Resources(metal: 700000));
+
+			var plan = HarvestPlanner.Build(
+				new[] { target },
+				new[] { localMoon, startMoon },
+				maxSlots: 1,
+				(target, origin) => 7000,
+				(target, origin) => Math.Abs(target.Destination.System - origin.Celestial.Coordinate.System));
+
+			Assert.Single(plan);
+			Assert.Same(startMoon.Celestial, plan[0].Origin);
+			Assert.Equal(7000, plan[0].ShipsToSend);
+		}
+
+		[Fact]
+		public void HarvestPlannerReservesPathfindersAndUsesTheRemainingShipsForTheNextTarget() {
+			var origin = new HarvestOriginState(
+				new Moon {
+					Coordinate = new Coordinate(1, 400, 8, Celestials.Moon),
+					Ships = new Ships(pathfinder: 7000)
+				});
+			var targets = new[] {
+				new HarvestTarget(new Coordinate(1, 400, 16, Celestials.DeepSpace), new Resources(metal: 100000)),
+				new HarvestTarget(new Coordinate(1, 401, 16, Celestials.DeepSpace), new Resources(metal: 100000))
+			};
+
+			var plan = HarvestPlanner.Build(
+				targets,
+				new[] { origin },
+				maxSlots: 2,
+				(target, candidateOrigin) => 5000,
+				(target, candidateOrigin) => Math.Abs(target.Destination.System - candidateOrigin.Celestial.Coordinate.System));
+
+			Assert.Equal(2, plan.Count);
+			Assert.Equal(new long[] { 5000, 2000 }, plan.Select(item => item.ShipsToSend));
+			Assert.Equal(0, origin.AvailableShips(Buildables.Pathfinder));
+		}
+
+		[Fact]
+		public void HarvestPlannerUsesTheLargestAvailablePartialFleetWhenNoOriginCanCollectEverything() {
+			var nearbyOrigin = new HarvestOriginState(
+				new Moon {
+					Coordinate = new Coordinate(1, 400, 8, Celestials.Moon),
+					Ships = new Ships(pathfinder: 1000)
+				});
+			var largerOrigin = new HarvestOriginState(
+				new Moon {
+					Coordinate = new Coordinate(1, 450, 8, Celestials.Moon),
+					Ships = new Ships(pathfinder: 7000)
+				});
+
+			var plan = HarvestPlanner.Build(
+				new[] {
+					new HarvestTarget(new Coordinate(1, 400, 16, Celestials.DeepSpace), new Resources(metal: 100000))
+				},
+				new[] { nearbyOrigin, largerOrigin },
+				maxSlots: 1,
+				(target, origin) => 10000,
+				(target, origin) => Math.Abs(target.Destination.System - origin.Celestial.Coordinate.System));
+
+			Assert.Single(plan);
+			Assert.Same(largerOrigin.Celestial, plan[0].Origin);
+			Assert.Equal(7000, plan[0].ShipsToSend);
+		}
 	}
 }
