@@ -437,6 +437,7 @@ namespace Tbot.Services {
 								"/msg - Send a message to current attacker. Format: <code>/msg hello dude</code>\n" +
 								"/sleep - Stop bot for the specified amount of hours. Format: <code>/sleep 4h3m or 3m50s</code>\n" +
 								"/wakeup - Wakeup bot\n" +
+								"/clearcache - Clear FastFarm target cache for current instance\n" +
 								"/cancel - Cancel fleet with specified ID. Format: <code>/cancel 65656</code>\n" +
 								"/cancelmission - Cancel all fleets with specified mission. Format: <code>/cancel Deploy</code> or other mission\n" +
 								"/getcelestials - Return the list of your celestials\n" +
@@ -865,6 +866,15 @@ namespace Tbot.Services {
 									return;
 								}
 								currInstance.WakeUpNow(null);
+								return;
+
+							case "/clearcache":
+								if (message.Text.Split(' ').Length != 1) {
+									await SendMessage(botClient, message.Chat, "No argument accepted with this command!");
+									return;
+								}
+								bool cleared = await FarmTargetCache.ClearTargetCache(currInstance.InstanceSettingsPath, currInstance.InstanceAlias);
+								await SendMessage(botClient, message.Chat, cleared ? "FastFarm target cache cleared." : "No cache to clear.");
 								return;
 
 
