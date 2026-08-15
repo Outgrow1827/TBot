@@ -86,6 +86,70 @@ namespace TBot.Tests {
 		}
 
 		[Fact]
+		public void ExpeditionPlannerReopensAnOriginOnceWhenCapacityIsStillMissing() {
+			Assert.True(ExpeditionOriginPlanner.ShouldRetryUnavailableOrigins(
+				remaining: 3,
+				retryableUnavailableOrigins: new[] { true, false, true },
+				alreadyRetried: false));
+			Assert.False(ExpeditionOriginPlanner.ShouldRetryUnavailableOrigins(
+				remaining: 3,
+				retryableUnavailableOrigins: new[] { true, false, true },
+				alreadyRetried: true));
+			Assert.False(ExpeditionOriginPlanner.ShouldRetryUnavailableOrigins(
+				remaining: 0,
+				retryableUnavailableOrigins: new[] { true },
+				alreadyRetried: false));
+		}
+
+		[Fact]
+		public void JumpGateTargetResolverAcceptsTheNewObjectShape() {
+			var settings = new Dictionary<string, object> {
+				["Target"] = new Dictionary<string, object> {
+					["Galaxy"] = 2,
+					["System"] = 275,
+					["Position"] = 8
+				}
+			};
+
+			var target = JumpGateTargetResolver.Resolve(settings, out var usedLegacyArray);
+
+			Assert.Equal(new JumpGateTarget(2, 275, 8), target);
+			Assert.False(usedLegacyArray);
+		}
+
+		[Fact]
+		public void JumpGateTargetResolverReadsTheLegacySingleItemArray() {
+			var settings = new Dictionary<string, object> {
+				["Target"] = new[] {
+					(object) new Dictionary<string, object> {
+						["Galaxy"] = 1,
+						["System"] = 1,
+						["Position"] = 1
+					}
+				}
+			};
+
+			var target = JumpGateTargetResolver.Resolve(settings, out var usedLegacyArray);
+
+			Assert.Equal(new JumpGateTarget(1, 1, 1), target);
+			Assert.True(usedLegacyArray);
+		}
+
+		[Fact]
+		public void SettingsLoaderPreservesTheNewJumpGateTargetAsAnObject() {
+			var parsed = SettingsService.GetMergedSettingsFromContents(
+				"{\"Brain\":{\"AutoFleetJumpGate\":{\"Target\":{\"Galaxy\":2,\"System\":275,\"Position\":8}}}}",
+				new List<string> { "{}" });
+			var brain = (IDictionary<string, object>) parsed.Brain;
+			var settings = (IDictionary<string, object>) brain["AutoFleetJumpGate"];
+
+			var target = JumpGateTargetResolver.Resolve(settings, out var usedLegacyArray);
+
+			Assert.Equal(new JumpGateTarget(2, 275, 8), target);
+			Assert.False(usedLegacyArray);
+		}
+
+		[Fact]
 		public void DiscoveryPlannerOnlyReturnsPositionsReportedByTheSystemView() {
 			var positions = DiscoverySystemPlanner.SelectAvailablePositions(
 				new[] { 1, 3, 7, 16 },

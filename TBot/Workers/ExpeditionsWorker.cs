@@ -156,6 +156,19 @@ namespace Tbot.Workers {
 				_tbotInstance.UserData.serverData.ProbeCargo);
 		}
 
+		private async Task<Ships> RefreshExpeditionShips(Celestial origin) {
+			try {
+				// The bridge deliberately swallows update errors for the other workers. That
+				// is useful for a best-effort empire refresh, but it is unsafe here: a stale
+				// empty snapshot would make a valid origin look permanently unusable.
+				origin.Ships = await _ogameService.GetShips(origin);
+				return origin.Ships;
+			} catch (Exception e) {
+				DoLog(LogLevel.Warning, $"Unable to refresh expedition ships on {origin.Coordinate}: {e.Message}");
+				return null;
+			}
+		}
+
 		private Coordinate BuildExpeditionDestination(Celestial origin, int expeditionCount, List<int> usedSystems, Random random) {
 			if (!(bool)_tbotInstance.InstanceSettings.Expeditions.SplitExpeditionsBetweenSystems.Active) {
 				return new Coordinate {
@@ -297,22 +310,38 @@ namespace Tbot.Workers {
 					.ToArray();
 				var sentByOrigin = new int[origins.Count];
 				var unavailableOrigins = new bool[origins.Count];
+				var retryableUnavailableOrigins = new bool[origins.Count];
+				var retriedUnavailableOrigins = false;
 				var remaining = expeditionsToSend;
 				var planningStart = _nextOriginIndex % origins.Count;
 				var random = new Random();
 				var usedSystems = new List<int>();
 
 			while (remaining > 0) {
-				// Rebuild the plan after every failed origin. This is what lets an
-				// origin with spare capacity take over instead of losing a slot.
+				// Rebuild the plan after every failed origin. This lets an origin with
+				// spare capacity take over instead of losing a slot.
 				var residualCapacities = capacities
 					.Select((capacity, index) => unavailableOrigins[index]
 						? 0
 						: Math.Max(0, capacity - sentByOrigin[index]))
 					.ToArray();
 				var plan = ExpeditionOriginPlanner.BuildRoundRobinPlan(residualCapacities, remaining, planningStart);
-				if (plan.Sum() == 0)
+				if (plan.Sum() == 0) {
+					// A failed ship refresh is not a permanent property of an origin. Ships
+					// may have returned while this cycle was running. Re-open the origins
+					// once when the first pass cannot satisfy the remaining demand; this is
+					// intentionally bounded so a permanently invalid origin is not polled.
+					if (ExpeditionOriginPlanner.ShouldRetryUnavailableOrigins(
+						remaining, retryableUnavailableOrigins, retriedUnavailableOrigins)) {
+						retriedUnavailableOrigins = true;
+						for (var index = 0; index < unavailableOrigins.Length; index++)
+							unavailableOrigins[index] = unavailableOrigins[index] && !retryableUnavailableOrigins[index];
+						DoLog(LogLevel.Information,
+							$"Expedition origin capacity is still short by {remaining}; refreshing previously unavailable origins once.");
+						continue;
+					}
 					break;
+				}
 
 				var progressInPass = false;
 				for (var offset = 0; offset < origins.Count && remaining > 0; offset++) {
@@ -334,26 +363,30 @@ namespace Tbot.Workers {
 							return;
 						}
 
-						// The cached Ships snapshot may still be empty while a fleet is
-						// returning. Refresh only the origin that is about to send so a
-						// stale cache cannot hide a usable origin, without checking every
-						// origin on every cycle.
-						var originUpdated = await _tbotOgameBridge.UpdatePlanet(origin, UpdateTypes.Ships);
-						var fleet = BuildExpeditionFleet(originUpdated, lfBonuses);
-						if (fleet == null || fleet.IsEmpty() || originUpdated.Ships == null || !originUpdated.Ships.HasAtLeast(fleet, 1)) {
-							DoLog(LogLevel.Information, $"No usable expedition fleet on {originUpdated.Coordinate}; excluding this origin for the rest of the cycle.");
+						var refreshedShips = await RefreshExpeditionShips(origin);
+						if (refreshedShips == null) {
 							unavailableOrigins[originIndex] = true;
+							retryableUnavailableOrigins[originIndex] = true;
 							break;
 						}
 
-						var destination = BuildExpeditionDestination(originUpdated, remaining, usedSystems, random);
+						var fleet = BuildExpeditionFleet(origin, lfBonuses);
+						if (fleet == null || fleet.IsEmpty() || !refreshedShips.HasAtLeast(fleet, 1)) {
+							DoLog(LogLevel.Information,
+								$"No usable expedition fleet on {origin.Coordinate}; excluding this origin until the bounded retry.");
+							unavailableOrigins[originIndex] = true;
+							retryableUnavailableOrigins[originIndex] = true;
+							break;
+						}
+
+						var destination = BuildExpeditionDestination(origin, remaining, usedSystems, random);
 						var payload = new Resources();
 						if ((long)_tbotInstance.InstanceSettings.Expeditions.FuelToCarry > 0)
 							payload.Deuterium = (long)_tbotInstance.InstanceSettings.Expeditions.FuelToCarry;
 
-						DoLog(LogLevel.Information, $"Sending expedition from {originUpdated.Coordinate} to {destination}");
+						DoLog(LogLevel.Information, $"Sending expedition from {origin.Coordinate} to {destination}");
 						var fleetId = await _fleetScheduler.SendFleet(
-							originUpdated,
+							origin,
 							fleet,
 							destination,
 							Missions.Expedition,
@@ -369,7 +402,7 @@ namespace Tbot.Workers {
 							return;
 						}
 						if (fleetId <= (int)SendFleetCode.GenericError) {
-							DoLog(LogLevel.Warning, $"Expedition was not sent from {originUpdated.Coordinate}; excluding this origin for the rest of the cycle.");
+							DoLog(LogLevel.Warning, $"Expedition was not sent from {origin.Coordinate}; excluding this origin for the rest of the cycle.");
 							unavailableOrigins[originIndex] = true;
 							break;
 						}
@@ -387,8 +420,18 @@ namespace Tbot.Workers {
 					}
 				}
 
-				if (!progressInPass)
+				if (!progressInPass) {
+					if (ExpeditionOriginPlanner.ShouldRetryUnavailableOrigins(
+						remaining, retryableUnavailableOrigins, retriedUnavailableOrigins)) {
+						retriedUnavailableOrigins = true;
+						for (var index = 0; index < unavailableOrigins.Length; index++)
+							unavailableOrigins[index] = unavailableOrigins[index] && !retryableUnavailableOrigins[index];
+						DoLog(LogLevel.Information,
+							$"No expedition was dispatched in the pass; refreshing previously unavailable origins once.");
+						continue;
+					}
 					break;
+				}
 			}
 
 			_nextOriginIndex = planningStart;

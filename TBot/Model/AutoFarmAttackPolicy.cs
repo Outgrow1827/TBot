@@ -36,8 +36,11 @@ namespace TBot.Model {
 		}
 
 		public static bool IsRepeatedNonActionableReport(FarmTarget target, EspionageReport report) {
-			var previousReport = target?.Report;
-			if (previousReport == null || report == null || previousReport.ID <= 0 || report.ID <= 0 || previousReport.ID != report.ID)
+			if (target == null || report == null)
+				return false;
+
+			var previousReport = target.Report;
+			if (previousReport == null || previousReport.ID <= 0 || report.ID <= 0 || previousReport.ID != report.ID)
 				return false;
 
 			return target.State == FarmState.NotSuitable

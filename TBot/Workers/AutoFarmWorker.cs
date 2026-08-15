@@ -1230,13 +1230,28 @@ namespace Tbot.Workers {
 		}
 
 		private async Task AutoFarmProcessReports() {
-			List<EspionageReportSummary> summaryReports = await _ogameService.GetEspionageReports();
+			List<EspionageReportSummary> summaryReports;
+			try {
+				summaryReports = await _ogameService.GetEspionageReports() ?? new List<EspionageReportSummary>();
+			} catch (Exception e) {
+				// Report cleanup is best effort. A temporary OGame/API failure must not
+				// prevent the attack phase from processing targets already marked pending.
+				_tbotInstance.log(LogLevel.Warning, LogSender.AutoFarm,
+					$"Unable to retrieve espionage reports; keeping existing attack-pending targets: {e.Message}");
+				return;
+			}
+
 			foreach (var summary in summaryReports) {
-				if (summary.Type == EspionageReportType.Action)
+				if (summary == null || summary.Type == EspionageReportType.Action)
 					continue;
 
 				try {
 					var report = await _ogameService.GetEspionageReport(summary.ID);
+					if (report?.Coordinate == null) {
+						_tbotInstance.log(LogLevel.Warning, LogSender.AutoFarm,
+							$"Ignoring malformed espionage report {summary.ID}: no coordinate was returned.");
+						continue;
+					}
 					if (_stateStore.HasConsumedReport(report.ID)) {
 						_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm,
 							$"Ignoring consumed espionage report {report.ID} for {report.Coordinate}.");
@@ -1417,13 +1432,22 @@ namespace Tbot.Workers {
 				try {
 					await _ogameService.DeleteAllEspionageReports();
 					break;
-				} catch (Exception e) when (e.Message.Contains("503") || e.Message.Contains("Service Unavailable") || e.Message.Contains("Unable to delete")) {
-					if (i < deleteRetries - 1) {
-						_tbotInstance.log(LogLevel.Warning, LogSender.AutoFarm, $"Failed to delete espionage reports (503 error), retry {i + 1}/{deleteRetries}...");
-						await Task.Delay(3000);
-					} else {
-						_tbotInstance.log(LogLevel.Warning, LogSender.AutoFarm, $"Could not delete espionage reports after {deleteRetries} attempts. Will try next cycle.");
+				} catch (Exception e) {
+					var message = e.Message ?? string.Empty;
+					var retryable = message.Contains("503", StringComparison.OrdinalIgnoreCase)
+						|| message.Contains("Service Unavailable", StringComparison.OrdinalIgnoreCase)
+						|| message.Contains("Unable to delete", StringComparison.OrdinalIgnoreCase);
+
+					if (retryable && i < deleteRetries - 1) {
+						_tbotInstance.log(LogLevel.Warning, LogSender.AutoFarm,
+							$"Failed to delete espionage reports ({message}), retry {i + 1}/{deleteRetries}...");
+						await Task.Delay(3000, _ct);
+						continue;
 					}
+
+					_tbotInstance.log(LogLevel.Warning, LogSender.AutoFarm,
+						$"Could not delete espionage reports after {i + 1} attempt(s): {message}. Attack decisions are retained for the next cycle.");
+					break;
 				}
 			}
 

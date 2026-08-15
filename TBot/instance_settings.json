@@ -356,18 +356,16 @@
             "CheckIntervalMin": 240,
             "CheckIntervalMax": 360
         },
-        "AutoFleepJumpGate": {
+        "AutoFleetJumpGate": {
             "Active": false,
             "CheckIntervalMin": 5,
             "CheckIntervalMax": 10,
-					"Target": [
-						{
-							"Galaxy": 1,
-							"System": 1,
-							"Position": 1,
-							"Type": "Moon"
-						}
-					],
+				"Target": {
+					"Galaxy": 1,
+					"System": 1,
+					"Position": 1,
+					"Type": "Moon"
+				},
             "MinimumAmountOfShipsToBeLeftOnMoon": {
                 "LightFighter": 0,
                 "HeavyFighter": 0,
