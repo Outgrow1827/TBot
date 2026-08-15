@@ -20,7 +20,7 @@ namespace TBot.Common.Logging {
 		BuyOfferOfTheDay,
 		LifeformsAutoMine,
 		LifeformsAutoResearch,
-		AutoFleepJumpGate,
+		AutoFleetJumpGate,
 		//End Brain Features
 		Expeditions,
 		Harvest,

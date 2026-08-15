@@ -20,7 +20,8 @@ namespace TBot.Ogame.Infrastructure.Models {
 		public EspionageReport Report { get; set; }
 		public int? ConsumedReportId { get; set; }
 		public bool HasCoords(Coordinate coords) {
-			return coords.Galaxy == Celestial.Coordinate.Galaxy
+			return coords != null && Celestial?.Coordinate != null
+				&& coords.Galaxy == Celestial.Coordinate.Galaxy
 				&& coords.System == Celestial.Coordinate.System
 				&& coords.Position == Celestial.Coordinate.Position
 				&& coords.Type == Celestial.Coordinate.Type;

@@ -1111,7 +1111,7 @@ namespace Tbot.Services {
 									return;
 								}
 
-								AutoFleetJumpGateWorker worker = (AutoFleetJumpGateWorker) currInstance.WorkerFactory.GetWorker(Feature.BrainAutoFleepJumpGate);
+								AutoFleetJumpGateWorker worker = (AutoFleetJumpGateWorker) currInstance.WorkerFactory.GetWorker(Feature.BrainAutoFleetJumpGate);
 
 								if (worker == null) {
 									await SendMessage(botClient, message.Chat, "JumpGate worker not available.");

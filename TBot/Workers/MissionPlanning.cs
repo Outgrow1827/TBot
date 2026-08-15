@@ -9,6 +9,16 @@ namespace Tbot.Workers {
 	/// and makes the edge cases deterministic.
 	/// </summary>
 	public static class ExpeditionOriginPlanner {
+		public static bool ShouldRetryUnavailableOrigins(
+			int remaining,
+			IReadOnlyList<bool> retryableUnavailableOrigins,
+			bool alreadyRetried) {
+			return remaining > 0
+				&& !alreadyRetried
+				&& retryableUnavailableOrigins != null
+				&& retryableUnavailableOrigins.Any(value => value);
+		}
+
 		public static int[] BuildRoundRobinPlan(IReadOnlyList<int> capacities, int requested, int startIndex = 0) {
 			if (capacities == null || capacities.Count == 0 || requested <= 0)
 				return Array.Empty<int>();

@@ -26,19 +26,50 @@ namespace Tbot.Workers.Brain {
 			_tbotOgameBridge = tbotOgameBridge;
 		}
 
+		private dynamic GetJumpGateSettings() {
+			if (_tbotInstance.InstanceSettings.Brain is IDictionary<string, object> brain) {
+				if (brain.TryGetValue("AutoFleetJumpGate", out var currentSettings))
+					return currentSettings;
+
+				// Keep existing user settings working after the spelling correction.
+				if (brain.TryGetValue("AutoFleepJumpGate", out var legacySettings)) {
+					DoLog(LogLevel.Warning,
+						"Brain.AutoFleepJumpGate is deprecated; rename it to Brain.AutoFleetJumpGate.");
+					return legacySettings;
+				}
+			}
+
+			throw new InvalidOperationException("Brain.AutoFleetJumpGate settings are missing.");
+		}
+
+		private JumpGateTarget GetTargetCoordinates(dynamic jumpGateSettings) {
+			if (!(jumpGateSettings is IDictionary<string, object> settings))
+				throw new InvalidOperationException("Brain.AutoFleetJumpGate settings are invalid.");
+
+			var target = JumpGateTargetResolver.Resolve(settings, out var usedLegacyArray);
+			if (usedLegacyArray)
+				DoLog(LogLevel.Warning,
+					"Brain.AutoFleetJumpGate.Target should be an object; using the first entry from the legacy array format.");
+
+			return target;
+		}
+
 		protected override async Task Execute() {
 			bool jumpGateAttempted = false;
 			bool jumpGateSucceeded = false;
 			long highestRechargeCountdown = 0;
+			dynamic jumpGateSettings = null;
 
 			if (!_tbotInstance.UserData.isSleeping) {
 				DoLog(LogLevel.Information, $"Starting jumpgate");
 				await SetDefaultWorkerPeriod();
 				try {
+					jumpGateSettings = GetJumpGateSettings();
+					var targetCoordinates = GetTargetCoordinates(jumpGateSettings);
 					// Get target moon coordinates
-					var targetGalaxy = (int) _tbotInstance.InstanceSettings.Brain.AutoFleepJumpGate.Target.Galaxy;
-					var targetSystem = (int) _tbotInstance.InstanceSettings.Brain.AutoFleepJumpGate.Target.System;
-					var targetPosition = (int) _tbotInstance.InstanceSettings.Brain.AutoFleepJumpGate.Target.Position;
+					var targetGalaxy = targetCoordinates.Galaxy;
+					var targetSystem = targetCoordinates.System;
+					var targetPosition = targetCoordinates.Position;
 
 					Celestial moondest = _tbotInstance.UserData.celestials.Unique()
 						.Where(c => c.Coordinate.Galaxy == targetGalaxy)
@@ -74,7 +105,7 @@ namespace Tbot.Workers.Brain {
 					}
 
 
-					var minPointsToTeleport = (long) _tbotInstance.InstanceSettings.Brain.AutoFleepJumpGate
+					var minPointsToTeleport = (long) jumpGateSettings
 						.MinimumAmountOfShipPointsToTeleport;
 
 					// Define jumpable ships and map 'leave on moon' config only for jumpable
@@ -96,7 +127,7 @@ namespace Tbot.Workers.Brain {
 						Buildables.Pathfinder
 					};
 
-					var leaveCfg = _tbotInstance.InstanceSettings.Brain.AutoFleepJumpGate
+					var leaveCfg = jumpGateSettings
 						.MinimumAmountOfShipsToBeLeftOnMoon;
 					var shipsToLeave = new Ships(
 						lightFighter: (long) leaveCfg.LightFighter,
@@ -235,8 +266,8 @@ namespace Tbot.Workers.Brain {
 			// Set next interval based on whether JumpGate was attempted/succeeded
 			if (jumpGateAttempted && jumpGateSucceeded) {
 				// Compare recharge (ms) vs configured random interval (min -> ms), then add 2-5 min jitter if recharge dominates
-				int minIntervalMin = (int) _tbotInstance.InstanceSettings.Brain.AutoFleepJumpGate.CheckIntervalMin;
-				int maxIntervalMin = (int) _tbotInstance.InstanceSettings.Brain.AutoFleepJumpGate.CheckIntervalMax;
+				int minIntervalMin = (int) jumpGateSettings.CheckIntervalMin;
+				int maxIntervalMin = (int) jumpGateSettings.CheckIntervalMax;
 				long cfgRandom = RandomizeHelper.CalcRandomInterval(minIntervalMin, maxIntervalMin);
 				long rechargeMs = highestRechargeCountdown > 0 ? highestRechargeCountdown * 1000 : 0;
 				long interval = rechargeMs > cfgRandom
@@ -257,8 +288,9 @@ namespace Tbot.Workers.Brain {
 
 		private async Task<DateTime> SetDefaultWorkerPeriod()
 		{
-			int minIntervalMin = (int) _tbotInstance.InstanceSettings.Brain.AutoFleepJumpGate.CheckIntervalMin;
-			int maxIntervalMin = (int) _tbotInstance.InstanceSettings.Brain.AutoFleepJumpGate.CheckIntervalMax;
+			dynamic jumpGateSettings = GetJumpGateSettings();
+			int minIntervalMin = (int) jumpGateSettings.CheckIntervalMin;
+			int maxIntervalMin = (int) jumpGateSettings.CheckIntervalMax;
 			long interval = RandomizeHelper.CalcRandomInterval(minIntervalMin, maxIntervalMin);
 			if (interval <= 0)
 				interval = RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
@@ -270,9 +302,10 @@ namespace Tbot.Workers.Brain {
 
 		public override bool IsWorkerEnabledBySettings() {
 			try {
+				dynamic jumpGateSettings = GetJumpGateSettings();
 				return (
 					(bool) _tbotInstance.InstanceSettings.Brain.Active &&
-					(bool) _tbotInstance.InstanceSettings.Brain.AutoFleepJumpGate.Active
+					(bool) jumpGateSettings.Active
 				);
 			} catch (Exception) {
 				return false;
@@ -284,11 +317,11 @@ namespace Tbot.Workers.Brain {
 		}
 
 		public override Feature GetFeature() {
-			return Feature.BrainAutoFleepJumpGate;
+			return Feature.BrainAutoFleetJumpGate;
 		}
 
 		public override LogSender GetLogSender() {
-			return LogSender.AutoFleepJumpGate;
+			return LogSender.AutoFleetJumpGate;
 		}
 
 		public async Task RunFromTelegramAsync()

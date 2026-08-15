@@ -16,7 +16,7 @@ namespace TBot.Ogame.Infrastructure.Enums {
 			Feature.BrainLifeformAutoResearch,
 			Feature.BrainOfferOfTheDay,
 			Feature.BrainAutoResearch,
-			Feature.BrainAutoFleepJumpGate,
+			Feature.BrainAutoFleetJumpGate,
 			Feature.AutoFarm,
 			Feature.Expeditions,
 			Feature.AutoDiscovery,
