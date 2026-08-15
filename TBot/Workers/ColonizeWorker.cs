@@ -199,17 +199,20 @@ namespace Tbot.Workers {
 
 					List<Celestial> newCelestials = _tbotInstance.UserData.celestials.ToList();
 					var dic = new Dictionary<Coordinate, Celestial>();
-				
-					Coordinate homeCoordinate = new(
-						(int) _tbotInstance.InstanceSettings.Defender.Home.Galaxy,
-						(int) _tbotInstance.InstanceSettings.Defender.Home.System,
-						(int) _tbotInstance.InstanceSettings.Defender.Home.Position,
-						Enum.Parse<Celestials>((string) _tbotInstance.InstanceSettings.Defender.Home.Type)
-					);
+
+					// The account's original planet always has the lowest ID (OGame assigns IDs in
+					// colonization order) - using that instead of the configured Defender.Home
+					// coordinate means this can't silently stop protecting the main planet just
+					// because that setting was never filled in or went stale after switching capitals.
+					int homePlanetId = _tbotInstance.UserData.celestials
+						.Where(c => c is Planet)
+						.Select(c => c.ID)
+						.DefaultIfEmpty(0)
+						.Min();
 
 					foreach (Planet planet in _tbotInstance.UserData.celestials.Where(c => c is Planet)) {
-						if (planet.HasCoords(homeCoordinate)) {
-							DoLog(LogLevel.Debug, $"Skipping abandon check on {planet.ToString()}: this is the main/home planet, never abandon it.");
+						if (planet.ID == homePlanetId) {
+							DoLog(LogLevel.Debug, $"Skipping abandon check on {planet.ToString()}: this is the main/home planet (lowest planet ID), never abandon it.");
 							continue;
 						}
 						Planet tempCelestial = await _tbotOgameBridge.UpdatePlanet(planet, UpdateTypes.Fast) as Planet;
