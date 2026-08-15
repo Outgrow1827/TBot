@@ -324,6 +324,8 @@ namespace Tbot.Workers {
 										continue;
 									} else {
 										Ships fleet;
+										Buildables primaryShipForRemainder = Buildables.Null;
+										long primaryShipRemainder = 0;
 										if ((bool) _tbotInstance.InstanceSettings.Expeditions.ManualShips.Active) {
 											fleet = new(
 												(long) _tbotInstance.InstanceSettings.Expeditions.ManualShips.Ships.LightFighter,
@@ -380,7 +382,33 @@ namespace Tbot.Workers {
 												_tbotInstance.UserData.userInfo.Class,
 												_tbotInstance.UserData.serverData.ProbeCargo
 											);
+
+											// CalcExpeditionShips floors availablePrimary/expeditionsNumber when there
+											// aren't enough primary ships to give every expedition this cycle the ideal
+											// amount, discarding the division remainder instead of using it. Only
+											// applies in that shortage case (comparing against the ideal per-expedition
+											// amount, not just any leftover) - when ships are ample the ideal amount is
+											// already the right one and any leftover is deliberately kept unused, not a
+											// remainder to redistribute.
+											long idealPrimaryPerExpedition = _calculationService.CalcIdealExpeditionShips(
+												primaryShip,
+												_tbotInstance.UserData.researches.HyperspaceTechnology,
+												lfBonuses.LfResourceBonuses.ResourcesExpedition,
+												lfBonuses.LfShipBonusesInt,
+												_tbotInstance.UserData.serverData,
+												_tbotInstance.UserData.userInfo.Class,
+												_tbotInstance.UserData.serverData.ProbeCargo
+											).GetAmount(primaryShip);
+											long availablePrimary = availableShips.GetAmount(primaryShip);
+											if (availablePrimary < idealPrimaryPerExpedition * expsToSendFromThisOrigin) {
+												primaryShipForRemainder = primaryShip;
+												primaryShipRemainder = availablePrimary % expsToSendFromThisOrigin;
+											}
 										}
+
+										long basePrimaryPerExpedition = primaryShipForRemainder != Buildables.Null
+											? fleet.GetAmount(primaryShipForRemainder)
+											: 0;
 
 										DoLog(LogLevel.Information, $"{expsToSendFromThisOrigin} expeditions with {fleet} will be sent from {origin}");
 
@@ -444,6 +472,10 @@ namespace Tbot.Workers {
 													DoLog(LogLevel.Information, "Unable to send expeditions: no expedition slots available.");
 													delay = true;
 													return;
+												}
+
+												if (primaryShipForRemainder != Buildables.Null && fleet != null) {
+													fleet.SetAmount(primaryShipForRemainder, basePrimaryPerExpedition + (i < primaryShipRemainder ? 1 : 0));
 												}
 
 												if (fleet == null || fleet.IsEmpty() || !originUpdated.Ships.HasAtLeast(fleet, 1)) {
