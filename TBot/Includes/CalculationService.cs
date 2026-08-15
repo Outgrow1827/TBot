@@ -4162,6 +4162,13 @@ namespace Tbot.Includes {
 		// being wasted every cycle it stays this way, unlike negative energy (which the game throttles
 		// down automatically, a reversible loss, not a destructive one).
 		private bool IsStorageOverflowing(Planet planet) {
+			// Resources/Buildings can be null here if a prior update for this planet was skipped
+			// (eg. a network timeout mid-cycle - "An error has occurred with update Buildings.
+			// Skipping update" - leaves the celestial's cached data incomplete but the caller still
+			// proceeds to GetNextBuildingToBuild with it). Treat unknown as "not overflowing" rather
+			// than crash the whole AutoMine cycle for this celestial.
+			if (planet.Resources == null || planet.Buildings == null)
+				return false;
 			return planet.Resources.Metal >= CalcDepositCapacity(planet.Buildings.MetalStorage)
 				|| planet.Resources.Crystal >= CalcDepositCapacity(planet.Buildings.CrystalStorage)
 				|| planet.Resources.Deuterium >= CalcDepositCapacity(planet.Buildings.DeuteriumTank);
