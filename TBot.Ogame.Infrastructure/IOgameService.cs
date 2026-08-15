@@ -74,6 +74,7 @@ namespace TBot.Ogame.Infrastructure {
 		Task<DateTime> GetServerTime();
 		Task<string> GetServerUrl();
 		Task<string> GetHighscoreXml(int category, int type);
+		Task<string> GetPlayersXml();
 		Task<string> GetServerVersion();
 		Task<Ships> GetShips(Celestial celestial);
 		Task<Slots> GetSlots();

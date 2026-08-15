@@ -34,6 +34,8 @@ namespace Tbot.Workers {
 		// galaxies) is configured - bounds worst-case memory instead of growing unbounded.
 		private const int MaxGalaxyScanCacheEntries = 1000;
 
+		private PlayerStatusCache _playerStatusCache;
+
 		public ColonizeWorker(ITBotMain parentInstance,
 			IOgameService ogameService,
 			IFleetScheduler fleetScheduler,
@@ -328,12 +330,41 @@ namespace Tbot.Workers {
 
 									int maxSystemNumber = (int) _tbotInstance.UserData.serverData.Systems;
 
+									// With IgnoreInactivePlayers on, a LONG-inactive player's planet no longer
+									// counts as "occupying" a system - a short inactivity still blocks, only
+									// "I" (uppercase, ~28+ days per OGame's own /api/players.xml status codes)
+									// is treated as not a real contender. A galaxy scan alone can't tell "i"
+									// (short) apart from "I" (long) - both collapse into the single
+									// Planet.Inactive flag - so this cross-references the real status string
+									// from PlayerStatusCache (/api/players.xml) by player ID. Falls back to the
+									// galaxy scan's own Inactive flag if that player isn't found there (eg.
+									// transient fetch failure) - conservative, treats unknown as blocking.
+									bool ignoreInactivePlayers = SettingsService.IsSettingSet(t, "IgnoreInactivePlayers") && (bool) t.IgnoreInactivePlayers;
+									if (ignoreInactivePlayers)
+										_playerStatusCache ??= new PlayerStatusCache(_ogameService);
+
+									async Task<bool> IsBlockingPlanet(Planet p) {
+										if (p == null || p.Banned)
+											return false;
+										if (!ignoreInactivePlayers)
+											return true;
+										string status = p.Player != null ? await _playerStatusCache.GetStatus(p.Player.ID) : null;
+										if (status == null)
+											return p.Inactive; // unknown status - fall back to the galaxy scan's own flag
+										return !status.Contains('I') || status.Contains('v');
+									}
+
 									// A planet in a buffer system only counts as "occupied" if it belongs to
 									// someone else who isn't banned - the user's own planets nearby aren't a
 									// threat and shouldn't block colonization next to their own empire, and a
 									// banned player isn't a real contender for the spot either.
-									bool BufferSystemBlocked(GalaxyInfo bufferSystem) =>
-										bufferSystem.Planets.Any(p => p != null && p.Player != null && p.Player.ID != _tbotInstance.UserData.userInfo.PlayerID && !p.Banned);
+									async Task<bool> BufferSystemBlocked(GalaxyInfo bufferSystem) {
+										foreach (var p in bufferSystem.Planets) {
+											if (p != null && p.Player != null && p.Player.ID != _tbotInstance.UserData.userInfo.PlayerID && await IsBlockingPlanet(p))
+												return true;
+										}
+										return false;
+									}
 
 									// Per-candidate sliding window: a system is only rejected for lack of buffer
 									// if ITS OWN surroundings are occupied, not the edges of the whole configured
@@ -349,7 +380,7 @@ namespace Tbot.Workers {
 												continue;
 											}
 											GalaxyInfo bufferSystem = await GetGalaxyInfoCached(new Coordinate((int) t.Galaxy, b, 1, Celestials.Planet));
-											if (BufferSystemBlocked(bufferSystem)) {
+											if (await BufferSystemBlocked(bufferSystem)) {
 												return (false, b);
 											}
 										}
@@ -383,7 +414,14 @@ namespace Tbot.Workers {
 
 										if (targetEmptySystems) {
 											GalaxyInfo candidateSystem = await GetGalaxyInfoCached(new Coordinate((int) t.Galaxy, i, 1, Celestials.Planet));
-											if (candidateSystem.Planets.Any(p => p != null && !p.Banned)) {
+											bool systemBlocked = false;
+											foreach (var candidatePlanet in candidateSystem.Planets) {
+												if (await IsBlockingPlanet(candidatePlanet)) {
+													systemBlocked = true;
+													break;
+												}
+											}
+											if (systemBlocked) {
 												continue;
 											}
 										}
