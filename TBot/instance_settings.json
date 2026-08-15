@@ -593,6 +593,7 @@
 				"MaxPlanets": 1,
 				"TargetEmptySystems": false,
 				"EmptySystemsBuffer": 0,
+				"IgnoreInactivePlayers": false,
 				"ExcludeSystems": []
 			},
 			{
@@ -604,6 +605,7 @@
 				"MaxPlanets": 2,
 				"TargetEmptySystems": false,
 				"EmptySystemsBuffer": 0,
+				"IgnoreInactivePlayers": false,
 				"ExcludeSystems": []
 			}
 		],

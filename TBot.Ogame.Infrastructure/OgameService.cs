@@ -405,6 +405,17 @@ namespace TBot.Ogame.Infrastructure {
 			return await response.Content.ReadAsStringAsync();
 		}
 
+		// Raw XML passthrough of OGame's public /api/players.xml, proxied by ogamed. Gives each
+		// player's status string (a: admin, v: vacation, i: inactive, I: long inactive, b: banned,
+		// o: outlaw/strong player, combinable eg. "vI") - finer-grained than what a galaxy scan alone
+		// exposes (Planet.Inactive collapses i/I into a single flag).
+		public async Task<string> GetPlayersXml() {
+			var response = await GetRetryPolicy()
+				.ExecuteAsync(async () => await _client.GetAsync("api/players.xml"));
+			response.EnsureSuccessStatusCode();
+			return await response.Content.ReadAsStringAsync();
+		}
+
 		public async Task<string> GetServerLanguage() {
 			return await GetAsync<string>("/bot/language");
 		}
