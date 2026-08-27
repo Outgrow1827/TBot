@@ -177,10 +177,19 @@ namespace Tbot.Workers {
 
 			if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoDiscovery, "PauseWhenArtifactsAbove") && (bool) _tbotInstance.InstanceSettings.AutoDiscovery.PauseWhenArtifactsAbove) {
 				const long ArtifactsStorageCap = 3600;
-				var artifacts = await _ogameService.GetArtifacts(origin);
-				if (artifacts.Collected >= ArtifactsStorageCap) {
-					DoLog(LogLevel.Information, $"Pausing: artifacts storage is at {artifacts.Collected}/{artifacts.Max}, at or above the {ArtifactsStorageCap} cap.");
-					return discoveries;
+				try {
+					var artifacts = await _ogameService.GetArtifacts(origin);
+					if (artifacts.Collected >= ArtifactsStorageCap) {
+						DoLog(LogLevel.Information, $"Pausing: artifacts storage is at {artifacts.Collected}/{artifacts.Max}, at or above the {ArtifactsStorageCap} cap.");
+						return discoveries;
+					}
+				} catch (Exception e) {
+					// Best-effort safety check, not core to AutoDiscovery - a failure here (eg. the
+					// account hasn't unlocked the Artifacts feature yet, so the game has no counter to
+					// report - confirmed real 2026-08-27, "unable to find artifacts counter" crashing
+					// the whole worker) shouldn't crash the whole worker every cycle. Proceed without
+					// pausing instead.
+					DoLog(LogLevel.Warning, $"Unable to check artifacts storage, proceeding without the pause check: {e.Message}");
 				}
 			}
 

@@ -26,6 +26,12 @@ namespace Tbot.Workers {
 		private SemaphoreSlim _sem = new SemaphoreSlim(1, 1);
 		private AsyncTimer _timer = null;
 
+		// True once ExecutionWrapper has already logged "not enabled by settings" for the CURRENT
+		// disabled streak - lets Start/Restart/Stop below skip their own admin-log lines too instead
+		// of announcing a restart cycle that's just going to immediately no-op again.
+		private bool _disabledStreakLogged = false;
+		private bool ShouldLogAdminLines() => IsWorkerEnabledBySettings() || !_disabledStreakLogged;
+
 		protected IWorkerFactory _workerFactory;
 		protected ConcurrentDictionary<Celestial, ITBotCelestialWorker> _celestialWorkers = new();
 
@@ -57,7 +63,8 @@ namespace Tbot.Workers {
 
 		public async Task StartWorker(CancellationToken ct, TimeSpan period, TimeSpan dueTime) {
 
-			DoLog(LogLevel.Information, $"Starting Worker \"{GetWorkerName()}\"..");
+			if (ShouldLogAdminLines())
+				DoLog(LogLevel.Information, $"Starting Worker \"{GetWorkerName()}\"..");
 
 			await StopWorker();
 
@@ -76,9 +83,12 @@ namespace Tbot.Workers {
 			// Stop also all the timers
 			RemoveAllTimers();
 			if (_timer != null) {
-				DoLog(LogLevel.Information, $"Closing Worker \"{GetWorkerName()}\"..");
+				bool logAdmin = ShouldLogAdminLines();
+				if (logAdmin)
+					DoLog(LogLevel.Information, $"Closing Worker \"{GetWorkerName()}\"..");
 				await _timer.DisposeAsync();
-				DoLog(LogLevel.Information, $"Worker \"{GetWorkerName()}\" closed!");
+				if (logAdmin)
+					DoLog(LogLevel.Information, $"Worker \"{GetWorkerName()}\" closed!");
 				_timer = null;
 			}
 			foreach (var worker in _celestialWorkers.Values) {
@@ -103,7 +113,8 @@ namespace Tbot.Workers {
 				_timer.ChangeDueTime(TimeSpan.FromMilliseconds(dueTimeMs));
 		}
 		public async void RestartWorker(CancellationToken ct, TimeSpan period, TimeSpan dueTime) {
-			DoLog(LogLevel.Information, $"Restarting Worker \"{GetWorkerName()}\"...");
+			if (ShouldLogAdminLines())
+				DoLog(LogLevel.Information, $"Restarting Worker \"{GetWorkerName()}\"...");
 			foreach (var worker in _celestialWorkers.Values) {
 				await worker.StopWorker();
 			}
@@ -170,10 +181,19 @@ namespace Tbot.Workers {
 				await EndExecution();
 				return;
 			} else if (IsWorkerEnabledBySettings() == false) {
-				DoLog(LogLevel.Information, $"{GetWorkerName()} not enabled by settings. Ending...");
+				// Only announce "not enabled" once per disabled streak, not every restart cycle - a
+				// disabled worker still gets Start/Restart cycled periodically (eg. by settings file
+				// watches), and logging level can't filter this (every sink here is Verbose, see
+				// LogNextExecution's comment above), so repeating it every cycle was pure log spam for
+				// a feature the user has no intention of running.
+				if (!_disabledStreakLogged) {
+					DoLog(LogLevel.Information, $"{GetWorkerName()} not enabled by settings. Ending...");
+					_disabledStreakLogged = true;
+				}
 				await EndExecution();
 				return;
 			}
+			_disabledStreakLogged = false;
 
 			try {
 				await WaitWorker();

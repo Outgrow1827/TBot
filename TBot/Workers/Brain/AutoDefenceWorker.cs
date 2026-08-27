@@ -56,8 +56,18 @@ namespace Tbot.Workers.Brain {
 					(bool) _tbotInstance.InstanceSettings.Brain.AutoDefence.UseProductionBasedCalculation;
 				int productionCoverageHours = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.AutoDefence, "ProductionCoverageHours") ?
 					(int) _tbotInstance.InstanceSettings.Brain.AutoDefence.ProductionCoverageHours : 24;
-				int maxConstructionMinutes = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.AutoDefence, "MaxConstructionMinutes") ?
-					(int) _tbotInstance.InstanceSettings.Brain.AutoDefence.MaxConstructionMinutes : 60;
+				int maxConstructionMinutes;
+				if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.AutoDefence, "MaxConstructionMinutes")) {
+					maxConstructionMinutes = (int) _tbotInstance.InstanceSettings.Brain.AutoDefence.MaxConstructionMinutes;
+				} else if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.AutoDefence, "MaxConstructionTime")) {
+					// Pre-restore field name (lost in the 3.4.6 rebase, brought back under a
+					// different name in 8547586) - keep honoring existing instance files instead
+					// of silently falling back to the 60min default.
+					DoLog(LogLevel.Warning, "Brain.AutoDefence.MaxConstructionTime is deprecated; rename it to Brain.AutoDefence.MaxConstructionMinutes.");
+					maxConstructionMinutes = (int) _tbotInstance.InstanceSettings.Brain.AutoDefence.MaxConstructionTime;
+				} else {
+					maxConstructionMinutes = 60;
+				}
 				foreach (Celestial celestial in (bool) _tbotInstance.InstanceSettings.Brain.AutoDefence.RandomOrder ? _tbotInstance.UserData.celestials.Shuffle().ToList() : _tbotInstance.UserData.celestials) {
 					if (celestialsToExclude.Has(celestial)) {
 						DoLog(LogLevel.Information, $"Skipping {celestial.ToString()}: celestial in exclude list.");
