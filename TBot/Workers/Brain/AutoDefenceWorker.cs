@@ -34,6 +34,9 @@ namespace Tbot.Workers.Brain {
 		}
 
 		protected override async Task Execute() {
+			if (_tbotInstance.UserData.researches == null) {
+				_tbotInstance.UserData.researches = await _ogameService.GetResearches();
+			}
 			try {
 				DoLog(LogLevel.Information, "Running autodefence...");
 

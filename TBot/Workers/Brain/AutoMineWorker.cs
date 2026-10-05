@@ -23,6 +23,7 @@ namespace Tbot.Workers.Brain {
 		private readonly IFleetScheduler _fleetScheduler;
 		private readonly IOgameService _ogameService;
 		private readonly ITBotOgamedBridge _tbotOgameBridge;
+		private ResourceStatsStore _resourceStatsStore;
 		public AutoMineWorker(ITBotMain parentInstance,
 			IOgameService ogameService,
 			IFleetScheduler fleetScheduler,
@@ -114,6 +115,11 @@ namespace Tbot.Workers.Brain {
 				};
 
 				_tbotInstance.UserData.researches = await _ogameService.GetResearches();
+				_resourceStatsStore ??= await ResourceStatsStore.Load(_tbotInstance.InstanceSettingsPath, _tbotInstance.InstanceAlias);
+				// Garbage-collect stats rows for celestials abandoned/traded away since the last cycle -
+				// RecordSnapshot below only ever appends, so without this a dead planet's last snapshot
+				// (from right before abandonment) sat in the WebUI dashboard forever with frozen numbers.
+				await _resourceStatsStore.PruneRemovedCelestials(_tbotInstance.UserData.celestials.Select(c => c.ID));
 				List<Celestial> celestialsToExclude = _calculationService.ParseCelestialsList(_tbotInstance.InstanceSettings.Brain.AutoMine.Exclude, _tbotInstance.UserData.celestials);
 				List<Celestial> celestialsToMine = new();
 				List<ConstructionCandidate> constructionCandidates = new();
@@ -121,8 +127,38 @@ namespace Tbot.Workers.Brain {
 					var cel = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.Buildings);
 					cel = await _tbotOgameBridge.UpdatePlanet(cel, UpdateTypes.LFBuildings);
 					cel = await _tbotOgameBridge.UpdatePlanet(cel, UpdateTypes.LFBonuses);
+					// Resource stats (Metal/Crystal/Deuterium/Energy) always recorded as 0 - root cause
+					// confirmed 2026-09-18: UpdateTypes.Fast (below) calls ogamed's GetPlanet/GetCelestial,
+					// which is backed by the ogame library's Planet struct (pkg/ogame/planet.go) - that
+					// struct has NO Resources field at all, it was never going to come back populated
+					// through that path. UpdateTypes.Resources calls the actual /resources endpoint
+					// (GetResourcesHandler in ogamed), which does return real Metal/Crystal/Deuterium/
+					// Energy - fetched here on `cel` so it carries the Buildings/LFBuildings/LFBonuses
+					// already set on it.
+					cel = await _tbotOgameBridge.UpdatePlanet(cel, UpdateTypes.Resources);
 
 					Planet abaCelestial = await _tbotOgameBridge.UpdatePlanet(cel, UpdateTypes.Fast) as Planet;
+					try {
+						// UpdateTypes.Fast returns a brand-new Planet object (GetCelestial), not a merge -
+						// it doesn't carry the Buildings/LFBuildings/LFBonuses/Resources set on `cel` above,
+						// and (per the note above) never carries real Resources at all. Only its Name is
+						// used from here on.
+						if (abaCelestial != null && cel is Planet celForStats) {
+							// abaCelestial just came from a fresh GetCelestial() call, so its Name reflects
+							// any in-game rename immediately - `cel`'s Name only updates whenever
+							// UserData.celestials itself gets a full refresh, which can lag well behind a
+							// rename. Copying it here keeps the resource-stats snapshot's name accurate on
+							// every cycle instead of only after the next full celestial refresh.
+							celForStats.Name = abaCelestial.Name;
+							var hourlyProduction = _calculationService.CalcPlanetHourlyProduction(celForStats, _tbotInstance.UserData.serverData.Speed, 1, _tbotInstance.UserData.researches, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.staff.Geologist, _tbotInstance.UserData.staff.IsFull, (int) (celForStats.Ships?.Crawler ?? 0), 1.5F);
+							await _resourceStatsStore.RecordSnapshot(celForStats, hourlyProduction);
+						}
+					} catch (Exception e) {
+						// Was Debug (easy to miss) - a repeated failure here silently freezes that
+						// planet's dashboard numbers at whatever the last successful snapshot was,
+						// exactly the kind of "shows stale/wrong data" symptom that's otherwise invisible.
+						DoLog(LogLevel.Warning, $"Skipping resource stats snapshot for {cel}: {e.Message}");
+					}
 					var nextMine = _calculationService.GetNextMineToBuild(cel as Planet, _tbotInstance.UserData.researches, _tbotInstance.UserData.serverData.Speed, maxBuildings.MetalMine, maxBuildings.CrystalMine, maxBuildings.DeuteriumSynthesizer, 1, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.staff.Geologist, _tbotInstance.UserData.staff.IsFull, true, int.MaxValue);
 					if (nextMine != Buildables.Null) {
 						var lv = _calculationService.GetNextLevel(cel, nextMine);

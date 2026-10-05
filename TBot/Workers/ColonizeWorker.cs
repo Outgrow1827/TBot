@@ -354,7 +354,7 @@ namespace Tbot.Workers {
 										string status = p.Player != null ? await _playerStatusCache.GetStatus(p.Player.ID) : null;
 										if (status == null)
 											return p.Inactive; // unknown status - fall back to the galaxy scan's own flag
-										return !status.Contains('I') || status.Contains('v');
+										return !status.Contains('I');
 									}
 
 									// A planet in a buffer system only counts as "occupied" if it belongs to
@@ -506,8 +506,20 @@ namespace Tbot.Workers {
 										.OrderBy(t => _calculationService.CalcFleetPrediction(origin, t, ships, Missions.Colonize, Speeds.HundredPercent, _tbotInstance.UserData.researches, _tbotInstance.UserData.serverData, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.allianceClass).Time)
 										.ToList();
 									int indexList = 0;
+									// Tracks how many colony ships are actually still available at origin as this
+									// loop sends them out - origin.Ships.ColonyShip itself is never refreshed
+									// after the initial check above, so without this the loop kept trying to send
+									// a colony ship to every target in filteredTargets even after the only one in
+									// stock was already spent on an earlier target this same cycle, hitting the
+					        // game's real error 140035 ("Tem de enviar uma nave de colonização...") over and
+					        // over. Reported live 2026-09-17.
+									long colonyShipsRemaining = origin.Ships.ColonyShip;
 									foreach (var target in filteredTargets) {
 										indexList++;
+										if (colonyShipsRemaining < 1) {
+											_tbotInstance.log(LogLevel.Information, LogSender.Colonize, $"No more colony ships available at {origin.ToString()} for the remaining targets this cycle - stopping.");
+											break;
+										}
 										_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
 										var colonize = _tbotInstance.UserData.fleets
 											.Where(f => f.Mission == Missions.Colonize)
@@ -533,7 +545,10 @@ namespace Tbot.Workers {
 
 										{
 											DoLog(LogLevel.Debug, "Send Colonize.");
-											var fleetId = await _fleetScheduler.SendFleet(origin, ships, target, Missions.Colonize, Speeds.HundredPercent);
+											var fleetId = await _fleetScheduler.SendFleet(origin, ships, target, Missions.Colonize, Speeds.HundredPercent, null, _tbotInstance.UserData.userInfo.Class, false, true);
+											if (fleetId > (int) SendFleetCode.GenericError) {
+												colonyShipsRemaining--;
+											}
 											_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
 											List<Fleet> orderedFleet = _tbotInstance.UserData.fleets
 												.Where(fleet => fleet.Mission == Missions.Colonize)
@@ -553,10 +568,17 @@ namespace Tbot.Workers {
 												stop = true;
 												return;
 											}
+											if (fleetId == (int) SendFleetCode.NotEnoughDeuterium) {
+												_tbotInstance.log(LogLevel.Warning, LogSender.Colonize, $"Not enough deuterium to colonize {target}. Skipping this target.");
+												continue;
+											}
 											if (fleetId == (int) SendFleetCode.NotEnoughSlots) {
 												long delayInterval = 0;
 												try {
-													delayInterval = (_tbotInstance.UserData.fleets.OrderBy(f => f.BackIn).First().BackIn ?? 0) * 1000 + RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
+													var returningFleets = _tbotInstance.UserData.fleets.Where(f => f.BackIn.HasValue).ToList();
+													delayInterval = returningFleets.Any()
+														? (returningFleets.Min(f => f.BackIn.Value) * 1000) + RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds)
+														: RandomizeHelper.CalcRandomInterval((int) _tbotInstance.InstanceSettings.AutoColonize.CheckIntervalMin, (int) _tbotInstance.InstanceSettings.AutoColonize.CheckIntervalMax);
 												} catch {
 													delayInterval = RandomizeHelper.CalcRandomInterval((int) _tbotInstance.InstanceSettings.AutoColonize.CheckIntervalMin, (int) _tbotInstance.InstanceSettings.AutoColonize.CheckIntervalMax);
 												}

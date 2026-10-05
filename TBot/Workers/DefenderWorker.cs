@@ -236,7 +236,7 @@ namespace Tbot.Workers {
 			}
 			try {
 				Ships ships = new() { EspionageProbe = probes };
-				int fleetId = await _fleetScheduler.SendFleet(origin, ships, destination, Missions.Spy, Speeds.HundredPercent, new Resources(), _tbotInstance.UserData.userInfo.Class);
+				int fleetId = await _fleetScheduler.SendFleet(origin, ships, destination, Missions.Spy, Speeds.HundredPercent, new Resources(), _tbotInstance.UserData.userInfo.Class, false, true);
 				Fleet fleet = _tbotInstance.UserData.fleets.SingleOrDefault(fleet => fleet.ID == fleetId);
 				if (fleet == null) {
 					DoLog(LogLevel.Warning, $"SpyAttacker: SendFleet returned id={fleetId}, but fleet was not found in current fleet list (send may have failed or list not updated yet).");
@@ -342,7 +342,7 @@ namespace Tbot.Workers {
 							defenderCelestial = await _tbotOgameBridge.UpdatePlanet(defenderCelestial, UpdateTypes.Defences);
 							defenderCelestial = await _tbotOgameBridge.UpdatePlanet(defenderCelestial, UpdateTypes.Productions);
 							if (defenderCelestial.Productions.Count == 0) {
-								var availableSpace = defenderCelestial.Facilities.MissileSilo - defenderCelestial.Defences.AntiBallisticMissiles - (2 * defenderCelestial.Defences.InterplanetaryMissiles);
+								var availableSpace = (defenderCelestial.Facilities.MissileSilo * 10) - defenderCelestial.Defences.AntiBallisticMissiles - (2 * defenderCelestial.Defences.InterplanetaryMissiles);
 								defenderCelestial = await _tbotOgameBridge.UpdatePlanet(defenderCelestial, UpdateTypes.Resources);
 								if (availableSpace > 0) {
 									DoLog(LogLevel.Information, $"Building {availableSpace} AntiBallisticMissiles on {defenderCelestial.ToString()}");
@@ -444,9 +444,8 @@ namespace Tbot.Workers {
 			if ((bool) _tbotInstance.InstanceSettings.Defender.Autofleet.Active) {
 				if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Defender.Autofleet, "DelayFleetSaveIfImpactOccurLaterThanNextCheck") && (bool) _tbotInstance.InstanceSettings.Defender.Autofleet.DelayFleetSaveIfImpactOccurLaterThanNextCheck) {
 					try {
-					int intervalMin = (int) _tbotInstance.InstanceSettings.Defender.CheckIntervalMin;
 					int intervalMax = (int) _tbotInstance.InstanceSettings.Defender.CheckIntervalMax;
-					int delayThreshold = (intervalMax *60) +(intervalMin *60 > 120 ? 120 : intervalMin *60);
+					int delayThreshold = intervalMax * 60;
 					if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Defender.Autofleet, "MaxDelayMinutes")) {
 						int maxDelaySeconds = (int) _tbotInstance.InstanceSettings.Defender.Autofleet.MaxDelayMinutes * 60;
 						if (maxDelaySeconds > 0 && delayThreshold > maxDelaySeconds) {

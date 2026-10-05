@@ -230,6 +230,11 @@ namespace Tbot.Workers.Brain {
 												allCelestials[i] = await _tbotOgameBridge.UpdatePlanet(allCelestials[i], UpdateTypes.Ships);
 												allCelestials[i] = await _tbotOgameBridge.UpdatePlanet(allCelestials[i], UpdateTypes.LFBonuses);
 											}
+											Buildables preferredShip = Buildables.SmallCargo;
+											if (!Enum.TryParse<Buildables>((string) _tbotInstance.InstanceSettings.Brain.Transports.CargoType, true, out preferredShip)) {
+												_tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler, "Unable to parse CargoType. Falling back to default SmallCargo");
+												preferredShip = Buildables.SmallCargo;
+											}
 											Resources costToCover = xCostBuildable;
 											if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.Transports, "StockpileForRoundTrip") &&
 												(bool) _tbotInstance.InstanceSettings.Brain.Transports.StockpileForRoundTrip) {
@@ -239,7 +244,7 @@ namespace Tbot.Workers.Brain {
 														(int) _tbotInstance.InstanceSettings.Brain.Transports.Origin.System,
 														(int) _tbotInstance.InstanceSettings.Brain.Transports.Origin.Position,
 														Enum.Parse<Celestials>((string) _tbotInstance.InstanceSettings.Brain.Transports.Origin.Type)),
-													buildable, level, _tbotInstance.UserData.researches, _tbotInstance.UserData.serverData,
+													preferredShip, buildable, level, _tbotInstance.UserData.researches, _tbotInstance.UserData.serverData,
 													costReduction, 0, popReduction,
 													_tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.allianceClass);
 											}
@@ -255,8 +260,8 @@ namespace Tbot.Workers.Brain {
 												}
 												if (origin.ID != 0) {
 													if (origin.Resources.IsEnoughFor(missingResources)) {
-														missingResources = _tbotInstance.InstanceSettings.Brain.Transports.RoundResources ? missingResources.Round() : missingResources;
-														Buildables preferredShip = Buildables.SmallCargo;
+														missingResources = _tbotInstance.InstanceSettings.Brain.Transports.RoundResources ? missingResources.Round((int) (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.Transports, "RoundTo") ? _tbotInstance.InstanceSettings.Brain.Transports.RoundTo : 1000)) : missingResources;
+														preferredShip = Buildables.SmallCargo;
 														if (!Enum.TryParse<Buildables>((string) _tbotInstance.InstanceSettings.Brain.Transports.CargoType, true, out preferredShip)) {
 															_tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler, "Unable to parse CargoType. Falling back to default SmallCargo");
 															preferredShip = Buildables.SmallCargo;
@@ -305,7 +310,7 @@ namespace Tbot.Workers.Brain {
 														.Where(c => c.Coordinate.Type == Enum.Parse<Celestials>((string) _tbotInstance.InstanceSettings.Brain.Transports.Origin.Type))
 														.SingleOrDefault() ?? new() { ID = 0 };
 													List<Celestial> celestialsToExclude = _calculationService.ParseCelestialsList(_tbotInstance.InstanceSettings.Brain.Transports.MultipleOrigins.Exclude, allCelestials);
-													Buildables preferredShip = Buildables.SmallCargo;
+													preferredShip = Buildables.SmallCargo;
 													if (!Enum.TryParse<Buildables>((string) _tbotInstance.InstanceSettings.Brain.Transports.CargoType, true, out preferredShip)) {
 														_tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler, "Unable to parse CargoType. Falling back to default SmallCargo");
 														preferredShip = Buildables.SmallCargo;
@@ -324,8 +329,8 @@ namespace Tbot.Workers.Brain {
 															(bool) _tbotInstance.InstanceSettings.Brain.Transports.MultipleOrigins.OnlyFromMoons,
 															(long) _tbotInstance.InstanceSettings.Brain.Transports.MultipleOrigins.MinimumResourcesToSend,
 															(bool) _tbotInstance.InstanceSettings.Brain.Transports.MultipleOrigins.PriorityToProximityOverQuantity,
-															celestialsToExclude)
-														);
+															celestialsToExclude),
+														(bool) _tbotInstance.InstanceSettings.Brain.Transports.StockpileForRoundTrip);
 
 													Celestial destination;
 													if ((bool) transportsSettings.SendToTheMoonIfPossible && _calculationService.IsThereMoonHere(allCelestials, celestial)) {
@@ -359,6 +364,8 @@ namespace Tbot.Workers.Brain {
 														var shipment = item.FirstOrDefault();
 														var shipmentOrigin = shipment.Key;
 														var shipmentAmount = shipment.Value;
+														if (shipmentAmount.TotalResources == 0)
+															continue;
 														var ships = new Ships();
 														ships.Add((Buildables) transportsSettings.CargoType, _calculationService.CalcShipNumberForPayload(shipmentAmount, (Buildables) transportsSettings.CargoType, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, shipmentOrigin.LFBonuses.GetShipCargoBonus(transportsSettings.CargoType), _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo));
 														if (shipmentOrigin.Coordinate.IsSame(destination.Coordinate) && transportsSettings.SendToTheMoonIfPossible && destination.Coordinate.Type == Celestials.Moon)
@@ -387,7 +394,7 @@ namespace Tbot.Workers.Brain {
 															.SingleOrDefault() ?? new() { ID = 0 };
 														if (destination.Ships.IsEmpty() || celestial.Resources.TotalResources == 0)
 															destination = celestial;
-														xCostBuildable = xCostBuildable.Difference(destination.Resources);
+														costToCover = costToCover.Difference(destination.Resources);
 													} else {
 														destination = allCelestials
 															.Unique()
@@ -404,7 +411,7 @@ namespace Tbot.Workers.Brain {
 														.Where(c => c.Coordinate.Position == (int) _tbotInstance.InstanceSettings.Brain.Transports.Origin.Position)
 														.Where(c => c.Coordinate.Type == Enum.Parse<Celestials>((string) _tbotInstance.InstanceSettings.Brain.Transports.Origin.Type))
 														.SingleOrDefault() ?? new() { ID = 0 };
-													fleetId = await _fleetScheduler.HandleMinerTransport(origin, celestial, destination, xCostBuildable, buildable, maxLFBuildings, preventIfMoreExpensiveThanNextMine);
+													fleetId = await _fleetScheduler.HandleMinerTransport(origin, celestial, destination, costToCover, buildable, maxLFBuildings, preventIfMoreExpensiveThanNextMine);
 													if (fleetId == (int) SendFleetCode.AfterSleepTime) {
 														stop = true;
 													}
@@ -422,7 +429,7 @@ namespace Tbot.Workers.Brain {
 												.Where(f => f.Destination.System == celestial.Coordinate.System)
 												.Where(f => f.Destination.Position == celestial.Coordinate.Position)
 												.Where(f => f.Destination.Type == celestial.Coordinate.Type)
-												.First().ID;
+												.FirstOrDefault()?.ID ?? 0;
 										}
 									} else {
 										if (_tbotInstance.InstanceSettings.General.SlotPriorityLevel.Brain > 0) {
@@ -466,7 +473,10 @@ namespace Tbot.Workers.Brain {
 						DoLog(LogLevel.Information, $"Delaying...");
 						_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
 						try {
-							interval = (_tbotInstance.UserData.fleets.Where(f => f.Mission == Missions.Transport).OrderBy(f => f.BackIn).First().BackIn ?? 0) * 1000 + RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
+							var returningTransports = _tbotInstance.UserData.fleets.Where(f => f.Mission == Missions.Transport && f.BackIn.HasValue).ToList();
+							interval = returningTransports.Any()
+								? (returningTransports.Min(f => f.BackIn.Value) * 1000) + RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds)
+								: RandomizeHelper.CalcRandomInterval((int) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.CheckIntervalMin, (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.CheckIntervalMax);
 						} catch {
 							interval = RandomizeHelper.CalcRandomInterval((int) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.CheckIntervalMin, (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.CheckIntervalMax);
 						}
@@ -510,8 +520,12 @@ namespace Tbot.Workers.Brain {
 						} else {
 							if (fleetId > 0) {
 								_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
-								var transportfleet = _tbotInstance.UserData.fleets.Single(f => f.ID == fleetId && f.Mission == Missions.Transport);
-								interval = (transportfleet.ArriveIn * 1000) + RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
+								var transportfleet = _tbotInstance.UserData.fleets.SingleOrDefault(f => f.ID == fleetId && f.Mission == Missions.Transport);
+								if (transportfleet != null) {
+									interval = (transportfleet.ArriveIn * 1000) + RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
+								} else {
+									interval = RandomizeHelper.CalcRandomInterval((int) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.CheckIntervalMin, (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.CheckIntervalMax);
+								}
 							} else {
 								interval = RandomizeHelper.CalcRandomInterval((int) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.CheckIntervalMin, (int) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.CheckIntervalMax);
 							}

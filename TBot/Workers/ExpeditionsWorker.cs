@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Tbot.Common.Settings;
@@ -21,6 +22,20 @@ namespace Tbot.Workers {
 		private readonly ITBotOgamedBridge _tbotOgameBridge;
 		private int _nextOriginIndex;
 
+		// Expedition messages (find/danger/loss) are only ever available from the game's own
+		// message list, not from anything the send-fleet call itself returns - GetExpeditionMessages
+		// was already exposed by ogamed but never consumed here, so results never made it into logs
+		// or the dashboard. Tracks IDs already logged this process lifetime so a message isn't
+		// re-logged every cycle just because it's still within the message list's retention window.
+		private readonly HashSet<int> _loggedExpeditionMessageIds = new();
+		private readonly FeatureResultsStore _expeditionResultsStore;
+		private readonly FeatureResultsStore _discoveryResultsStore;
+		// Permanent (unbounded) counterparts - requested live 2026-09-02, the capped JSON stores
+		// above only keep the most recent 200 entries each, which the user explicitly does not want
+		// for this data.
+		private readonly FeatureResultsSqliteStore _expeditionResultsPermanentStore;
+		private readonly FeatureResultsSqliteStore _discoveryResultsPermanentStore;
+
 		public ExpeditionsWorker(
 			ITBotMain parentInstance,
 			IOgameService ogameService,
@@ -31,16 +46,39 @@ namespace Tbot.Workers {
 			_fleetScheduler = fleetScheduler;
 			_calculationService = calculationService;
 			_tbotOgameBridge = tbotOgameBridge;
+			_expeditionResultsStore = new FeatureResultsStore($"expedition_results_{parentInstance.InstanceAlias}.json");
+			_discoveryResultsStore = new FeatureResultsStore($"discovery_results_{parentInstance.InstanceAlias}.json");
+			_expeditionResultsPermanentStore = new FeatureResultsSqliteStore($"expedition_results_{parentInstance.InstanceAlias}.db");
+			_discoveryResultsPermanentStore = new FeatureResultsSqliteStore($"discovery_results_{parentInstance.InstanceAlias}.db");
+
+			// One-time backfill: recover whatever the capped 200-entry JSON stores still have on
+			// hand into the new permanent SQLite stores - requested live 2026-09-02, after the user
+			// lost history to the MaxEntries eviction bug that predates the permanent store's
+			// existence. Idempotent (Add() dedups by Id via INSERT OR IGNORE), so safe to run on
+			// every startup rather than needing a one-shot flag.
+			foreach (var entry in _expeditionResultsStore.GetAll())
+				_expeditionResultsPermanentStore.Add(entry);
+			foreach (var entry in _discoveryResultsStore.GetAll())
+				_discoveryResultsPermanentStore.Add(entry);
 		}
 
-		public override bool IsWorkerEnabledBySettings() {
-			try { return (bool)_tbotInstance.InstanceSettings.Expeditions.Active; }
-			catch (Exception) { return false; }
-		}
+		// Reverted 2026-09-02 per explicit user request: Active:false now stops this worker
+		// completely again (no background result-polling/log noise), same as every other worker.
+		// Result polling moved to OnDisabledTick so expedition/discovery results (artifacts, lifeform
+		// XP, etc.) are still persisted to the database while Active is off - only the logging of
+		// "Recorded N new result(s)" is suppressed in that case to avoid log spam.
+		public override bool IsWorkerEnabledBySettings() => (bool) _tbotInstance.InstanceSettings.Expeditions.Active;
 
 		public override string GetWorkerName() => "Expeditions";
 		public override Feature GetFeature() => Feature.Expeditions;
 		public override LogSender GetLogSender() => LogSender.Expeditions;
+
+		protected override async Task OnDisabledTick() {
+			// Even when disabled, keep collecting expedition/discovery results so the WebUI
+			// dashboards retain lifetime totals. Logging is suppressed to avoid log spam on every
+			// tick cycle while the worker itself is off.
+			await LogNewExpeditionResults(suppressLogging: true);
+		}
 
 		private int CountActiveExpeditionsFromOrigin(Celestial origin) {
 			if (origin?.Coordinate == null || _tbotInstance.UserData.fleets == null)
@@ -126,7 +164,7 @@ namespace Tbot.Workers {
 				(long)_tbotInstance.InstanceSettings.Expeditions.ManualShips.Ships.Pathfinder);
 		}
 
-		private Ships BuildExpeditionFleet(Celestial origin, LFBonuses lfBonuses) {
+		private Ships BuildExpeditionFleet(Celestial origin, LFBonuses lfBonuses, int expeditionsRemainingFromOrigin) {
 			if ((bool)_tbotInstance.InstanceSettings.Expeditions.ManualShips.Active)
 				return BuildManualExpeditionFleet();
 
@@ -145,10 +183,18 @@ namespace Tbot.Workers {
 					availableShips.GetAmount(primaryShip) - (long)_tbotInstance.InstanceSettings.Expeditions.PrimaryToKeep));
 			}
 
+			// CalcExpeditionShips only splits the available fleet when it falls short of
+			// ideal*expeditionsNumber - passing a hardcoded 1 here (as this used to) tells it
+			// only one expedition is drawing on this origin's fleet, so a scarce fleet gets
+			// handed to the first expedition whole, leaving near-nothing for the rest of this
+			// origin's remaining sends this cycle. Passing how many are actually still queued
+			// for this origin makes a scarce fleet split evenly between them instead.
+			int expeditionsNumber = Math.Max(1, expeditionsRemainingFromOrigin);
+
 			return _calculationService.CalcFullExpeditionShips(
 				availableShips,
 				primaryShip,
-				1,
+				expeditionsNumber,
 				_tbotInstance.UserData.serverData,
 				_tbotInstance.UserData.researches,
 				lfBonuses,
@@ -207,13 +253,99 @@ namespace Tbot.Workers {
 			};
 		}
 
+		// GetExpeditionMessages() returns the message's Content as raw game HTML (origin link,
+		// icon <img>, <br/> line breaks, HTML-escaped text) - confirmed live 2026-08-29 that
+		// logging it verbatim dumps that markup straight into the log file. Strips tags/entities
+		// down to the plain narrative text before it ever reaches DoLog.
+		private static string PlainTextFromMessageContent(string content) {
+			if (string.IsNullOrEmpty(content))
+				return "";
+
+			var withoutBreaks = Regex.Replace(content, @"<br\s*/?>", " ", RegexOptions.IgnoreCase);
+			var withoutTags = Regex.Replace(withoutBreaks, @"<[^>]+>", "");
+			var decoded = System.Net.WebUtility.HtmlDecode(withoutTags);
+			return Regex.Replace(decoded, @"\s+", " ").Trim();
+		}
+
+		private async Task LogNewExpeditionResults(bool suppressLogging = false) {
+			try {
+				var messages = await _ogameService.GetExpeditionMessages();
+				if (messages == null)
+					return;
+
+				const long DiscoveryGlobalTypeID = 61;
+				int newExpeditions = 0, newDiscoveries = 0;
+
+				foreach (var message in messages.OrderBy(m => m.CreatedAt)) {
+					if (!_loggedExpeditionMessageIds.Add(message.ID))
+						continue;
+
+					// Expeditions and AutoDiscovery results share the same in-game message tab
+					// (ExpeditionsMessagesTabID=22 on the ogamed side) - route each message to the
+					// results store it actually belongs to. These go to a structured per-feature
+					// JSON store (data/*.json), not the worker log - confirmed live 2026-08-29 that
+					// dumping the full narrative text of every result (often near-duplicate flavor
+					// text) into the log/CSV made the log itself unreadable. The WebUI dashboard
+					// reads this store directly instead of scraping it back out of log lines.
+					bool isDiscovery = message.GlobalTypeID == DiscoveryGlobalTypeID;
+					var store = isDiscovery ? _discoveryResultsStore : _expeditionResultsStore;
+					string summary = PlainTextFromMessageContent(message.Content);
+					// AutoDiscovery artifact finds don't carry Resources/Ships, so without this the
+					// entry's Resources/Ships columns were both empty and the only trace of the find
+					// was buried inside the free-text Summary - surface it explicitly instead (confirmed
+					// live 2026-08-29, user reported "TBot não detecta artefatos").
+					string artifactsOrLifeform = "";
+					if (isDiscovery && message.ArtifactsFound > 0) {
+						artifactsOrLifeform = $"{message.ArtifactsFound} artifacts ({message.ArtifactsSize})";
+						summary = $"Artifacts found: {message.ArtifactsFound} ({message.ArtifactsSize}). {summary}";
+					} else if (isDiscovery && message.DiscoveryType == "lifeform-xp") {
+						// Confirmed via HAR capture 2026-08-29: this discovery subtype carries no
+						// Resources/Ships either, same gap as the artifacts case above.
+						string ownedNote = message.LifeformAlreadyOwned ? "already known" : "new";
+						artifactsOrLifeform = $"{message.LifeformGainedExperience} XP ({message.LifeformDiscovered}, {ownedNote})";
+						summary = $"Lifeform XP gained: {message.LifeformGainedExperience} ({message.LifeformDiscovered}, {ownedNote}). {summary}";
+					}
+					var resultEntry = new FeatureResultEntry {
+						Id = message.ID,
+						Coordinate = message.Coordinate?.ToString() ?? "",
+						Summary = summary,
+						Resources = message.Resources != null && message.Resources.TotalResources > 0 ? message.Resources.ToString() : "",
+						Ships = message.Ships != null && !message.Ships.IsEmpty() ? message.Ships.ToString() : "",
+						TimestampUtc = message.CreatedAt,
+						Metal = message.Resources?.Metal ?? 0,
+						Crystal = message.Resources?.Crystal ?? 0,
+						Deuterium = message.Resources?.Deuterium ?? 0,
+						Darkmatter = message.Resources?.Darkmatter ?? 0,
+						ArtifactsOrLifeform = artifactsOrLifeform,
+						ArtifactsFound = message.ArtifactsFound
+					};
+					store.Add(resultEntry);
+					// Permanent, unbounded copy - see FeatureResultsSqliteStore for why this exists
+					// alongside the capped JSON store above.
+					(isDiscovery ? _discoveryResultsPermanentStore : _expeditionResultsPermanentStore).Add(resultEntry);
+
+					if (isDiscovery) newDiscoveries++; else newExpeditions++;
+				}
+
+if (!suppressLogging) {
+				if (newExpeditions > 0)
+					DoLog(LogLevel.Information, $"Recorded {newExpeditions} new expedition result(s).");
+				if (newDiscoveries > 0)
+					_tbotInstance.log(LogLevel.Information, LogSender.AutoDiscovery, $"Recorded {newDiscoveries} new discovery result(s).");
+			}
+			} catch (Exception e) {
+				// Best-effort reporting, not core to sending expeditions - a failure here shouldn't
+				// stop the worker from planning and dispatching this cycle's fleets.
+				DoLog(LogLevel.Debug, $"Unable to read expedition messages: {e.Message}");
+			}
+		}
+
 		protected override async Task Execute() {
 			bool stop = false;
 			bool delay = false;
 
 			try {
-				if (!(bool)_tbotInstance.InstanceSettings.Expeditions.Active)
-					return;
+				await LogNewExpeditionResults();
 
 				_tbotInstance.UserData.researches = await _tbotOgameBridge.UpdateResearches();
 				if (_tbotInstance.UserData.researches.Astrophysics == 0) {
@@ -248,7 +380,7 @@ namespace Tbot.Workers {
 						(int)_tbotInstance.InstanceSettings.AutoFarm.MaxSlots,
 						(int)_tbotInstance.UserData.fleets.Count(f => f.Mission == Missions.Attack)),
 					new RankSlotsPriority(Feature.Colonize,
-						(int)_tbotInstance.InstanceSettings.General.SlotPriorityLevel.Colonize,
+						(int)_tbotInstance.InstanceSettings.General.SlotPriorityLevel.AutoColonize,
 						(bool)_tbotInstance.InstanceSettings.AutoColonize.Active,
 						(bool)_tbotInstance.InstanceSettings.AutoColonize.IntensiveResearch.Active ? (int)_tbotInstance.InstanceSettings.AutoColonize.IntensiveResearch.MaxSlots : 1,
 						(int)_tbotInstance.UserData.fleets.Count(f => f.Mission == Missions.Colonize)),
@@ -370,7 +502,7 @@ namespace Tbot.Workers {
 							break;
 						}
 
-						var fleet = BuildExpeditionFleet(origin, lfBonuses);
+						var fleet = BuildExpeditionFleet(origin, lfBonuses, count - attempt);
 						if (fleet == null || fleet.IsEmpty() || !refreshedShips.HasAtLeast(fleet, 1)) {
 							DoLog(LogLevel.Information,
 								$"No usable expedition fleet on {origin.Coordinate}; excluding this origin until the bounded retry.");
@@ -385,13 +517,16 @@ namespace Tbot.Workers {
 							payload.Deuterium = (long)_tbotInstance.InstanceSettings.Expeditions.FuelToCarry;
 
 						DoLog(LogLevel.Information, $"Sending expedition from {origin.Coordinate} to {destination}");
-						var fleetId = await _fleetScheduler.SendFleet(
-							origin,
-							fleet,
-							destination,
-							Missions.Expedition,
-							Speeds.HundredPercent,
-							payload);
+					var fleetId = await _fleetScheduler.SendFleet(
+						origin,
+						fleet,
+						destination,
+						Missions.Expedition,
+						Speeds.HundredPercent,
+						payload,
+						_tbotInstance.UserData.userInfo.Class,
+						false,
+						true);
 
 						if (fleetId == (int)SendFleetCode.AfterSleepTime) {
 							stop = true;
@@ -471,8 +606,12 @@ namespace Tbot.Workers {
 						_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
 						long interval;
 						try {
-							interval = (_tbotInstance.UserData.fleets.OrderBy(f => f.BackIn).First().BackIn ?? 0) * 1000 +
-								RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
+							var returningFleets = _tbotInstance.UserData.fleets.Where(f => f.BackIn.HasValue).ToList();
+							interval = returningFleets.Any()
+								? (returningFleets.Min(f => f.BackIn.Value) * 1000) + RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds)
+								: RandomizeHelper.CalcRandomInterval(
+									(int)_tbotInstance.InstanceSettings.Expeditions.CheckIntervalMin,
+									(int)_tbotInstance.InstanceSettings.Expeditions.CheckIntervalMax);
 						} catch {
 							interval = RandomizeHelper.CalcRandomInterval(
 								(int)_tbotInstance.InstanceSettings.Expeditions.CheckIntervalMin,

@@ -42,16 +42,54 @@ namespace Tbot.Workers.Brain {
 			throw new InvalidOperationException("Brain.AutoFleetJumpGate settings are missing.");
 		}
 
-		private JumpGateTarget GetTargetCoordinates(dynamic jumpGateSettings) {
+		private List<JumpGateTarget> GetTargetCoordinatesList(dynamic jumpGateSettings) {
 			if (!(jumpGateSettings is IDictionary<string, object> settings))
 				throw new InvalidOperationException("Brain.AutoFleetJumpGate settings are invalid.");
 
-			var target = JumpGateTargetResolver.Resolve(settings, out var usedLegacyArray);
-			if (usedLegacyArray)
-				DoLog(LogLevel.Warning,
-					"Brain.AutoFleetJumpGate.Target should be an object; using the first entry from the legacy array format.");
+			return JumpGateTargetResolver.ResolveAll(settings);
+		}
 
-			return target;
+		// Tries each configured target in order, falling back to the next one when the current
+		// moon doesn't exist or has no JumpGate facility (destroyed, never built, or the coordinate
+		// is simply wrong) - lets Target be a prioritized list instead of a single point of failure.
+		private async Task<Moon> ResolveTargetMoon(List<JumpGateTarget> targets) {
+			foreach (var targetCoordinates in targets) {
+				Celestial candidate = _tbotInstance.UserData.celestials.Unique()
+					.Where(c => c.Coordinate.Galaxy == targetCoordinates.Galaxy)
+					.Where(c => c.Coordinate.System == targetCoordinates.System)
+					.Where(c => c.Coordinate.Position == targetCoordinates.Position)
+					.Where(c => c.Coordinate.Type == Celestials.Moon)
+					.SingleOrDefault() ?? new() { ID = 0 };
+
+				if (candidate.ID == 0) {
+					DoLog(LogLevel.Warning,
+						$"Target moon not found: {targetCoordinates.Galaxy}:{targetCoordinates.System}:{targetCoordinates.Position}; trying next configured target if any.");
+					continue;
+				}
+
+				Moon moon;
+				try {
+					moon = await _tbotOgameBridge.UpdatePlanet(candidate, UpdateTypes.Facilities) as Moon;
+				} catch (Exception ex) {
+					DoLog(LogLevel.Error, $"Exception while validating target moon facilities for {candidate.Coordinate}: {ex.Message}");
+					continue;
+				}
+
+				if (moon == null) {
+					DoLog(LogLevel.Error, $"Failed to update target moon facilities for {candidate.Coordinate} - UpdatePlanet returned null");
+					continue;
+				}
+
+				if (moon.Facilities.JumpGate <= 0) {
+					DoLog(LogLevel.Warning,
+						$"Target moon {moon.Coordinate} does not have JumpGate facility (Level: {moon.Facilities.JumpGate}); trying next configured target if any.");
+					continue;
+				}
+
+				return moon;
+			}
+
+			return null;
 		}
 
 		protected override async Task Execute() {
@@ -65,42 +103,11 @@ namespace Tbot.Workers.Brain {
 				await SetDefaultWorkerPeriod();
 				try {
 					jumpGateSettings = GetJumpGateSettings();
-					var targetCoordinates = GetTargetCoordinates(jumpGateSettings);
-					// Get target moon coordinates
-					var targetGalaxy = targetCoordinates.Galaxy;
-					var targetSystem = targetCoordinates.System;
-					var targetPosition = targetCoordinates.Position;
+					var targetCoordinatesList = GetTargetCoordinatesList(jumpGateSettings);
+					var moondest = await ResolveTargetMoon(targetCoordinatesList);
 
-					Celestial moondest = _tbotInstance.UserData.celestials.Unique()
-						.Where(c => c.Coordinate.Galaxy == targetGalaxy)
-						.Where(c => c.Coordinate.System == targetSystem)
-						.Where(c => c.Coordinate.Position == targetPosition)
-						.Where(c => c.Coordinate.Type == Celestials.Moon)
-						.SingleOrDefault() ?? new() { ID = 0 };
-
-					if (moondest.ID == 0) {
-						DoLog(LogLevel.Warning,
-							$"Target moon not found: {targetGalaxy}:{targetSystem}:{targetPosition}");
-						return;
-					}
-
-
-					// Update target moon facilities to check JumpGate
-					try {
-						moondest = await _tbotOgameBridge.UpdatePlanet(moondest, UpdateTypes.Facilities) as Moon;
-						if (moondest == null) {
-							DoLog(LogLevel.Error,
-								$"Failed to update target moon facilities - UpdatePlanet returned null");
-							return;
-						}
-
-						if (moondest.Facilities.JumpGate <= 0) {
-							DoLog(LogLevel.Error,
-								$"Target moon {moondest.Coordinate} does not have JumpGate facility (Level: {moondest.Facilities.JumpGate})");
-							return;
-						}
-					} catch (Exception ex) {
-						DoLog(LogLevel.Error, $"Exception while validating target moon facilities: {ex.Message}");
+					if (moondest == null) {
+						DoLog(LogLevel.Error, "No configured target moon is usable (not found or missing JumpGate facility).");
 						return;
 					}
 

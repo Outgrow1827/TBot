@@ -5,29 +5,46 @@ namespace TBot.Model {
 	public readonly record struct JumpGateTarget(int Galaxy, int System, int Position);
 
 	/// <summary>
-	/// Reads the current JumpGate target shape and the legacy single-item array
-	/// shape. The worker can therefore migrate the default without breaking an
-	/// existing instance file.
+	/// Reads the AutoFleetJumpGate.Target setting, which accepts either a single target object
+	/// (kept for backwards compatibility) or an array of targets. The array lets the worker fall
+	/// back to the next moon in the list when the current one has no JumpGate facility (built,
+	/// destroyed, or never had one) - resolving to a single JumpGateTarget would silently drop
+	/// every entry but the first.
 	/// </summary>
 	public static class JumpGateTargetResolver {
-		public static JumpGateTarget Resolve(
-			IDictionary<string, object> settings,
-			out bool usedLegacyArray) {
+		public static List<JumpGateTarget> ResolveAll(IDictionary<string, object> settings) {
 			if (settings == null || !settings.TryGetValue("Target", out var rawTarget) || rawTarget == null)
 				throw new InvalidOperationException("Brain.AutoFleetJumpGate.Target settings are missing.");
 
-			usedLegacyArray = false;
+			var results = new List<JumpGateTarget>();
 			if (rawTarget is Array targetArray) {
 				if (targetArray.Length == 0)
 					throw new InvalidOperationException("Brain.AutoFleetJumpGate.Target array is empty.");
 
-				usedLegacyArray = true;
-				rawTarget = targetArray.GetValue(0);
+				foreach (var item in targetArray) {
+					if (item is IDictionary<string, object> entry)
+						results.Add(ToTarget(entry));
+				}
+			} else if (rawTarget is IDictionary<string, object> target) {
+				results.Add(ToTarget(target));
+			} else {
+				throw new InvalidOperationException("Brain.AutoFleetJumpGate.Target must be an object or an array of objects.");
 			}
 
-			if (!(rawTarget is IDictionary<string, object> target))
-				throw new InvalidOperationException("Brain.AutoFleetJumpGate.Target must be an object.");
+			if (results.Count == 0)
+				throw new InvalidOperationException("Brain.AutoFleetJumpGate.Target did not contain any valid entry.");
 
+			return results;
+		}
+
+		// Kept for callers that only ever want the first configured target.
+		public static JumpGateTarget Resolve(IDictionary<string, object> settings, out bool usedLegacyArray) {
+			var all = ResolveAll(settings);
+			usedLegacyArray = false;
+			return all[0];
+		}
+
+		private static JumpGateTarget ToTarget(IDictionary<string, object> target) {
 			return new JumpGateTarget(
 				Convert.ToInt32(target["Galaxy"]),
 				Convert.ToInt32(target["System"]),

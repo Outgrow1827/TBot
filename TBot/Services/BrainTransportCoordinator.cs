@@ -47,10 +47,14 @@ namespace Tbot.Services {
 		// just the next level - so the fleet doesn't need a second trip mid-queue. Starts counting
 		// from `startingLevel` (the level about to be queued) and keeps adding subsequent levels'
 		// cost until their cumulative build time would exceed the round-trip flight time.
+		// Includes the deuterium fuel cost for the round-trip transport.
+		// For ships (SolarSatellite/Crawler), `startingLevel` is the TOTAL quantity needed — they are
+		// queued all at once, not built sequentially level by level. So we do NOT add extra units.
 		public static Resources CalcResourcesForRoundTrip(
 			ICalculationService calculationService,
 			Celestial celestial,
 			Coordinate origin,
+			Buildables preferredShip,
 			Buildables buildable,
 			int startingLevel,
 			Researches researches,
@@ -60,22 +64,40 @@ namespace Tbot.Services {
 			AllianceClass allianceClass,
 			int cumulativeLabLevel = 0) {
 
-			long roundTripSeconds = calculationService.CalcFleetPrediction(
-				origin, celestial.Coordinate, new Ships(), Missions.Transport,
+			var timeShips = new Ships();
+			timeShips.Add(preferredShip, 1);
+			var fleetPrediction = calculationService.CalcFleetPrediction(
+				origin, celestial.Coordinate, timeShips, Missions.Transport,
 				Speeds.HundredPercent, researches, serverData, celestial.LFBonuses, playerClass, allianceClass
-			).Time * 2;
+			);
+			long flightWindowSeconds = fleetPrediction.Time * 2;
 
-			int level = startingLevel;
-			Resources total = calculationService.CalcPrice(buildable, level, celestial.LFBonuses);
-			long elapsed = calculationService.CalcProductionTime(buildable, level, serverData, facilities, cumulativeLabLevel);
+			bool isShip = buildable == Buildables.SolarSatellite || buildable == Buildables.Crawler;
 
-			int levelsAdded = 0;
-			while (elapsed < roundTripSeconds && levelsAdded < 50) {
-				level++;
-				total = total.Sum(calculationService.CalcPrice(buildable, level, celestial.LFBonuses));
-				elapsed += calculationService.CalcProductionTime(buildable, level, serverData, facilities, cumulativeLabLevel);
-				levelsAdded++;
+			Resources total = calculationService.CalcPrice(buildable, startingLevel, celestial.LFBonuses);
+			long elapsed = isShip
+				? calculationService.CalcProductionTime(buildable, 1, serverData, facilities, cumulativeLabLevel) * startingLevel
+				: calculationService.CalcProductionTime(buildable, startingLevel, serverData, facilities, cumulativeLabLevel);
+
+			if (!isShip) {
+				int level = startingLevel;
+				int levelsAdded = 0;
+				while (elapsed < flightWindowSeconds && levelsAdded < 10) {
+					level++;
+					total = total.Sum(calculationService.CalcPrice(buildable, level, celestial.LFBonuses));
+					elapsed += calculationService.CalcProductionTime(buildable, level, serverData, facilities, cumulativeLabLevel);
+					levelsAdded++;
+				}
 			}
+
+			long shipsNeeded = calculationService.CalcShipNumberForPayload(total, preferredShip, researches.HyperspaceTechnology, serverData, 0, playerClass, 0);
+			var fuelShips = new Ships();
+			fuelShips.Add(preferredShip, shipsNeeded);
+			long roundTripFuel = calculationService.CalcFleetPrediction(
+				origin, celestial.Coordinate, fuelShips, Missions.Transport,
+				Speeds.HundredPercent, researches, serverData, celestial.LFBonuses, playerClass, allianceClass
+			).Fuel * 2;
+			total = total.Sum(new Resources(0, 0, roundTripFuel));
 
 			return total;
 		}
@@ -85,6 +107,7 @@ namespace Tbot.Services {
 			ICalculationService calculationService,
 			Celestial celestial,
 			Coordinate origin,
+			Buildables preferredShip,
 			LFBuildables buildable,
 			int startingLevel,
 			Researches researches,
@@ -95,22 +118,34 @@ namespace Tbot.Services {
 			CharacterClass playerClass,
 			AllianceClass allianceClass) {
 
-			long roundTripSeconds = calculationService.CalcFleetPrediction(
-				origin, celestial.Coordinate, new Ships(), Missions.Transport,
+			var timeShips = new Ships();
+			timeShips.Add(preferredShip, 1);
+			var fleetPrediction = calculationService.CalcFleetPrediction(
+				origin, celestial.Coordinate, timeShips, Missions.Transport,
 				Speeds.HundredPercent, researches, serverData, celestial.LFBonuses, playerClass, allianceClass
-			).Time * 2;
+			);
+			long flightWindowSeconds = fleetPrediction.Time * 2;
 
 			int level = startingLevel;
 			Resources total = calculationService.CalcPrice(buildable, level, costReduction, energyCostReduction, populationCostReduction);
 			long elapsed = calculationService.CalcProductionTime(buildable, level, serverData, celestial);
 
 			int levelsAdded = 0;
-			while (elapsed < roundTripSeconds && levelsAdded < 50) {
+			while (elapsed < flightWindowSeconds && levelsAdded < 10) {
 				level++;
 				total = total.Sum(calculationService.CalcPrice(buildable, level, costReduction, energyCostReduction, populationCostReduction));
 				elapsed += calculationService.CalcProductionTime(buildable, level, serverData, celestial);
 				levelsAdded++;
 			}
+
+			long shipsNeeded = calculationService.CalcShipNumberForPayload(total, preferredShip, researches.HyperspaceTechnology, serverData, 0, playerClass, 0);
+			var fuelShips = new Ships();
+			fuelShips.Add(preferredShip, shipsNeeded);
+			long roundTripFuel = calculationService.CalcFleetPrediction(
+				origin, celestial.Coordinate, fuelShips, Missions.Transport,
+				Speeds.HundredPercent, researches, serverData, celestial.LFBonuses, playerClass, allianceClass
+			).Fuel * 2;
+			total = total.Sum(new Resources(0, 0, roundTripFuel));
 
 			return total;
 		}
@@ -120,6 +155,7 @@ namespace Tbot.Services {
 			ICalculationService calculationService,
 			Celestial celestial,
 			Coordinate origin,
+			Buildables preferredShip,
 			LFTechno buildable,
 			int startingLevel,
 			Researches researches,
@@ -128,22 +164,34 @@ namespace Tbot.Services {
 			CharacterClass playerClass,
 			AllianceClass allianceClass) {
 
-			long roundTripSeconds = calculationService.CalcFleetPrediction(
-				origin, celestial.Coordinate, new Ships(), Missions.Transport,
+			var timeShips = new Ships();
+			timeShips.Add(preferredShip, 1);
+			var fleetPrediction = calculationService.CalcFleetPrediction(
+				origin, celestial.Coordinate, timeShips, Missions.Transport,
 				Speeds.HundredPercent, researches, serverData, celestial.LFBonuses, playerClass, allianceClass
-			).Time * 2;
+			);
+			long flightWindowSeconds = fleetPrediction.Time * 2;
 
 			int level = startingLevel;
 			Resources total = calculationService.CalcPrice(buildable, level, costReduction);
 			long elapsed = calculationService.CalcProductionTime(buildable, level, serverData, costReduction);
 
 			int levelsAdded = 0;
-			while (elapsed < roundTripSeconds && levelsAdded < 50) {
+			while (elapsed < flightWindowSeconds && levelsAdded < 10) {
 				level++;
 				total = total.Sum(calculationService.CalcPrice(buildable, level, costReduction));
 				elapsed += calculationService.CalcProductionTime(buildable, level, serverData, costReduction);
 				levelsAdded++;
 			}
+
+			long shipsNeeded = calculationService.CalcShipNumberForPayload(total, preferredShip, researches.HyperspaceTechnology, serverData, 0, playerClass, 0);
+			var fuelShips = new Ships();
+			fuelShips.Add(preferredShip, shipsNeeded);
+			long roundTripFuel = calculationService.CalcFleetPrediction(
+				origin, celestial.Coordinate, fuelShips, Missions.Transport,
+				Speeds.HundredPercent, researches, serverData, celestial.LFBonuses, playerClass, allianceClass
+			).Fuel * 2;
+			total = total.Sum(new Resources(0, 0, roundTripFuel));
 
 			return total;
 		}

@@ -11,7 +11,8 @@ namespace TBot.Model {
 	/// </summary>
 	public sealed class AutoDiscoveryCursorStore {
 		private sealed class CursorEntry {
-			public int System { get; set; }
+			public int OriginSystem { get; set; }
+			public int Step { get; set; }
 			public int NextPosition { get; set; }
 		}
 
@@ -31,7 +32,7 @@ namespace TBot.Model {
 				if (!_entries.TryGetValue(key, out var entry))
 					return new DiscoveryCursorState(fallbackSystem);
 
-				return new DiscoveryCursorState(entry.System, entry.NextPosition);
+				return new DiscoveryCursorState(entry.OriginSystem, entry.Step, entry.NextPosition);
 			}
 		}
 
@@ -41,7 +42,8 @@ namespace TBot.Model {
 
 			lock (_lock) {
 				_entries[key] = new CursorEntry {
-					System = cursor.System,
+					OriginSystem = cursor.OriginSystem,
+					Step = cursor.Step,
 					NextPosition = cursor.NextPosition
 				};
 				Persist();

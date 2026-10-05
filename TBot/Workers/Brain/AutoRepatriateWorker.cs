@@ -39,7 +39,10 @@ namespace Tbot.Workers.Brain {
 					if (result == RepatriateCode.Delay) {
 						DoLog(LogLevel.Information, $"Delaying...");
 						_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
-						interval = (_tbotInstance.UserData.fleets.OrderBy(f => f.BackIn).First().BackIn ?? 0) * 1000 + RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
+						var returningFleets = _tbotInstance.UserData.fleets.Where(f => f.BackIn.HasValue).ToList();
+						interval = returningFleets.Any()
+							? (returningFleets.Min(f => f.BackIn.Value) * 1000) + RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds)
+							: RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);
 					}
 					if (interval <= 0)
 						interval = RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds);

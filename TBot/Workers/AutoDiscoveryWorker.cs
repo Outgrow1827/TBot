@@ -193,6 +193,24 @@ namespace Tbot.Workers {
 				}
 			}
 
+			// The account-wide "search for life forms again in X" cooldown (separate from
+			// per-system position availability below) can leave every system reporting 0 available
+			// positions for days at a time with no way to tell why from that alone - confirmed live
+			// 2026-08-29 via a real overview page capture showing a multi-day cooldown still active.
+			// Checking it here avoids uselessly scanning systems while it's active.
+			try {
+				var cooldown = await _ogameService.GetDiscoveryCooldown(origin);
+				if (cooldown != null && !cooldown.Available) {
+					var remaining = TimeSpan.FromSeconds(cooldown.CooldownSeconds);
+					DoLog(LogLevel.Information, $"Skipping {origin.Coordinate}: AutoDiscovery is on cooldown for {remaining:d\\d\\ hh\\h\\ mm\\m} more.");
+					return discoveries;
+				}
+			} catch (Exception e) {
+				// Best-effort - a failure here shouldn't stop the worker from trying the normal
+				// per-system scan below.
+				DoLog(LogLevel.Debug, $"Unable to check discovery cooldown for {origin.Coordinate}: {e.Message}");
+			}
+
 			DateTime now = await _tbotOgameBridge.GetDateTime();
 			int systemToDo = cursor.System;
 			int maxSystem = _tbotInstance.UserData.serverData.Systems;
