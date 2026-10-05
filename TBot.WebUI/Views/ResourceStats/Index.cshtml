@@ -1,0 +1,218 @@
+@using System.Text.Json
+@using System.Text.Encodings.Web
+@model TBot.WebUI.Models.ResourceStatsModel
+
+@{
+    var jsonOptions = new JsonSerializerOptions {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        Encoder = JavaScriptEncoder.Default
+    };
+    var initialSnapshot = JsonSerializer.Serialize(Model, jsonOptions);
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/resourcestats-dark.css" asp-append-version="true" />
+}
+
+<div class="resstats-page" id="resstats-dashboard" data-instance="@Model.SelectedInstance">
+    <div class="resstats-shell">
+        <header class="resstats-header">
+            <div>
+                <h1>Resource Stats</h1>
+                <p class="intro">Production, consumption and stockpile history collected once per AutoMine cycle.</p>
+            </div>
+            <form method="get" class="instance-picker">
+                <label for="instance">Instance</label>
+                <div class="instance-controls">
+                    <select id="instance" name="instance">
+                        @foreach (var instance in Model.Instances)
+                        {
+                            if (string.Equals(instance, Model.SelectedInstance, StringComparison.OrdinalIgnoreCase))
+                            {
+                                <option value="@instance" selected>@instance</option>
+                            }
+                            else
+                            {
+                                <option value="@instance">@instance</option>
+                            }
+                        }
+                    </select>
+                    <button type="submit" class="refresh-button">Open</button>
+                </div>
+            </form>
+        </header>
+
+        <div class="dashboard-toolbar" role="status" aria-live="polite">
+            <span id="poll-status">Loading current data...</span>
+        </div>
+
+        <div id="dashboard-content"></div>
+    </div>
+</div>
+
+<script>
+    (() => {
+        const root = document.getElementById("resstats-dashboard");
+        const content = document.getElementById("dashboard-content");
+        const pollStatus = document.getElementById("poll-status");
+        const instance = root.dataset.instance;
+        const snapshotUrl = '@Url.Action("Snapshot", "ResourceStats")';
+        let snapshot = @Html.Raw(initialSnapshot);
+        let renderedKey = "";
+        let requestInProgress = false;
+
+        function escapeHtml(value) {
+            return String(value ?? "")
+                .replaceAll("&", "&amp;")
+                .replaceAll("<", "&lt;")
+                .replaceAll(">", "&gt;")
+                .replaceAll('"', "&quot;")
+                .replaceAll("'", "&#039;");
+        }
+
+        function formatNumber(value) {
+            return Number(value ?? 0).toLocaleString("en-US");
+        }
+
+        function formatDate(value) {
+            if (!value) return "never";
+            const date = new Date(value);
+            return isNaN(date.getTime()) ? "never" : date.toLocaleString();
+        }
+
+        function renderTotals(model) {
+            const totals = model.totals ?? {};
+            return `
+                <div class="resstats-totals">
+                    <div class="resstats-card">
+                        <div class="label">Metal stockpile</div>
+                        <div class="value metal">${formatNumber(totals.metal)}</div>
+                        <div class="sub">+${formatNumber(totals.metalHourlyProduction)}/h</div>
+                    </div>
+                    <div class="resstats-card">
+                        <div class="label">Crystal stockpile</div>
+                        <div class="value crystal">${formatNumber(totals.crystal)}</div>
+                        <div class="sub">+${formatNumber(totals.crystalHourlyProduction)}/h</div>
+                    </div>
+                    <div class="resstats-card">
+                        <div class="label">Deuterium stockpile</div>
+                        <div class="value deuterium">${formatNumber(totals.deuterium)}</div>
+                        <div class="sub">+${formatNumber(totals.deuteriumHourlyProduction)}/h</div>
+                    </div>
+                    <div class="resstats-card">
+                        <div class="label">Last updated</div>
+                        <div class="value" style="font-size:1rem;">${escapeHtml(formatDate(totals.lastUpdatedUtc))}</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderCelestialsTable(model) {
+            const rows = model.celestials ?? [];
+            if (rows.length === 0)
+                return `<div class="resstats-empty">No snapshots recorded yet. AutoMine needs to run at least one cycle for this instance.</div>`;
+
+            const body = rows.map(row => `
+                <tr>
+                    <td>${escapeHtml(row.celestialName)} <span style="color:#9aa5b1;">${escapeHtml(row.coordinate)}</span></td>
+                    <td class="metal">+${formatNumber(row.metalHourlyProduction)}/h</td>
+                    <td class="crystal">+${formatNumber(row.crystalHourlyProduction)}/h</td>
+                    <td class="deuterium">+${formatNumber(row.deuteriumHourlyProduction)}/h</td>
+                    <td>${formatNumber(row.energy)}</td>
+                </tr>
+            `).join("");
+
+            return `
+                <table class="resstats-table">
+                    <thead>
+                        <tr>
+                            <th>Celestial</th>
+                            <th>Metal/h</th><th>Crystal/h</th><th>Deuterium/h</th>
+                            <th>Energy</th>
+                        </tr>
+                    </thead>
+                    <tbody>${body}</tbody>
+                </table>
+            `;
+        }
+
+        function drawHistoryChart(history) {
+            const canvas = document.getElementById("history-canvas");
+            if (!canvas) return;
+            const ctx = canvas.getContext("2d");
+            const width = canvas.width = canvas.clientWidth * devicePixelRatio;
+            const height = canvas.height = canvas.clientHeight * devicePixelRatio;
+            ctx.clearRect(0, 0, width, height);
+            if (!history || history.length < 2) {
+                ctx.font = `${14 * devicePixelRatio}px system-ui`;
+                ctx.fillStyle = "var(--text-muted, #6e7681)";
+                ctx.fillText("Not enough data yet for a chart", 12 * devicePixelRatio, height / 2);
+                return;
+            }
+
+            const series = [
+                { key: "metal", color: "var(--accent-gold, #d29922)" },
+                { key: "crystal", color: "var(--accent-blue, #58a6ff)" },
+                { key: "deuterium", color: "var(--accent-green, #3fb950)" }
+            ];
+            const maxValue = Math.max(1, ...history.flatMap(point => series.map(s => point[s.key] ?? 0)));
+            const padding = 8 * devicePixelRatio;
+            const plotWidth = width - padding * 2;
+            const plotHeight = height - padding * 2;
+
+            series.forEach(s => {
+                ctx.beginPath();
+                ctx.strokeStyle = s.color;
+                ctx.lineWidth = 2 * devicePixelRatio;
+                history.forEach((point, index) => {
+                    const x = padding + (plotWidth * index) / (history.length - 1);
+                    const y = padding + plotHeight - (plotHeight * (point[s.key] ?? 0)) / maxValue;
+                    if (index === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                });
+                ctx.stroke();
+            });
+        }
+
+function render(model) {
+            content.innerHTML = `
+                ${renderTotals(model)}
+                <div class="resstats-section-title">Stockpile & production history (last ${model.history?.length ?? 0} cycles)</div>
+                <canvas id="history-canvas" style="width:100%;height:180px;border:1px solid var(--border-primary, #30363d);border-radius:8px;background:var(--bg-secondary, #161b22);display:block;"></canvas>
+                <div class="resstats-section-title">By celestial</div>
+                ${renderCelestialsTable(model)}
+            `;
+            drawHistoryChart(model.history);
+        }
+
+        function scheduleRender(model) {
+            const key = JSON.stringify(model);
+            if (key === renderedKey) return;
+            renderedKey = key;
+            render(model);
+        }
+
+        async function refresh() {
+            if (requestInProgress) return;
+            requestInProgress = true;
+            try {
+                const response = await fetch(`${snapshotUrl}?instance=${encodeURIComponent(instance)}`, { cache: "no-store" });
+                if (response.ok) {
+                    snapshot = await response.json();
+                    pollStatus.textContent = `Updated ${new Date().toLocaleTimeString()}`;
+                    scheduleRender(snapshot);
+                } else {
+                    pollStatus.textContent = "Failed to refresh (server error)";
+                }
+            } catch {
+                pollStatus.textContent = "Failed to refresh (network error)";
+            } finally {
+                requestInProgress = false;
+            }
+        }
+
+        scheduleRender(snapshot);
+        pollStatus.textContent = "Live";
+        window.setInterval(refresh, 5000);
+    })();
+</script>

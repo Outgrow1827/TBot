@@ -1,0 +1,167 @@
+/* Dark theme for ResourceStats dashboard */
+.resstats-page {
+    padding: 1.5rem;
+    font-family: system-ui, sans-serif;
+    color: var(--text-primary, #e6edf3);
+    background: transparent;
+}
+
+.resstats-shell {
+    max-width: 1100px;
+    margin: 0 auto;
+}
+
+.resstats-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.resstats-header h1 {
+    margin: 0;
+    font-size: 1.5rem;
+    color: var(--text-primary, #e6edf3);
+}
+
+.resstats-header .intro {
+    margin: 0.25rem 0 0;
+    color: var(--text-secondary, #8b949e);
+    font-size: 0.9rem;
+}
+
+.instance-picker {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.instance-controls {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.instance-picker select,
+.refresh-button,
+.plain-button {
+    padding: 0.4rem 0.8rem;
+    border-radius: 6px;
+    border: 1px solid var(--border-primary, #30363d);
+    background: var(--bg-secondary, #161b22);
+    color: var(--text-primary, #e6edf3);
+    cursor: pointer;
+    font: inherit;
+}
+
+.refresh-button:hover,
+.plain-button:hover {
+    background: var(--bg-hover, #2d333b);
+}
+
+.resstats-totals {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 0.75rem;
+    margin: 1rem 0;
+}
+
+.resstats-card {
+    background: var(--bg-secondary, #161b22);
+    border: 1px solid var(--border-primary, #30363d);
+    border-radius: 8px;
+    padding: 0.9rem 1rem;
+}
+
+.resstats-card .label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted, #6e7681);
+}
+
+.resstats-card .value {
+    font-size: 1.3rem;
+    font-weight: 600;
+    margin-top: 0.2rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary, #e6edf3);
+}
+
+.resstats-card .sub {
+    font-size: 0.8rem;
+    color: var(--text-secondary, #8b949e);
+    margin-top: 0.15rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.metal { color: var(--accent-gold, #d29922); }
+.crystal { color: var(--accent-blue, #58a6ff); }
+.deuterium { color: var(--accent-green, #3fb950); }
+
+.resstats-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    margin-top: 0.5rem;
+}
+
+.resstats-table th,
+.resstats-table td {
+    padding: 0.4rem 0.6rem;
+    border-bottom: 1px solid var(--border-secondary, #21262d);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary, #e6edf3);
+}
+
+.resstats-table th:first-child,
+.resstats-table td:first-child {
+    text-align: left;
+}
+
+.resstats-table th {
+    color: var(--text-muted, #6e7681);
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    background: var(--bg-secondary, #161b22);
+}
+
+.resstats-table tbody tr:hover {
+    background: var(--bg-hover, #2d333b);
+}
+
+.resstats-section-title {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 1.5rem 0 0.25rem;
+    color: var(--text-primary, #e6edf3);
+}
+
+#history-chart {
+    width: 100%;
+    height: 180px;
+    border: 1px solid var(--border-primary, #30363d);
+    border-radius: 8px;
+    background: var(--bg-secondary, #161b22);
+}
+
+#poll-status {
+    font-size: 0.8rem;
+    color: var(--text-muted, #6e7681);
+}
+
+.resstats-empty {
+    padding: 1rem;
+    background: var(--bg-secondary, #161b22);
+    border: 1px dashed var(--border-primary, #30363d);
+    border-radius: 8px;
+    color: var(--text-secondary, #8b949e);
+}
+
+/* Canvas chart text color fix */
+#history-canvas {
+    display: block;
+}
