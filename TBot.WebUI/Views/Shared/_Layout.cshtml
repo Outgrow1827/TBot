@@ -19,6 +19,7 @@
 
     <title>T-Bot</title>
     <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="~/css/layout-dark.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
     @await RenderSectionAsync("Styles", required: false)
     <script src="~/lib/jquery/dist/jquery.min.js"></script>
@@ -47,6 +48,18 @@
                         </li>
                         <li class="nav-item">
                             <a class="nav-link text-light" asp-area="" asp-controller="AutoFarm" asp-action="Index">AutoFarm</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link text-light" asp-area="" asp-controller="ResourceStats" asp-action="Index">Resource Stats</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link text-light" asp-area="" asp-controller="Expeditions" asp-action="Index">Expeditions</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link text-light" asp-area="" asp-controller="AutoHarvest" asp-action="Index">AutoHarvest</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link text-light" asp-area="" asp-controller="AutoDiscovery" asp-action="Index">AutoDiscovery</a>
                         </li>
                     </ul>
                 </div>

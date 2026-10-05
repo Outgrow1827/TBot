@@ -1,0 +1,100 @@
+/* Dark theme for Settings page */
+.list-files {
+    list-style-type: none;
+    padding: 0;
+    margin: 0;
+    margin-bottom: 20px;
+    max-height: calc(100vh - 160px);
+    overflow-y: auto;
+}
+
+.list-files li {
+    margin-bottom: 5px;
+}
+
+.list-files > li > .btn.selected {
+    background-color: var(--bg-tertiary, #21262d);
+    border-color: var(--accent-blue, #58a6ff);
+    color: var(--text-primary, #e6edf3);
+}
+
+.list-files .file-entry {
+    width: 100%;
+    text-align: left;
+}
+
+.buttons-box {
+    margin-bottom: 20px;
+}
+
+.buttons-box .btn {
+    margin-right: 5px;
+}
+
+#json-display {
+    min-height: 50vh;
+    padding: 10px 30px;
+    max-height: calc(100vh - 180px);
+    overflow-y: scroll;
+    margin-right: 10px;
+    background: var(--bg-secondary, #161b22);
+    border: 1px solid var(--border-primary, #30363d);
+    border-radius: 6px;
+    color: var(--text-primary, #e6edf3);
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+@media (max-width: 992px) {
+    #json-display {
+        max-height: unset;
+        overflow-y: auto;
+        margin-right: unset;
+    }
+}
+
+/* JSON Editor dark theme overrides */
+.jse--output {
+    outline: 1px solid var(--border-primary, #30363d) !important;
+    background-color: var(--bg-primary, #0d1117) !important;
+    background-image: linear-gradient(var(--bg-secondary, #161b22) 50%, transparent 50%, transparent) !important;
+    background-size: 60px 60px !important;
+    color: var(--text-primary, #e6edf3) !important;
+}
+
+.jse--output .jse--row:hover {
+    background-color: rgba(255, 255, 255, 0.01) !important;
+    outline: 1px dotted var(--text-muted, #6e7681) !important;
+}
+
+.jse--output .jse--delete {
+    color: var(--text-primary, #e6edf3) !important;
+}
+
+.jse--output .jse--row.jse--add .jse--plus {
+    color: var(--text-primary, #e6edf3) !important;
+}
+
+.jse--output .jse--typeof {
+    color: var(--text-muted, #6e7681) !important;
+}
+
+.jse--output input {
+    background-color: transparent !important;
+    color: var(--text-primary, #e6edf3) !important;
+}
+
+.jse--output input:hover {
+    background-color: rgba(255, 255, 255, 0.03) !important;
+}
+
+.jse--output input:focus {
+    outline: 1px solid var(--accent-blue, #58a6ff) !important;
+    background-color: var(--bg-tertiary, #21262d) !important;
+}
+
+.jse--output .jse--row-object > .jse--row,
+.jse--output .jse--row--array > .jse--row {
+    border-left: 1px dotted var(--border-primary, #30363d) !important;
+}

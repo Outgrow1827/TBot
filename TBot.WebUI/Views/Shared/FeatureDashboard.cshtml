@@ -1,0 +1,302 @@
+@using System.Text.Json
+@using System.Text.Encodings.Web
+@model TBot.WebUI.Models.FeatureDashboardModel
+
+@{
+    var jsonOptions = new JsonSerializerOptions {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        Encoder = JavaScriptEncoder.Default
+    };
+    var initialSnapshot = JsonSerializer.Serialize(Model, jsonOptions);
+    var controllerName = ViewContext.RouteData.Values["controller"]?.ToString() ?? "";
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/autofarm-dark.css" asp-append-version="true" />
+}
+
+<div class="autofarm-page" id="feature-dashboard" data-instance="@Model.SelectedInstance" data-controller="@controllerName">
+    <div class="autofarm-shell">
+        <header class="autofarm-header">
+            <div>
+                <h1>@Model.FeatureTitle</h1>
+                <p class="intro">@Model.FeatureIntro</p>
+            </div>
+            <form method="get" class="instance-picker">
+                <label for="instance">Instance</label>
+                <div class="instance-controls">
+                    <select id="instance" name="instance">
+                        @foreach (var instance in Model.Instances)
+                        {
+                            if (string.Equals(instance, Model.SelectedInstance, StringComparison.OrdinalIgnoreCase))
+                            {
+                                <option value="@instance" selected>@instance</option>
+                            }
+                            else
+                            {
+                                <option value="@instance">@instance</option>
+                            }
+                        }
+                    </select>
+                    <button type="submit" class="refresh-button">Open</button>
+                </div>
+            </form>
+        </header>
+
+        <div class="dashboard-toolbar" role="status" aria-live="polite">
+            <span id="poll-status">Loading current data...</span>
+            <span id="last-updated"></span>
+            <button type="button" class="plain-button" id="copy-logs">Copy logs</button>
+        </div>
+
+        <div id="dashboard-content"></div>
+    </div>
+</div>
+
+<script>
+    (() => {
+        const root = document.getElementById("feature-dashboard");
+        const content = document.getElementById("dashboard-content");
+        const pollStatus = document.getElementById("poll-status");
+        const lastUpdated = document.getElementById("last-updated");
+        const copyLogsButton = document.getElementById("copy-logs");
+        const instance = root.dataset.instance;
+        const snapshotUrl = `/${root.dataset.controller}/Snapshot`;
+        let snapshot = @Html.Raw(initialSnapshot);
+        let renderedSnapshotKey = "";
+        let requestInProgress = false;
+
+        function escapeHtml(value) {
+            return String(value ?? "")
+                .replaceAll("&", "&amp;")
+                .replaceAll("<", "&lt;")
+                .replaceAll(">", "&gt;")
+                .replaceAll('"', "&quot;")
+                .replaceAll("'", "&#039;");
+        }
+
+        function formatDate(value) {
+            if (!value) return "Not available";
+            const date = new Date(value);
+            return Number.isNaN(date.getTime()) ? "Not available" : date.toLocaleString();
+        }
+
+        function formatNumber(value) {
+            return Number(value || 0).toLocaleString();
+        }
+
+        function statusClass(value) {
+            return String(value || "unknown").toLowerCase().replace(/[^a-z0-9]+/g, "-");
+        }
+
+        function emptyRow(columns, message) {
+            return `<tr><td colspan="${columns}" class="empty-cell">${escapeHtml(message)}</td></tr>`;
+        }
+
+        function renderWorker(worker) {
+            return `<section class="panel">
+                <div class="panel-heading"><h2>Worker status</h2><span class="status status-${statusClass(worker.state)}">${escapeHtml(worker.state)}</span></div>
+                <dl class="facts-grid">
+                    <div><dt>Last activity</dt><dd>${formatDate(worker.lastActivityUtc)}</dd></div>
+                    <div><dt>Next execution</dt><dd>${escapeHtml(worker.nextExecutionText || "Not available")}</dd></div>
+                </dl>
+            </section>`;
+        }
+
+        function renderActivity(data) {
+            const maxSlots = data.maxSlots == null ? "Not configured" : formatNumber(data.maxSlots);
+            return `<section class="panel">
+                <div class="panel-heading"><h2>Activity</h2><span class="panel-count">Last 24h</span></div>
+                <div class="metric-grid">
+                    <div class="metric"><span>Fleets dispatched</span><strong>${formatNumber(data.dispatchesToday)}</strong></div>
+                    <div class="metric"><span>Configured max slots</span><strong>${maxSlots}</strong></div>
+                </div>
+            </section>`;
+        }
+
+        function renderLiveFleets(data) {
+            if (!data.liveFleetsAvailable) return "";
+            const fleets = data.liveFleets || [];
+            const rows = fleets.length ? fleets.map(fleet => `<tr>
+                <td class="mono">${escapeHtml(fleet.origin)} &rarr; ${escapeHtml(fleet.destination)}</td>
+                <td>${fleet.returnFlight ? "Returning" : "Outbound"}</td>
+                <td>${formatDate(fleet.arrivalTimeUtc)}</td>
+                <td class="resources">${formatNumber(fleet.totalResources)}</td>
+            </tr>`).join("") : emptyRow(4, "No fleets for this mission are currently in flight.");
+            return `<section class="panel">
+                <div class="panel-heading"><h2>Live fleets</h2><span class="panel-count">Read directly from ogamed, independent of Active</span></div>
+                <div class="table-wrap"><table><thead><tr><th>Route</th><th>Direction</th><th>Arrival</th><th>Resources</th></tr></thead><tbody>${rows}</tbody></table></div>
+            </section>`;
+        }
+
+        // AutoDiscovery results never carry Metal/Crystal/Deuterium (a discovery fleet doesn't
+        // bring resources back, only artifacts/lifeform XP) - show only the Artifacts metric there.
+        // Every other consumer of this shared view (Expeditions, AutoHarvest) shows the resource
+        // trio instead, matching AutoFarm's own dashboard (Views/AutoFarm/Index.cshtml) which has
+        // its own equivalent panel outside this shared file.
+        function renderResultsTotal(total, isAutodiscovery) {
+            if (!total) return "";
+            const artifacts = total.artifactsFound || 0;
+
+            if (isAutodiscovery) {
+                if (artifacts <= 0) return "";
+                return `<section class="panel">
+                    <div class="panel-heading"><h2>Gained (total)</h2><span class="panel-count">${formatNumber(artifacts)}</span></div>
+                    <div class="metric-grid">
+                        <div class="metric"><span>Artifacts</span><strong>${formatNumber(artifacts)}</strong></div>
+                    </div>
+                    <p class="panel-note">Lifetime total, permanently stored (not limited to recent entries).</p>
+                </section>`;
+            }
+
+            if (total.total <= 0) return "";
+            // Dark Matter is genuine expedition loot (never AutoHarvest's) - shown only when there's
+            // actually some, so it appears for Expeditions without adding an always-zero tile to
+            // AutoHarvest's copy of this same shared panel. Missing here since 2026-09-02 despite
+            // being tracked and summed server-side (FeatureDashboardReader.cs) - only the resource
+            // trio was ever rendered.
+            const dmTile = total.darkmatter > 0
+                ? `<div class="metric"><span>Dark Matter</span><strong>${formatNumber(total.darkmatter)}</strong></div>`
+                : "";
+            return `<section class="panel">
+                <div class="panel-heading"><h2>Gained (total)</h2><span class="panel-count">${formatNumber(total.total)}</span></div>
+                <div class="metric-grid">
+                    <div class="metric"><span>Metal</span><strong class="res-metal">${formatNumber(total.metal)}</strong></div>
+                    <div class="metric"><span>Crystal</span><strong class="res-crystal">${formatNumber(total.crystal)}</strong></div>
+                    <div class="metric"><span>Deuterium</span><strong class="res-deuterium">${formatNumber(total.deuterium)}</strong></div>
+                    ${dmTile}
+                </div>
+                <p class="panel-note">Lifetime total, permanently stored (not limited to recent entries).</p>
+            </section>`;
+        }
+
+        function renderResults(data) {
+            const results = data.results || [];
+            if (!results.length) return "";
+            // AutoDiscovery results never carry Resources/Ships (a discovery fleet doesn't bring
+            // any back) - show the artifacts/lifeform-XP amount instead of two always-empty columns.
+            const showArtifacts = !!data.resultsShowArtifactsColumn;
+            const lastColHeader = showArtifacts ? "Artifacts / Lifeform" : "Resources";
+            const rows = results.map(r => `<tr>
+                <td class="mono">${escapeHtml(r.coordinate)}</td>
+                <td>${escapeHtml(r.summary)}</td>
+                ${showArtifacts
+                    ? `<td class="resources">${escapeHtml(r.artifactsOrLifeform)}</td>`
+                    : `<td class="resources">${escapeHtml(r.resources)}</td><td>${escapeHtml(r.ships)}</td>`}
+                <td class="muted">${formatDate(r.timestampUtc)}</td>
+            </tr>`).join("");
+            const shipsHeader = showArtifacts ? "" : "<th>Ships</th>";
+            return `<section class="panel panel-primary">
+                <div class="panel-heading"><h2>Results</h2><span class="panel-count">${formatNumber(results.length)}</span></div>
+                <p class="panel-note">Structured result data, read directly from TBot's own store - not scraped from the log.</p>
+                <div class="table-wrap table-wrap-scroll"><table><thead><tr><th>Coordinate</th><th>Summary</th><th>${lastColHeader}</th>${shipsHeader}<th>When</th></tr></thead><tbody>${rows}</tbody></table></div>
+            </section>`;
+        }
+
+        function renderErrors(errors) {
+            const rows = errors.length ? errors.map(log => `<tr><td>${formatDate(log.dateTimeUtc)}</td><td>${escapeHtml(log.sender)}</td><td class="log-message">${escapeHtml(log.message)}</td></tr>`).join("") : emptyRow(3, "No recent errors or warnings.");
+            return `<section class="panel">
+                <div class="panel-heading"><h2>Recent errors</h2><button type="button" class="plain-button copy-errors" id="copy-errors">Copy errors</button></div>
+                <div class="table-wrap"><table><thead><tr><th>When</th><th>Source</th><th>Message</th></tr></thead><tbody>${rows}</tbody></table></div>
+            </section>`;
+        }
+
+        function renderLogs(logs) {
+            const text = logs.map(log => log.copyText).join("\n");
+            return `<section class="panel">
+                <details class="logs-details" id="feature-log-details">
+                    <summary id="feature-log-summary">Recent logs (${formatNumber(logs.length)})</summary>
+                    <pre>${escapeHtml(text || "No logs available.")}</pre>
+                </details>
+            </section>`;
+        }
+
+        function captureUiState() {
+            const activeElement = document.activeElement;
+            return {
+                activeId: activeElement && activeElement.id ? activeElement.id : null,
+                details: Array.from(content.querySelectorAll("details[id]")).map(details => ({ id: details.id, open: details.open })),
+                scrollTop: window.scrollY
+            };
+        }
+
+        function restoreUiState(state) {
+            state.details.forEach(item => {
+                const details = document.getElementById(item.id);
+                if (details) details.open = item.open;
+            });
+
+            if (state.activeId) {
+                const activeElement = document.getElementById(state.activeId);
+                if (activeElement) activeElement.focus({ preventScroll: true });
+            }
+
+            window.scrollTo(0, state.scrollTop);
+        }
+
+        function render(data) {
+            snapshot = data;
+            const nextSnapshotKey = JSON.stringify(data);
+            if (nextSnapshotKey === renderedSnapshotKey) return;
+
+            const uiState = captureUiState();
+            const isAutodiscovery = root.dataset.controller?.toLowerCase() === "autodiscovery";
+            content.innerHTML = [
+                renderWorker(data.worker),
+                renderResultsTotal(data.resultsTotal, isAutodiscovery),
+                renderActivity(data),
+                renderLiveFleets(data),
+                renderResults(data),
+                renderErrors(data.errors),
+                renderLogs(data.logs)
+            ].join("");
+            renderedSnapshotKey = nextSnapshotKey;
+            restoreUiState(uiState);
+        }
+
+        async function copyText(text, button) {
+            const original = button.textContent;
+            if (!text) {
+                button.textContent = "Nothing to copy";
+                setTimeout(() => button.textContent = original, 1800);
+                return;
+            }
+            try {
+                await navigator.clipboard.writeText(text);
+                button.textContent = "Copied";
+                setTimeout(() => button.textContent = original, 1800);
+            } catch {
+                button.textContent = "Copy failed";
+                setTimeout(() => button.textContent = original, 1800);
+            }
+        }
+
+        copyLogsButton.addEventListener("click", () => copyText(snapshot.logs.map(log => log.copyText).join("\n"), copyLogsButton));
+        document.addEventListener("click", event => {
+            const button = event.target.closest(".copy-errors");
+            if (!button) return;
+            copyText(snapshot.errors.map(log => log.copyText).join("\n"), button);
+        });
+
+        async function refresh() {
+            if (requestInProgress || document.hidden) return;
+            requestInProgress = true;
+            try {
+                const response = await fetch(`${snapshotUrl}?instance=${encodeURIComponent(instance)}`, { cache: "no-store" });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                render(await response.json());
+                pollStatus.textContent = "Live updates enabled";
+                lastUpdated.textContent = `Last updated ${new Date().toLocaleTimeString()}`;
+            } catch (error) {
+                pollStatus.textContent = "Live update failed. The last known data is still shown.";
+                lastUpdated.textContent = error.message;
+            } finally {
+                requestInProgress = false;
+            }
+        }
+
+        render(snapshot);
+        refresh();
+        window.setInterval(refresh, 5000);
+    })();
+</script>

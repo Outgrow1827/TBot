@@ -1,0 +1,204 @@
+/* Dark theme for Layout - ensures WCAG AA contrast on dark backgrounds */
+a.navbar-brand {
+  white-space: normal;
+  text-align: center;
+  word-break: break-all;
+}
+
+a {
+  color: #58a6ff;
+}
+
+a:hover {
+  color: #79c0ff;
+}
+
+.btn-primary {
+  color: #fff;
+  background-color: #1f6feb;
+  border-color: #1f6feb;
+}
+
+.btn-primary:hover,
+.btn-primary:focus {
+  background-color: #388bfd;
+  border-color: #388bfd;
+}
+
+.nav-pills .nav-link.active, .nav-pills .show > .nav-link {
+  color: #fff;
+  background-color: #1f6feb;
+  border-color: #1f6feb;
+}
+
+.border-top {
+  border-top: 1px solid #30363d;
+}
+
+.border-bottom {
+  border-bottom: 1px solid #30363d;
+}
+
+.box-shadow {
+  box-shadow: 0 .25rem .75rem rgba(0, 0, 0, .4);
+}
+
+button.accept-policy {
+  font-size: 1rem;
+  line-height: inherit;
+}
+
+.footer {
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  white-space: nowrap;
+  line-height: 60px;
+}
+
+/* Form controls dark theme */
+.form-control,
+.form-select {
+  background-color: #161b22;
+  border-color: #30363d;
+  color: #e6edf3;
+}
+
+.form-control:focus,
+.form-select:focus {
+  background-color: #161b22;
+  border-color: #58a6ff;
+  color: #e6edf3;
+  box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.3);
+}
+
+.form-control::placeholder {
+  color: #6e7681;
+}
+
+/* Table dark theme */
+.table-dark {
+  --bs-table-bg: #161b22;
+  --bs-table-striped-bg: #21262d;
+  --bs-table-striped-color: #e6edf3;
+  --bs-table-active-bg: #2d333b;
+  --bs-table-active-color: #e6edf3;
+  --bs-table-hover-bg: #2d333b;
+  --bs-table-hover-color: #e6edf3;
+  --bs-table-border-color: #30363d;
+}
+
+/* Card dark theme */
+.card {
+  background-color: #161b22;
+  border-color: #30363d;
+}
+
+.card-header {
+  background-color: #21262d;
+  border-color: #30363d;
+  color: #e6edf3;
+}
+
+.card-footer {
+  background-color: #21262d;
+  border-color: #30363d;
+  color: #8b949e;
+}
+
+/* Modal dark theme */
+.modal-content {
+  background-color: #161b22;
+  border-color: #30363d;
+}
+
+.modal-header {
+  border-color: #30363d;
+}
+
+.modal-footer {
+  border-color: #30363d;
+}
+
+/* Dropdown dark theme */
+.dropdown-menu {
+  background-color: #161b22;
+  border-color: #30363d;
+}
+
+.dropdown-item {
+  color: #e6edf3;
+}
+
+.dropdown-item:hover,
+.dropdown-item:focus {
+  background-color: #2d333b;
+  color: #fff;
+}
+
+.dropdown-divider {
+  border-color: #30363d;
+}
+
+/* Alert dark theme */
+.alert {
+  border-color: #30363d;
+}
+
+.alert-primary {
+  background-color: #1f3a5f;
+  border-color: #58a6ff;
+  color: #a5d6ff;
+}
+
+.alert-success {
+  background-color: #1a3d1e;
+  border-color: #3fb950;
+  color: #7ee787;
+}
+
+.alert-warning {
+  background-color: #3d3300;
+  border-color: #d29922;
+  color: #e3b341;
+}
+
+.alert-danger {
+  background-color: #4d1a18;
+  border-color: #f85149;
+  color: #ff9a9a;
+}
+
+/* Badge dark theme */
+.badge {
+  background-color: #21262d;
+  color: #e6edf3;
+}
+
+/* Pagination dark theme */
+.page-link {
+  background-color: #161b22;
+  border-color: #30363d;
+  color: #58a6ff;
+}
+
+.page-link:hover {
+  background-color: #2d333b;
+  border-color: #58a6ff;
+  color: #79c0ff;
+}
+
+.page-item.active .page-link {
+  background-color: #1f6feb;
+  border-color: #1f6feb;
+  color: #fff;
+}
+
+/* Progress bar dark theme */
+.progress {
+  background-color: #21262d;
+}
+
+.progress-bar {
+  background-color: #58a6ff;
+}
