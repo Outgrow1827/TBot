@@ -174,7 +174,7 @@ namespace Tbot.Includes {
 		public bool ChangePeriod(TimeSpan period) {
 			lock (_changeLock) {
 				period = EnsureMaximumTimeSpan(period, TimeSpan.FromDays(1));
-				if (IsLessThan(period, _period) || _canSetBiggerPeriod) {
+				if (period == Timeout.InfiniteTimeSpan || IsLessThan(period, _period) || _canSetBiggerPeriod) {
 					if (period != Timeout.InfiniteTimeSpan && period.TotalMilliseconds < 0)
 						period = TimeSpan.FromMilliseconds(1000);
 					_period = period;

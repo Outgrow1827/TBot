@@ -37,7 +37,7 @@ namespace Tbot.Workers {
 
 		public ConcurrentDictionary<Celestial, ITBotCelestialWorker> celestialWorkers {
 			get {
-				return (_celestialWorkers != null) ? _celestialWorkers : new();
+				return _celestialWorkers ?? new();
 			}
 		}
 
@@ -163,6 +163,13 @@ namespace Tbot.Workers {
 		// sink here is configured at Verbose, so a lower level wouldn't actually get filtered out.
 		protected virtual bool LogNextExecution => true;
 
+	// Hook for workers that need to keep running in the background even when their
+	// Active setting is false - the key use case is persisting expedition/discovery/farm
+	// results to the database so the WebUI dashboards stay populated with lifetime totals
+	// regardless of whether the worker itself is enabled. Called from ExecutionWrapper on
+	// every tick while disabled, before the EndExecution/return path.
+	protected virtual Task OnDisabledTick() => Task.CompletedTask;
+
 
 
 		protected Task EndExecution() {
@@ -190,6 +197,9 @@ namespace Tbot.Workers {
 					DoLog(LogLevel.Information, $"{GetWorkerName()} not enabled by settings. Ending...");
 					_disabledStreakLogged = true;
 				}
+				// Even when disabled, some workers need to keep persisting results (e.g. expedition
+				// and discovery messages) so the WebUI dashboards retain lifetime totals.
+				await OnDisabledTick();
 				await EndExecution();
 				return;
 			}

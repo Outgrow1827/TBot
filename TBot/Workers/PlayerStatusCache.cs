@@ -36,8 +36,8 @@ namespace Tbot.Workers {
 			try {
 				var xml = await _ogameService.GetPlayersXml();
 				var doc = XDocument.Parse(xml);
-				_statusById = doc.Root?.Elements("player")
-					.Where(p => p.Attribute("id") != null)
+			_statusById = doc.Root?.Descendants("player")
+				.Where(p => p.Attribute("id") != null)
 					.GroupBy(p => int.Parse(p.Attribute("id")!.Value))
 					.ToDictionary(g => g.Key, g => g.First().Attribute("status")?.Value ?? "")
 					?? new Dictionary<int, string>();

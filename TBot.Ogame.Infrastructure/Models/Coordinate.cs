@@ -8,8 +8,23 @@ using TBot.Ogame.Infrastructure.Enums;
 
 namespace TBot.Ogame.Infrastructure.Models {
 	public static class LogPrivacy {
-		public static bool HideCoordinates = false;
-		public static bool HideAccountInfo = false;
+		// Process-wide, shared by every TBotMain instance running in this TBot.exe (InstanceManager
+		// starts one per "Instances" entry in the same process). A per-instance value here would need
+		// threading through every Coordinate/Celestial ToString() call, so instead this is fail-safe:
+		// once any instance requests hiding, it stays on for the whole process - a laxer instance
+		// initializing afterwards can no longer flip it back to expose another instance's data.
+		private static bool _hideCoordinates;
+		private static bool _hideAccountInfo;
+
+		public static bool HideCoordinates {
+			get => _hideCoordinates;
+			set => _hideCoordinates |= value;
+		}
+
+		public static bool HideAccountInfo {
+			get => _hideAccountInfo;
+			set => _hideAccountInfo |= value;
+		}
 	}
 
 	public class Coordinate {

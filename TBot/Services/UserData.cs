@@ -33,6 +33,7 @@ namespace Tbot.Services {
         public int autoFarmLastGalaxy = 0;
         public int autoFarmLastSystem = 0;
 		public int autoFarmLastRangeIndex = 0;
+		public bool autoFarmFullScanCompleted = false;
 	}
 
 	// Data used by TelegramMessenger binded to TBotMain

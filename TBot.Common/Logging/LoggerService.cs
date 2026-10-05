@@ -39,7 +39,13 @@ namespace TBot.Common.Logging {
 		// TBotMain alongside the other LogPrivacy flags. When true, log timestamps drop to
 		// date-only instead of full HH:mm:ss.fff, so exact activity times aren't exposed in
 		// shared logs/screenshots.
-		public static bool HideTimestampPrecision = false;
+		// Same fail-safe monotonic pattern as LogPrivacy: process-wide, so once any instance
+		// requests it, a laxer instance initializing afterwards can't turn it back off.
+		private static bool _hideTimestampPrecision;
+		public static bool HideTimestampPrecision {
+			get => _hideTimestampPrecision;
+			set => _hideTimestampPrecision |= value;
+		}
 	}
 
 	public class LoggerService<T> : ILoggerService<T> {

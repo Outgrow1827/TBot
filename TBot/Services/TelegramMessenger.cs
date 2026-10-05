@@ -133,20 +133,31 @@ namespace Tbot.Services {
 			_logger.WriteLog(LogLevel.Information, LogSender.Telegram, LogPrivacy.HideAccountInfo ? "[Player Name@Server Name]" : $"[{instance.userData.userInfo.PlayerName}@{instance.userData.serverData.Name}]");
 
 			await instanceSem.WaitAsync(ct);
+			try {
+				if (!instances.Any(i => i.Instance.InstanceAlias == instance.InstanceAlias)) {
+					var instanceWithBridge = new InstanceWithBridge(instance, tbotOgamedBridge);
+					instances.Add(instanceWithBridge);
 
-			if (!instances.Any(i => i.Instance.InstanceAlias == instance.InstanceAlias)) {
-				var instanceWithBridge = new InstanceWithBridge(instance, tbotOgamedBridge);
-				instances.Add(instanceWithBridge);
+					int instanceIndex = instances.IndexOf(instanceWithBridge);
+					// Best-effort notification - a Telegram API failure here (network timeout, rate
+					// limit) must never leave the semaphore held forever and freeze every future
+					// AddTbotInstance/RemoveTBotInstance/TelegramBot* call for the rest of the process
+					// lifetime (confirmed live: TBot restart got stuck right after "Adding instance....."
+					// with no further log line, every time, right as Telegram/network was unstable).
+					try {
+						await SendMessage($"<code>[{instance.userData.userInfo.PlayerName}@{instance.userData.serverData.Name}]</code> Instance added! (Index:{instanceIndex})");
+					} catch (Exception e) {
+						_logger.WriteLog(LogLevel.Warning, LogSender.Telegram, $"Unable to send instance-added notification: {e.Message}");
+					}
 
-				int instanceIndex = instances.IndexOf(instanceWithBridge);
-				await SendMessage($"<code>[{instance.userData.userInfo.PlayerName}@{instance.userData.serverData.Name}]</code> Instance added! (Index:{instanceIndex})");
-
-				// Set a default instance
-				if (currInstanceIndex < 0) {
-					currInstanceIndex = instanceIndex;
+					// Set a default instance
+					if (currInstanceIndex < 0) {
+						currInstanceIndex = instanceIndex;
+					}
 				}
+			} finally {
+				instanceSem.Release();
 			}
-			instanceSem.Release();
 		}
 
 		public async Task RemoveTBotInstance(TBotMain instance) {
@@ -154,23 +165,37 @@ namespace Tbot.Services {
 			_logger.WriteLog(LogLevel.Information, LogSender.Telegram, LogPrivacy.HideAccountInfo ? "[Player Name@Server Name]" : $"[{instance.userData.userInfo.PlayerName}@{instance.userData.serverData.Name}]");
 
 			await instanceSem.WaitAsync(ct);
-			var instanceToRemove = instances.FirstOrDefault(i => i.Instance.InstanceAlias == instance.InstanceAlias);
-			if (instanceToRemove == null || !instances.Remove(instanceToRemove)) {
-				_logger.WriteLog(LogLevel.Information, LogSender.Telegram, LogPrivacy.HideAccountInfo ? "Error removing [Player Name@Server Name]" : $"Error removing [{instance.userData.userInfo.PlayerName}@{instance.userData.serverData.Name}]");
+			try {
+				var instanceToRemove = instances.FirstOrDefault(i => i.Instance.InstanceAlias == instance.InstanceAlias);
+				if (instanceToRemove == null || !instances.Remove(instanceToRemove)) {
+					_logger.WriteLog(LogLevel.Information, LogSender.Telegram, LogPrivacy.HideAccountInfo ? "Error removing [Player Name@Server Name]" : $"Error removing [{instance.userData.userInfo.PlayerName}@{instance.userData.serverData.Name}]");
+				}
+			} finally {
+				instanceSem.Release();
 			}
-
-			instanceSem.Release();
 		}
 
 		public async Task SendMessage(string message, ParseMode parseMode = ParseMode.Html, CancellationToken cancellationToken = default) {
 			try {
 				isTyping = false;
 				//await Client.SendTextMessageAsync(
-				await Client.SendMessage(
+				var sendTask = Client.SendMessage(
 					chatId: Channel,
 					text: message,
 					parseMode: parseMode,
 					cancellationToken: cancellationToken);
+				// TelegramBotClient's own HttpClient has no timeout short enough to matter here - a
+				// stuck connection (proxy issue, DNS hang, dead socket) can leave this await pending
+				// forever with no exception ever thrown, which the catch below can't help with. This
+				// call is used inside AddTbotInstance while holding instanceSem (confirmed live: TBot
+				// restart got stuck indefinitely right after "Adding instance....." with 0% CPU, no
+				// further log line, no exception - every worker depending on that instance never
+				// started). A hard 15s deadline turns that into "notification lost", never "bot frozen".
+				var completed = await Task.WhenAny(sendTask, Task.Delay(TimeSpan.FromSeconds(15), cancellationToken));
+				if (completed != sendTask)
+					_logger.WriteLog(LogLevel.Warning, LogSender.Tbot, "Telegram SendMessage timed out after 15s; continuing without waiting for it.");
+				else
+					await sendTask;
 			} catch (Exception e) {
 				_logger.WriteLog(LogLevel.Error, LogSender.Tbot, $"Could not send Telegram message: an exception has occurred: {e.Message}");
 			}
@@ -212,6 +237,80 @@ namespace Tbot.Services {
 				await client.SendMessage(chat, message, parseMode);
 			} catch (Exception e) {
 				_logger.WriteLog(LogLevel.Error, LogSender.Tbot, $"Could not send Telegram message: an exception has occurred: {e.Message}");
+			}
+		}
+
+		private async Task SendHelpMessage(ITelegramBotClient client, Chat chat) {
+			var parts = new List<string>
+			{
+				"\t Core Commands\n" +
+				"/setmain - Set the TBot main instance to pilot. Format <code>/setmain 0</code>\n" +
+				"/getmain - Get the current TBot instance that Telegram is managing\n" +
+				"/getmainstats - Get current TBot instance statistics\n" +
+				"/listinstances - List TBot main instances\n" +
+				"/loglevel - Get current log level on telegram logging\n" +
+				"/setloglevel - Set log level on telegram logging and enables it. Format <code>/setloglevel Debug|Information|Warning|Error </code>\n" +
+				"/ping - Ping bot\n" +
+				"/stopautoping - stop telegram autoping\n" +
+				"/startautoping - start telegram autoping [Receive message every X hours]\n" +
+				"/help - Display this help\n",
+
+				"\n\t TBot Main instance commands (1/2)\n" +
+				"/getfleets - Get OnGoing fleets ids (which are not already coming back)\n" +
+				"/getcurrentauction - Get current Auction\n" +
+				"/bidauction - Bid to current auction if there is one in progress. Format <code>/bidauction 213131 M:1000 C:1000 D:1000</code>\n" +
+				"/subscribeauction - Get a notification when next auction will start\n" +
+				"/ghostsleep - Wait fleets return, ghost harvest for current celestial only, and sleep for 5hours <code>/ghostsleep 4h3m or 3m50s Harvest</code>\n" +
+				"/ghostsleepall - Wait fleets return, ghost harvest for all celestial and sleep for 5hours <code>/ghostsleepall 4h3m or 3m50s Harvest</code>\n" +
+				"/ghost - Ghost for the specified amount of hours on the specified mission. Format: <code>/ghost 4h3m or 3m50s Harvest</code>\n" +
+				"/ghostmoons - Ghost moons fleet for the specified amount of hours on the specified mission. Format: <code>/ghostmoons 4h30m Harvest</code>\n" +
+				"/switch - Switch current celestial resources and fleets to its planet or moon at the specified speed. Format: <code>/switch 5</code>\n" +
+				"/deploy - Deploy to celestial with full ships and resources. Format: <code>/deploy 3:41:9 moon/planet 10</code>\n" +
+				"/jumpgate - jumpgate to moon with full ships [full], or keeps needed cargo amount for resources [auto]. Format: <code>/jumpgate 2:41:9 auto/full</code>\n" +
+				"/phalanx - use phalanx from moon to destination. Format <code>/phalanx 2:241:9 4:100:1</code>\n" +
+				"/cancelghostsleep - Cancel planned /ghostsleep(expe) if not already sent\n" +
+				"/spycrash - Create a debris field by crashing a probe on target or automatically selected planet. Format: <code>/spycrash 2:41:9/auto</code>\n" +
+				"/recall - Enable/disable fleet auto recall. Format: <code>/recall true/false</code>\n" +
+				"/collect - Collect planets resources to JSON setting celestial\n" +
+				"/collectall - Collect planets resources to JSON setting celestial with no MinimumResources\n" +
+				"/build - Try to build buildable on each planet. Build max possible if no number value sent <code>/build LightFighter [100]</code>\n" +
+				"/collectdeut - Collect planets only deut resources -> to JSON repatriate setting celestial\n" +
+				"/msg - Send a message to current attacker. Format: <code>/msg hello dude</code>\n" +
+				"/sleep - Stop bot for the specified amount of hours. Format: <code>/sleep 4h3m or 3m50s</code>\n" +
+				"/wakeup - Wakeup bot\n" +
+				"/clearcache - Clear FastFarm target cache for current instance\n" +
+				"/cancel - Cancel fleet with specified ID. Format: <code>/cancel 65656</code>\n" +
+				"/cancelmission - Cancel all fleets with specified mission. Format: <code>/cancel Deploy</code> or other mission\n" +
+				"/getcelestials - Return the list of your celestials\n" +
+				"/attacked - check if you're (still) under attack\n" +
+				"/celestial - Update program current celestial target. Format: <code>/celestial 2:45:8 Moon/Planet</code>\n" +
+				"/getinfo - Get current celestial resources and ships. Additional arg format has to be <code>/getinfo 2:45:8 Moon/Planet</code>\n" +
+				"/editsettings - Edit JSON file to change Expeditions, Colonize, Autominer's and Autoresearch Transport Origin, Repatriate and AutoReseach Target celestial. Format: <code>/editsettings 2:425:9 Moon</code>\n",
+
+				"\n\t TBot Main instance commands (2/2)\n" +
+				"/minexpecargo - Modify MinPrimaryToSend value inside JSON settings\n" +
+				"/stopexpe - Stop sending expedition\n" +
+				"/startexpe - Start sending expedition\n" +
+				"/startdefender - start defender\n" +
+				"/stopdefender - stop defender\n" +
+				"/stopautoresearch - stop brain autoresearch\n" +
+				"/startautoresearch - start brain autoresearch\n" +
+				"/stopautomine - stop brain automine\n" +
+				"/startautomine - start brain automine\n" +
+				"/stoplifeformautomine - stop brain Lifeform automine\n" +
+				"/startlifeformautomine - start brain Lifeform automine\n" +
+				"/stoplifeformautoresearch - stop brain Lifeform autoresearch\n" +
+				"/startlifeformautoresearch - start brain Lifeform autoresearch\n" +
+				"/stopautofarm - stop autofarm\n" +
+				"/startautofarm - start autofarm\n" +
+				"/stopautodiscovery - stop autodiscovery\n" +
+				"/startautodiscovery - start autodiscovery\n" +
+				"/fleetjumpgate - run jump gate worker immediately\n" +
+				"/profile - able to load one or multiple profiles. Format: <code>/profile ls/ls-r/reset/laod [profilename] [profilenameX] </code>\n"
+			};
+
+			foreach (var part in parts) {
+				await SendMessage(client, chat, part, ParseMode.Html);
 			}
 		}
 
@@ -402,69 +501,7 @@ namespace Tbot.Services {
 								await SendMessage(botClient, message.Chat, "No argument accepted with this command!");
 								return;
 							}
-							await SendMessage(botClient, message.Chat,
-								"\t Core Commands\n" +
-								"/setmain - Set the TBot main instance to pilot. Format <code>/setmain 0</code>\n" +
-								"/getmain - Get the current TBot instance that Telegram is managing\n" +
-								"/getmainstats - Get current TBot instance statistics\n" +
-								"/listinstances - List TBot main instances\n" +
-								"/loglevel - Get current log level on telegram logging\n" +
-								"/setloglevel - Set log level on telegram logging and enables it. Format <code>/setloglevel Debug|Information|Warning|Error </code>\n" +
-								"/ping - Ping bot\n" +
-								"/stopautoping - stop telegram autoping\n" +
-								"/startautoping - start telegram autoping [Receive message every X hours]\n" +
-								"/help - Display this help\n" +
-								"\n\t TBot Main instance commands\n" +
-								"/getfleets - Get OnGoing fleets ids (which are not already coming back)\n" +
-								"/getcurrentauction - Get current Auction\n" +
-								"/bidauction - Bid to current auction if there is one in progress. Format <code>/bidauction 213131 M:1000 C:1000 D:1000</code>\n" +
-								"/subscribeauction - Get a notification when next auction will start\n" +
-								"/ghostsleep - Wait fleets return, ghost harvest for current celestial only, and sleep for 5hours <code>/ghostsleep 4h3m or 3m50s Harvest</code>\n" +
-								"/ghostsleepall - Wait fleets return, ghost harvest for all celestial and sleep for 5hours <code>/ghostsleepall 4h3m or 3m50s Harvest</code>\n" +
-								"/ghost - Ghost for the specified amount of hours on the specified mission. Format: <code>/ghost 4h3m or 3m50s Harvest</code>\n" +
-								"/ghostmoons - Ghost moons fleet for the specified amount of hours on the specified mission. Format: <code>/ghostmoons 4h30m Harvest</code>\n" +
-								"/switch - Switch current celestial resources and fleets to its planet or moon at the specified speed. Format: <code>/switch 5</code>\n" +
-								"/deploy - Deploy to celestial with full ships and resources. Format: <code>/deploy 3:41:9 moon/planet 10</code>\n" +
-								"/jumpgate - jumpgate to moon with full ships [full], or keeps needed cargo amount for resources [auto]. Format: <code>/jumpgate 2:41:9 auto/full</code>\n" +
-								"/phalanx - use phalanx from moon to destination. Format <code>/phalanx 2:241:9 4:100:1</code>\n" +
-								"/cancelghostsleep - Cancel planned /ghostsleep(expe) if not already sent\n" +
-								"/spycrash - Create a debris field by crashing a probe on target or automatically selected planet. Format: <code>/spycrash 2:41:9/auto</code>\n" +
-								"/recall - Enable/disable fleet auto recall. Format: <code>/recall true/false</code>\n" +
-								"/collect - Collect planets resources to JSON setting celestial\n" +
-								"/collectall - Collect planets resources to JSON setting celestial with no MinimumResources\n" +
-								"/build - Try to build buildable on each planet. Build max possible if no number value sent <code>/build LightFighter [100]</code>\n" +
-								"/collectdeut - Collect planets only deut resources -> to JSON repatriate setting celestial\n" +
-								"/msg - Send a message to current attacker. Format: <code>/msg hello dude</code>\n" +
-								"/sleep - Stop bot for the specified amount of hours. Format: <code>/sleep 4h3m or 3m50s</code>\n" +
-								"/wakeup - Wakeup bot\n" +
-								"/clearcache - Clear FastFarm target cache for current instance\n" +
-								"/cancel - Cancel fleet with specified ID. Format: <code>/cancel 65656</code>\n" +
-								"/cancelmission - Cancel all fleets with specified mission. Format: <code>/cancel Deploy</code> or other mission\n" +
-								"/getcelestials - Return the list of your celestials\n" +
-								"/attacked - check if you're (still) under attack\n" +
-								"/celestial - Update program current celestial target. Format: <code>/celestial 2:45:8 Moon/Planet</code>\n" +
-								"/getinfo - Get current celestial resources and ships. Additional arg format has to be <code>/getinfo 2:45:8 Moon/Planet</code>\n" +
-								"/editsettings - Edit JSON file to change Expeditions, Colonize, Autominer's and Autoresearch Transport Origin, Repatriate and AutoReseach Target celestial. Format: <code>/editsettings 2:425:9 Moon</code>\n" +
-								"/minexpecargo - Modify MinPrimaryToSend value inside JSON settings\n" +
-								"/stopexpe - Stop sending expedition\n" +
-								"/startexpe - Start sending expedition\n" +
-								"/startdefender - start defender\n" +
-								"/stopdefender - stop defender\n" +
-								"/stopautoresearch - stop brain autoresearch\n" +
-								"/startautoresearch - start brain autoresearch\n" +
-								"/stopautomine - stop brain automine\n" +
-								"/startautomine - start brain automine\n" +
-								"/stoplifeformautomine - stop brain Lifeform automine\n" +
-								"/startlifeformautomine - start brain Lifeform automine\n" +
-								"/stoplifeformautoresearch - stop brain Lifeform autoresearch\n" +
-								"/startlifeformautoresearch - start brain Lifeform autoresearch\n" +
-								"/stopautofarm - stop autofarm\n" +
-								"/startautofarm - start autofarm\n" +
-								"/stopautodiscovery - stop autodiscovery\n" +
-								"/startautodiscovery - start autodiscovery\n" +
-								"/fleetjumpgate - run jump gate worker immediately\n" +
-								"/profile - able to load one or multiple profiles. Format: <code>/profile ls/ls-r/reset/laod [profilename] [profilenameX] </code>\n"
-							, ParseMode.Html);
+							await SendHelpMessage(botClient, message.Chat);
 							return;
 						default:
 
@@ -785,7 +822,7 @@ namespace Tbot.Services {
 										return;
 									}
 								}
-								if (Enum.TryParse(message.Text.Split(' ')[1], out buildable)) {
+								if (Enum.TryParse(message.Text.Split(' ')[1], true, out buildable)) {
 									await currInstance.TelegramBuild(buildable, number);
 								} else {
 									await SendMessage(botClient, message.Chat, "Error while parsing buildable value!");

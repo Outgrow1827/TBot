@@ -155,7 +155,7 @@ namespace Tbot.Includes {
 				default:
 					return 0;
 			}
-			double totalBonus = Math.Round(Math.Round((double) bonus / 100, 2, MidpointRounding.ToZero) + Math.Round((double) buildableCargoBonus, 2, MidpointRounding.ToZero), 2, MidpointRounding.ToZero) - 0.01;
+			double totalBonus = Math.Round(Math.Round((double) bonus / 100, 2, MidpointRounding.ToZero) + Math.Round((double) buildableCargoBonus, 2, MidpointRounding.ToZero), 2, MidpointRounding.ToZero);
 			int output = (int) Math.Floor((double) baseCargo + (double) (baseCargo * totalBonus));
 			return output;
 		}
@@ -320,6 +320,10 @@ namespace Tbot.Includes {
 		}
 
 		public int CalcSlowestSpeed(Ships fleet, int combustionDrive, int impulseDrive, int hyperspaceDrive, LFBonuses lfBonuses = null, CharacterClass playerClass = CharacterClass.NoClass, AllianceClass allyClass = AllianceClass.NoClass) {
+			if (lfBonuses == null)
+				lfBonuses = new() {
+					Ships = new()
+				};
 			int lowest = int.MaxValue;
 			foreach (PropertyInfo prop in fleet.GetType().GetProperties()) {
 				long qty = (long) prop.GetValue(fleet, null);
@@ -343,6 +347,10 @@ namespace Tbot.Includes {
 		}
 
 		public int CalcFleetSpeed(Ships fleet, int combustionDrive, int impulseDrive, int hyperspaceDrive, LFBonuses lfBonuses = null, CharacterClass playerClass = CharacterClass.NoClass, AllianceClass allyClass = AllianceClass.NoClass) {
+			if (lfBonuses == null)
+				lfBonuses = new() {
+					Ships = new()
+				};
 			int minSpeed = 0;
 			foreach (PropertyInfo prop in fleet.GetType().GetProperties()) {
 				long qty = (long) prop.GetValue(fleet, null);
@@ -359,6 +367,10 @@ namespace Tbot.Includes {
 		}
 
 		public int CalcShipConsumption(Buildables buildable, Researches researches, ServerData serverData, LFBonuses lfBonuses = null, CharacterClass playerClass = CharacterClass.NoClass) {
+			if (lfBonuses == null)
+				lfBonuses = new() {
+					Ships = new()
+				};
 			float lfBonus = lfBonuses.GetShipConsumptionBonus(buildable);
 			return CalcShipConsumption(buildable, researches.ImpulseDrive, researches.HyperspaceDrive, serverData.GlobalDeuteriumSaveFactor, lfBonus, playerClass);
 		}
@@ -402,7 +414,7 @@ namespace Tbot.Includes {
 				case Buildables.Bomber:
 					baseConsumption = 700;
 					if (hyperspaceDrive >= 8)
-						baseConsumption *= 3 / 2;
+						baseConsumption = baseConsumption * 3 / 2;
 					break;
 				case Buildables.Destroyer:
 					baseConsumption = 1000;
@@ -463,6 +475,10 @@ namespace Tbot.Includes {
 		}
 
 		public long CalcFuelConsumption(Coordinate origin, Coordinate destination, Ships ships, long flightTime, int combustionDrive, int impulseDrive, int hyperspaceDrive, int numberOfGalaxies, int numberOfSystems, bool donutGalaxies, bool donutSystems, int fleetSpeed, float deuteriumSaveFactor, LFBonuses lfBonuses = null, CharacterClass playerClass = CharacterClass.NoClass, AllianceClass allyClass = AllianceClass.NoClass) {
+			if (lfBonuses == null)
+				lfBonuses = new() {
+					Ships = new()
+				};
 			int distance = CalcDistance(origin, destination, numberOfGalaxies, numberOfSystems, donutGalaxies, donutSystems);
 			double tempFuel = (double) 0;
 			foreach (PropertyInfo prop in ships.GetType().GetProperties()) {
@@ -817,6 +833,8 @@ namespace Tbot.Includes {
 		}
 
 		public long CalcMetalProduction(Planet planet, int speedFactor, float ratio = 1, Researches researches = null, CharacterClass playerClass = CharacterClass.NoClass, bool hasGeologist = false, bool hasStaff = false, int crawlers = 0, float crawlerRatio = 1) {
+			if (planet.Buildings == null)
+				return 0;
 			if (researches == null)
 				researches = new Researches() { PlasmaTechnology = 0 };
 			if (planet.LFBonuses == null)
@@ -868,6 +886,8 @@ namespace Tbot.Includes {
 		}
 
 		public long CalcCrystalProduction(Planet planet, int speedFactor, float ratio = 1, Researches researches = null, CharacterClass playerClass = CharacterClass.NoClass, bool hasGeologist = false, bool hasStaff = false, int crawlers = 0, float crawlerRatio = 1) {
+			if (planet.Buildings == null)
+				return 0;
 			if (researches == null)
 				researches = new Researches() { PlasmaTechnology = 0 };
 			if (planet.LFBonuses == null)
@@ -901,7 +921,7 @@ namespace Tbot.Includes {
 			if (deuteriumLFBonus > 0) {
 				bonusProd = (int) Math.Round(prod * deuteriumLFBonus / 100);
 			}
-			return (long) Math.Round(((prod + plasmaProd + geologistProd + staffProd + classProd + deuteriumLFBonus) * ratio + crawlerProd * crawlerRatio), 0);
+			return (long) Math.Round(((prod + plasmaProd + geologistProd + staffProd + classProd + bonusProd) * ratio + crawlerProd * crawlerRatio), 0);
 		}
 
 		public long CalcDeuteriumProduction(Buildings buildings, Temperature temp, int speedFactor, float ratio = 1, Researches researches = null, LFBonuses lfBonuses = null, CharacterClass playerClass = CharacterClass.NoClass, bool hasGeologist = false, bool hasStaff = false, int crawlers = 0, float crawlerRatio = 1) {
@@ -909,15 +929,17 @@ namespace Tbot.Includes {
 				researches = new Researches() { PlasmaTechnology = 0 };
 			if (lfBonuses == null)
 				lfBonuses = new() { Production = new() { Deuterium = 0 } };
-			return CalcDeuteriumProduction(buildings.CrystalMine, temp.Average, speedFactor, ratio, researches.PlasmaTechnology, lfBonuses.Production.Deuterium, playerClass, hasGeologist, hasStaff, crawlers, crawlerRatio);
+			return CalcDeuteriumProduction(buildings.DeuteriumSynthesizer, temp.Average, speedFactor, ratio, researches.PlasmaTechnology, lfBonuses.Production.Deuterium, playerClass, hasGeologist, hasStaff, crawlers, crawlerRatio);
 		}
 
 		public long CalcDeuteriumProduction(Planet planet, int speedFactor, float ratio = 1, Researches researches = null, CharacterClass playerClass = CharacterClass.NoClass, bool hasGeologist = false, bool hasStaff = false, int crawlers = 0, float crawlerRatio = 1) {
+			if (planet.Buildings == null)
+				return 0;
 			if (researches == null)
 				researches = new Researches() { PlasmaTechnology = 0 };
 			if (planet.LFBonuses == null)
 				planet.LFBonuses = new() { Production = new() { Deuterium = 0 } };
-			return CalcDeuteriumProduction(planet.Buildings.CrystalMine, planet.Temperature.Average, speedFactor, ratio, researches.PlasmaTechnology, planet.LFBonuses.Production.Deuterium, playerClass, hasGeologist, hasStaff, crawlers, crawlerRatio);
+			return CalcDeuteriumProduction(planet.Buildings.DeuteriumSynthesizer, planet.Temperature.Average, speedFactor, ratio, researches.PlasmaTechnology, planet.LFBonuses.Production.Deuterium, playerClass, hasGeologist, hasStaff, crawlers, crawlerRatio);
 		}
 
 		public Resources CalcPlanetHourlyProduction(Planet planet, int speedFactor, float ratio = 1, Researches researches = null, CharacterClass playerClass = CharacterClass.NoClass, bool hasGeologist = false, bool hasStaff = false, int crawlers = 0, float crawlerRatio = 1) {
@@ -1280,9 +1302,6 @@ namespace Tbot.Includes {
 			if (lfBonuses != null) {
 				float reduction = 0;
 				if (lfBonuses.CostTimeBonusesInt.Keys.Any(b => b == (int) buildable)) {
-					reduction = lfBonuses.CostTimeBonusesInt[(int) buildable].Cost;
-				}
-				else if (lfBonuses.CostTimeBonusesInt.Keys.Any(b => b == (int) buildable)) {
 					reduction = lfBonuses.CostTimeBonusesInt[(int) buildable].Cost;
 				}
 				output.Metal = (long) (output.Metal - (output.Metal * reduction));
@@ -3129,8 +3148,13 @@ namespace Tbot.Includes {
 		public int GetNextLevel(Celestial planet, Buildables buildable, bool isCollector = false, bool hasEngineer = false, bool hasFullStaff = false) {
 			int output = 0;
 			if (buildable == Buildables.SolarSatellite) {
-				if (planet is Planet)
-					output = CalcNeededSolarSatellites(planet as Planet, Math.Abs(planet.Resources.Energy), isCollector, hasEngineer, hasFullStaff);
+				if (planet is Planet p) {
+					long energyDeficit = Math.Abs(p.ResourcesProduction.Energy.Available);
+					if (energyDeficit > 0)
+						output = CalcNeededSolarSatellites(p, energyDeficit, isCollector, hasEngineer, hasFullStaff);
+					else
+						output = 100;
+				}
 			} else if (output == 0 && planet is Planet) {
 				foreach (PropertyInfo prop in planet.Buildings.GetType().GetProperties()) {
 					if (prop.Name == buildable.ToString()) {
@@ -3272,12 +3296,14 @@ namespace Tbot.Includes {
 		}
 
 		public Buildables GetNextMineToBuild(Planet planet, int maxMetalMine = 100, int maxCrystalMine = 100, int maxDeuteriumSynthetizer = 100, bool optimizeForStart = true) {
+			if (planet.Buildings == null)
+				return Buildables.Null;
 			if (optimizeForStart && (planet.Buildings.MetalMine < 10 || planet.Buildings.CrystalMine < 7 || planet.Buildings.DeuteriumSynthesizer < 5)) {
-				if (planet.Buildings.MetalMine <= planet.Buildings.CrystalMine + 2)
+				if (planet.Buildings.MetalMine <= planet.Buildings.CrystalMine + 2 && planet.Buildings.MetalMine < maxMetalMine)
 					return Buildables.MetalMine;
-				else if (planet.Buildings.CrystalMine <= planet.Buildings.DeuteriumSynthesizer + 2)
+				else if (planet.Buildings.CrystalMine <= planet.Buildings.DeuteriumSynthesizer + 2 && planet.Buildings.CrystalMine < maxCrystalMine)
 					return Buildables.CrystalMine;
-				else
+				else if (planet.Buildings.DeuteriumSynthesizer < maxDeuteriumSynthetizer)
 					return Buildables.DeuteriumSynthesizer;
 			}
 
@@ -3302,6 +3328,8 @@ namespace Tbot.Includes {
 		}
 
 		public Buildables GetNextMineToBuild(Planet planet, Researches researches = null, int speedFactor = 1, int maxMetalMine = 100, int maxCrystalMine = 100, int maxDeuteriumSynthetizer = 100, float ratio = 1, CharacterClass playerClass = CharacterClass.NoClass, bool hasGeologist = false, bool hasStaff = false, bool optimizeForStart = true, float maxDaysOfInvestmentReturn = 36500) {
+			if (planet.Buildings == null)
+				return Buildables.Null;
 			if (researches == null)
 				researches = new() { PlasmaTechnology = 0 };
 			if (planet.LFBonuses == null || planet.LFBonuses.Production == null)
@@ -5033,13 +5061,13 @@ namespace Tbot.Includes {
 			List<Celestial> closestCelestials = transportSettings.MultipleOrigin.OnlyFromMoons ?
 				allCelestials
 					.Where(planet => !transportSettings.MultipleOrigin.Exclude.Has(planet))
-					.Where(planet => planet.Resources.TotalResources > 0)
+					.Where(planet => planet.Resources != null && planet.Resources.TotalResources > 0)
 					.Where(planet => planet.Coordinate.Type == Celestials.Moon)
 					.OrderByDescending(planet => planet.Coordinate.Type == Celestials.Moon)
 					.ToList():
 				allCelestials
 					.Where(c => !transportSettings.MultipleOrigin.Exclude.Has(c))
-					.Where(c => c.Resources.TotalResources > 0)
+					.Where(c => c.Resources != null && c.Resources.TotalResources > 0)
 					.ToList();
 
 			Resources TotalResources = closestCelestials.Aggregate(new Resources(), (total, celestial) => total.Sum(celestial.Resources.Difference(new Resources(0, 0, transportSettings.DeutToLeave))) );
@@ -5111,7 +5139,7 @@ namespace Tbot.Includes {
 				.ToList();
 
 			var shipmentPlan = ResourceShipmentPlanner.Plan(
-				new[] { new ResourceDemand(destination.ID, roundRes ? missingResources.Round() : missingResources) },
+				new[] { new ResourceDemand(destination.ID, roundRes ? missingResources.Round(transportSettings.RoundTo) : missingResources) },
 				shipmentSources,
 				minimumShipmentResources: transportSettings.MultipleOrigin.MinimumResourcesToSend);
 			if (!shipmentPlan.IsComplete) {
