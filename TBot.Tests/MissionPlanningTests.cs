@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
 using Tbot.Common.Settings;
 using TBot.Model;
@@ -38,7 +39,7 @@ namespace TBot.Tests {
 
 		[Fact]
 		public void DiscoveryCursorWrapsAfterTheLastSystem() {
-			var cursor = new DiscoveryCursorState(100, 15);
+			var cursor = new DiscoveryCursorState(100);
 
 			cursor.CommitPosition(100, 15, 100);
 
@@ -460,7 +461,7 @@ namespace TBot.Tests {
 		}
 
 		[Fact]
-		public void AutoFarmDashboardReaderShowsCurrentReportsAndAttackHistory() {
+		public async Task AutoFarmDashboardReaderShowsCurrentReportsAndAttackHistory() {
 			var dataFolder = Path.Combine(AppContext.BaseDirectory, "data");
 			Directory.CreateDirectory(dataFolder);
 			var databasePath = Path.Combine(dataFolder, "autofarm_dashboard-test.db");
@@ -490,7 +491,7 @@ namespace TBot.Tests {
 						Missions.Attack.ToString());
 				}
 
-				var dashboard = new AutoFarmDashboardReader().Read("dashboard-test");
+				var dashboard = await new AutoFarmDashboardReader().Read("dashboard-test");
 
 				Assert.True(dashboard.DatabaseAvailable);
 				Assert.Equal(1, dashboard.CachedSystemCount);
@@ -509,7 +510,7 @@ namespace TBot.Tests {
 		}
 
 		[Fact]
-		public void AutoFarmDashboardOnlyExposesAutoFarmLogs() {
+		public async Task AutoFarmDashboardOnlyExposesAutoFarmLogs() {
 			var logsPath = Path.Combine(Path.GetTempPath(), "tbot-tests", Guid.NewGuid().ToString("N"));
 			Directory.CreateDirectory(logsPath);
 			var logFile = Path.Combine(logsPath, $"TBot{DateTime.Now:yyyyMMdd}.csv");
@@ -523,7 +524,7 @@ namespace TBot.Tests {
 			var previousLogsPath = SettingsService.LogsPath;
 			try {
 				SettingsService.LogsPath = logsPath;
-				var dashboard = new AutoFarmDashboardReader().Read("log-filter-test");
+				var dashboard = await new AutoFarmDashboardReader().Read("log-filter-test");
 
 				Assert.Single(dashboard.Logs);
 				Assert.Equal("AutoFarm", dashboard.Logs[0].Sender);
@@ -688,7 +689,7 @@ namespace TBot.Tests {
 		}
 
 		[Fact]
-		public void AutoFarmDashboardReaderReadsLegacyAttackHistoryWithoutOriginColumns() {
+		public async Task AutoFarmDashboardReaderReadsLegacyAttackHistoryWithoutOriginColumns() {
 			var dataFolder = Path.Combine(AppContext.BaseDirectory, "data");
 			Directory.CreateDirectory(dataFolder);
 			var databasePath = Path.Combine(dataFolder, "autofarm_legacy-dashboard.db");
@@ -711,7 +712,7 @@ INSERT INTO attacks VALUES (77, 1, 139, 7, 1, 'Legacy target', '2026-08-10T12:01
 					command.ExecuteNonQuery();
 				}
 
-				var dashboard = new AutoFarmDashboardReader().Read("legacy-dashboard");
+				var dashboard = await new AutoFarmDashboardReader().Read("legacy-dashboard");
 
 				Assert.True(dashboard.DatabaseAvailable);
 				Assert.Single(dashboard.Attacks);

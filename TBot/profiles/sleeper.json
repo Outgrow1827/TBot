@@ -49,7 +49,18 @@
 		"Active": false
 	},
 	"AutoFarm": {
-		"Active": false
+		"Active": false,
+		"UseWeightedScore": false,
+		"MetalWeight": 1.0,
+		"CrystalWeight": 1.0,
+		"DeuteriumWeight": 1.0,
+		"ProbeRetry": {
+			"MaxRetries": 3,
+			"RetryDelaySeconds": 300,
+			"BlacklistAfterFailures": 5,
+			"BlacklistHours": 24
+		},
+		"InactivityThresholdDays": 7
 	},
 	"AutoColonize": {
 		"Active": false

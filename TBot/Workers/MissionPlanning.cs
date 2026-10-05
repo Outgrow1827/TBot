@@ -88,23 +88,36 @@ namespace Tbot.Workers {
 	/// forever on the last position of a system.
 	/// </summary>
 	public sealed class DiscoveryCursorState {
+		// OriginSystem anchors the alternating right/left walk (origin, origin+1,
+		// origin-1, origin+2, origin-2, ...); Step counts how many hops from the
+		// origin the cursor currently sits at, wrapping every maxSystem steps so
+		// the whole galaxy is eventually covered symmetrically on both sides.
+		public int OriginSystem { get; private set; }
+		public int Step { get; private set; }
 		public int System { get; private set; }
 		public int NextPosition { get; private set; }
 
-		public DiscoveryCursorState(int system, int nextPosition = 1) {
-			System = system;
+		public DiscoveryCursorState(int originSystem, int step = 0, int nextPosition = 1) {
+			OriginSystem = originSystem;
+			Step = step;
 			NextPosition = nextPosition;
+			System = originSystem;
 		}
 
 		public void Normalize(int fallbackSystem, int maxSystem) {
 			if (maxSystem < 1)
 				maxSystem = 1;
 
-			if (System < 1 || System > maxSystem)
-				System = NormalizeSystem(fallbackSystem, maxSystem);
+			if (OriginSystem < 1 || OriginSystem > maxSystem)
+				OriginSystem = NormalizeSystem(fallbackSystem, maxSystem);
+
+			if (Step < 0 || Step >= maxSystem)
+				Step = 0;
 
 			if (NextPosition < 1 || NextPosition > 15)
 				NextPosition = 1;
+
+			System = ComputeSystem(OriginSystem, Step, maxSystem);
 		}
 
 		public void CommitPosition(int system, int position, int maxSystem) {
@@ -112,12 +125,11 @@ namespace Tbot.Workers {
 				maxSystem = 1;
 
 			if (position >= 15) {
-				System = system >= maxSystem ? 1 : system + 1;
+				AdvanceStep(maxSystem);
 				NextPosition = 1;
 				return;
 			}
 
-			System = NormalizeSystem(system, maxSystem);
 			NextPosition = Math.Max(1, position + 1);
 		}
 
@@ -125,16 +137,28 @@ namespace Tbot.Workers {
 			if (maxSystem < 1)
 				maxSystem = 1;
 
-			System = system >= maxSystem ? 1 : Math.Max(1, system + 1);
+			AdvanceStep(maxSystem);
 			NextPosition = 1;
 		}
 
+		private void AdvanceStep(int maxSystem) {
+			Step = (Step + 1) % maxSystem;
+			System = ComputeSystem(OriginSystem, Step, maxSystem);
+		}
+
+		private static int ComputeSystem(int origin, int step, int maxSystem) {
+			if (step == 0)
+				return NormalizeSystem(origin, maxSystem);
+
+			int magnitude = (step + 1) / 2;
+			int sign = step % 2 == 1 ? 1 : -1;
+			return NormalizeSystem(origin + sign * magnitude, maxSystem);
+		}
+
 		private static int NormalizeSystem(int system, int maxSystem) {
-			if (system < 1)
-				return 1;
-			if (system > maxSystem)
-				return ((system - 1) % maxSystem) + 1;
-			return system;
+			if (maxSystem < 1)
+				maxSystem = 1;
+			return ((system - 1) % maxSystem + maxSystem) % maxSystem + 1;
 		}
 	}
 }
