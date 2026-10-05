@@ -269,7 +269,7 @@ namespace Tbot.Workers {
 
 			List<FleetHypotesis> fleetHypotesis = await GetFleetSaveDestination(_tbotInstance.UserData.celestials, celestial, departureTime, minDuration, mission, maxDeuterium);
 			if (fleetHypotesis.Count() > 0) {
-				foreach (FleetHypotesis fleet in fleetHypotesis.OrderBy(pf => pf.Fuel).ThenBy(pf => pf.Duration <= minDuration)) {
+				foreach (FleetHypotesis fleet in fleetHypotesis.OrderBy(pf => pf.Fuel).ThenBy(pf => pf.Duration > minDuration)) {
 					_tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler, $"checking {mission} fleet to: {fleet.Destination}");
 					if (CheckFuel(fleet, celestial)) {
 						fleetId = await SendFleet(fleet.Origin, fleet.Ships, fleet.Destination, fleet.Mission, fleet.Speed, payload, _tbotInstance.UserData.userInfo.Class, true);
@@ -288,7 +288,7 @@ namespace Tbot.Workers {
 			if (fromTelegram && !AlreadySent && mission == Missions.Harvest && fleetHypotesis.Count() == 0) {
 				await _tbotInstance.SendTelegramMessage($"No debris field found for {mission}, try to /spycrash.");
 				return;
-			} else if (fromTelegram && !AlreadySent && fleetHypotesis.Count() >= 0) {
+			} else if (fromTelegram && !AlreadySent && fleetHypotesis.Count() > 0) {
 				await _tbotInstance.SendTelegramMessage($"Available fuel: {celestial.Resources.Deuterium}\nNo destination found for {mission}, try to reduce ghost time.");
 				return;
 			}
@@ -296,10 +296,9 @@ namespace Tbot.Workers {
 			if (!AlreadySent) {
 				_tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler, $"Fleetsave from {celestial.ToString()} no {mission} possible, checking next mission..");
 				if (mission == Missions.Harvest) { mission = Missions.Deploy; } else { mission = Missions.Harvest; };
-				mission = Missions.Deploy;
 				fleetHypotesis = await GetFleetSaveDestination(_tbotInstance.UserData.celestials, celestial, departureTime, minDuration, mission, maxDeuterium);
 				if (fleetHypotesis.Count > 0) {
-					foreach (FleetHypotesis fleet in fleetHypotesis.OrderBy(pf => pf.Fuel).ThenBy(pf => pf.Duration <= minDuration)) {
+					foreach (FleetHypotesis fleet in fleetHypotesis.OrderBy(pf => pf.Fuel).ThenBy(pf => pf.Duration > minDuration)) {
 						_tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler, $"checking {mission} fleet to: {fleet.Destination}");
 						if (CheckFuel(fleet, celestial)) {
 							fleetId = await SendFleet(fleet.Origin, fleet.Ships, fleet.Destination, fleet.Mission, fleet.Speed, payload, _tbotInstance.UserData.userInfo.Class, true);
@@ -321,7 +320,7 @@ namespace Tbot.Workers {
 				mission = Missions.Colonize;
 				fleetHypotesis = await GetFleetSaveDestination(_tbotInstance.UserData.celestials, celestial, departureTime, minDuration, mission, maxDeuterium);
 				if (fleetHypotesis.Count > 0) {
-					foreach (FleetHypotesis fleet in fleetHypotesis.OrderBy(pf => pf.Fuel).ThenBy(pf => pf.Duration <= minDuration)) {
+					foreach (FleetHypotesis fleet in fleetHypotesis.OrderBy(pf => pf.Fuel).ThenBy(pf => pf.Duration > minDuration)) {
 						_tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler, $"checking {mission} fleet to: {fleet.Destination}");
 						if (CheckFuel(fleet, celestial)) {
 							fleetId = await SendFleet(fleet.Origin, fleet.Ships, fleet.Destination, fleet.Mission, fleet.Speed, payload, _tbotInstance.UserData.userInfo.Class, true);
@@ -345,7 +344,7 @@ namespace Tbot.Workers {
 				mission = Missions.Spy;
 				fleetHypotesis = await GetFleetSaveDestination(_tbotInstance.UserData.celestials, celestial, departureTime, minDuration, mission, maxDeuterium);
 				if (fleetHypotesis.Count > 0) {
-					foreach (FleetHypotesis fleet in fleetHypotesis.OrderBy(pf => pf.Fuel).ThenBy(pf => pf.Duration <= minDuration)) {
+					foreach (FleetHypotesis fleet in fleetHypotesis.OrderBy(pf => pf.Fuel).ThenBy(pf => pf.Duration > minDuration)) {
 						_tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler, $"checking {mission} fleet to: {fleet.Destination}");
 						if (CheckFuel(fleet, celestial)) {
 							fleetId = await SendFleet(fleet.Origin, fleet.Ships, fleet.Destination, fleet.Mission, fleet.Speed, payload, _tbotInstance.UserData.userInfo.Class, true);
@@ -369,7 +368,7 @@ namespace Tbot.Workers {
 				mission = Missions.Transport;
 				fleetHypotesis = await GetFleetSaveDestination(_tbotInstance.UserData.celestials, celestial, departureTime, minDuration, mission, maxDeuterium);
 				if (fleetHypotesis.Count > 0) {
-					foreach (FleetHypotesis fleet in fleetHypotesis.OrderBy(pf => pf.Fuel).ThenBy(pf => pf.Duration <= minDuration)) {
+					foreach (FleetHypotesis fleet in fleetHypotesis.OrderBy(pf => pf.Fuel).ThenBy(pf => pf.Duration > minDuration)) {
 						_tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler, $"checking {mission} fleet to: {fleet.Destination}");
 						if (CheckFuel(fleet, celestial)) {
 							fleetId = await SendFleet(fleet.Origin, fleet.Ships, fleet.Destination, fleet.Mission, fleet.Speed, payload, _tbotInstance.UserData.userInfo.Class, true);
@@ -427,7 +426,8 @@ if (fleet == null) return;
 {
     if (fleetId > 0)
     {
-        Fleet fleet = _tbotInstance.UserData.fleets.Single(f => f.ID == fleetId);
+        Fleet fleet = _tbotInstance.UserData.fleets.SingleOrDefault(f => f.ID == fleetId);
+        if (fleet == null) return;
         DateTime returntime = (DateTime)fleet.BackTime;
 
         _tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler,
@@ -439,7 +439,7 @@ if (fleet == null) return;
     }
 }
 		}
-		public async Task<int> SendFleet(Celestial origin, Ships ships, Coordinate destination, Missions mission, decimal speed, Resources payload = null, CharacterClass playerClass = CharacterClass.NoClass, bool force = false) {
+		public async Task<int> SendFleet(Celestial origin, Ships ships, Coordinate destination, Missions mission, decimal speed, Resources payload = null, CharacterClass playerClass = CharacterClass.NoClass, bool force = false, bool allowSpeedReduction = false) {
 			_tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler, $"Sending fleet from {origin.Coordinate.ToString()} to {destination.ToString()}. Mission: {mission.ToString()}. Speed: {(speed * 10).ToString()}% Ships: {ships.ToString()}");
 
 			if (playerClass == CharacterClass.NoClass)
@@ -511,12 +511,6 @@ _tbotInstance.log(LogLevel.Debug, LogSender.FleetScheduler,
 
 origin = await _tbotOgameBridge.UpdatePlanet(origin, UpdateTypes.Resources);
 
-if (origin.Resources.Deuterium < fleetPrediction.Fuel) {
-    _tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler,
-        "Unable to send fleet: not enough deuterium!");
-    return (int)SendFleetCode.GenericError;
-}
-
 long fuelCapacity = _calcService.CalcFleetFuelCapacity(
     ships,
     _tbotInstance.UserData.serverData,
@@ -525,10 +519,49 @@ long fuelCapacity = _calcService.CalcFleetFuelCapacity(
     _tbotInstance.UserData.serverData.ProbeCargo
 );
 
-if (fuelCapacity != 0 && fuelCapacity < fleetPrediction.Fuel) {
-    _tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler,
-        "Unable to send fleet: ships don't have enough fuel capacity!");
-    return (int)SendFleetCode.GenericError;
+// A long-haul trip (e.g. a probe crossing several galaxies in a non-circular universe) is just
+// as often blocked by the sending ship's own fuel TANK capacity as by deuterium stock at the
+// origin - a probe's tank is tiny, and consumption at 100% speed can exceed it even when the
+// planet itself has plenty of deuterium. Both constraints shrink at lower speed, so they need to
+// be solved together: keep dropping speed until a level satisfies both, instead of only retrying
+// on the deuterium-stock check and failing outright on the tank-capacity one.
+bool notEnoughDeuterium = origin.Resources.Deuterium < fleetPrediction.Fuel;
+bool notEnoughFuelCapacity = fuelCapacity != 0 && fuelCapacity < fleetPrediction.Fuel;
+if (notEnoughDeuterium || notEnoughFuelCapacity) {
+    bool speedReduced = false;
+    if (allowSpeedReduction) {
+        var validSpeeds = _calcService.GetValidSpeedsForClass(playerClass);
+        var lowerSpeeds = validSpeeds.Where(s => s < speed).OrderByDescending(s => s).ToList();
+        foreach (var lowerSpeed in lowerSpeeds) {
+            var lowerPrediction = _calcService.CalcFleetPrediction(
+                origin.Coordinate, destination, ships, mission, lowerSpeed,
+                _tbotInstance.UserData.researches, _tbotInstance.UserData.serverData,
+                origin.LFBonuses, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.allianceClass);
+            if (origin.Resources.Deuterium >= lowerPrediction.Fuel && (fuelCapacity == 0 || fuelCapacity >= lowerPrediction.Fuel)) {
+                _tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler,
+                    $"Insufficient fuel at {speed * 10}% speed ({fleetPrediction.Fuel} fuel needed, {origin.Resources.Deuterium} available, tank capacity {fuelCapacity}). Reducing to {lowerSpeed * 10}% speed ({lowerPrediction.Fuel} fuel needed).");
+                fleetPrediction = lowerPrediction;
+                flightTime = mission switch {
+                    Missions.Deploy => fleetPrediction.Time,
+                    Missions.Expedition => (long)Math.Round((double)(2 * fleetPrediction.Time) + 3600, 0, MidpointRounding.ToPositiveInfinity),
+                    _ => (long)Math.Round((double)(2 * fleetPrediction.Time), 0, MidpointRounding.ToPositiveInfinity)
+                };
+                speed = lowerSpeed;
+                speedReduced = true;
+                break;
+            }
+        }
+    }
+    if (!speedReduced) {
+        if (fuelCapacity != 0 && fuelCapacity < fleetPrediction.Fuel) {
+            _tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler,
+                "Unable to send fleet: ships don't have enough fuel capacity, even at the lowest speed!");
+            return (int)SendFleetCode.GenericError;
+        }
+        _tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler,
+            "Unable to send fleet: not enough deuterium!");
+        return (int)SendFleetCode.NotEnoughDeuterium;
+    }
 }
 
 bool ignoreSleepForExpeditions =
@@ -675,9 +708,14 @@ if (
 				return await _ogameService.GetFleets();
 			} catch (Exception e) {
 				_tbotInstance.log(LogLevel.Debug, LogSender.Tbot, $"UpdateFleets() Exception: {e.Message}");
-				_tbotInstance.log(LogLevel.Debug, LogSender.Tbot, $"UpdateFleets() Exception: {e.Message}");
 				_tbotInstance.log(LogLevel.Warning, LogSender.Tbot, $"Stacktrace: {e.StackTrace}");
-				return new();
+				// Same reasoning as TBotOgamedBridge.UpdateSlots(): every caller unconditionally
+				// overwrites UserData.fleets with this return value, so an empty list here on a
+				// transient network failure previously made every worker believe NO fleet was in
+				// flight at all (missions, incoming attacks, returning transports) until the next
+				// successful poll - worse than the slots case, since it can cause wrong decisions
+				// about what's already in transit. Keep the last known-good value instead.
+				return _tbotInstance.UserData.fleets ?? new();
 			}
 		}
 
@@ -972,8 +1010,9 @@ if (
 						var flightPrediction = _calcService.CalcFleetPrediction(origin.Coordinate, destination.Coordinate, tempShips, Missions.Transport, Speeds.HundredPercent, _tbotInstance.UserData.researches, _tbotInstance.UserData.serverData, origin.LFBonuses, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.allianceClass);
 						long flightTime = flightPrediction.Time;
 						var availableShips = origin.Ships.GetAmount(preferredShip);
-						if (buildable != Buildables.Null) {
-							int level = _calcService.GetNextLevel(destination, buildable);
+					if (buildable != Buildables.Null) {
+						destination = await _tbotOgameBridge.UpdatePlanet(destination, UpdateTypes.Facilities);
+						int level = _calcService.GetNextLevel(destination, buildable);
 							long buildTime = _calcService.CalcProductionTime(buildable, level, _tbotInstance.UserData.serverData, destination.Facilities);
 							if (maxBuildings != null && maxFacilities != null && maxLunarFacilities != null && autoMinerSettings != null) {
 								var tempCelestial = destination;
@@ -1019,7 +1058,8 @@ if (
 						}
 
 						if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.Transports, "RoundResources") && (bool) _tbotInstance.InstanceSettings.Brain.Transports.RoundResources) {
-							missingResources = missingResources.Round();
+							var roundTo = (int) (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.Transports, "RoundTo") ? _tbotInstance.InstanceSettings.Brain.Transports.RoundTo : 1000);
+							missingResources = missingResources.Round(roundTo);
 							idealShips = _calcService.CalcShipNumberForPayload(missingResources, preferredShip, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, cargoBonus, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo);
 						}
 
@@ -1035,6 +1075,25 @@ if (
 								ships.Add(preferredShip, origin.Ships.GetAmount(preferredShip));
 							} else {
 								ships.Add(preferredShip, idealShips);
+							}
+
+							// DeutToLeaveOnMoons only ever protected the reserve against the Deuterium
+							// PAYLOAD being shipped (the IsEnoughFor check above) - the fuel the sending
+							// ships themselves burn for the trip was never counted against it. A moon
+							// sitting at exactly reserve+payload deuterium would have the reserve eaten
+							// into (or past zero) by fuel alone, with SendFleet's own fuel check further
+							// down having no idea a reserve even exists. Reported live 2026-09-29 (user's
+							// own words to a community member): "if it is set to a million and a transport
+							// costs a million and one, it leaves you high and dry with zero deuterium."
+							// Checked here, after the real ship count is known, instead of back at the
+							// original IsEnoughFor call (which only had a 1-ship estimate for flight time).
+							if (resToLeave.Deuterium > 0) {
+								var fuelPrediction = _calcService.CalcFleetPrediction(origin.Coordinate, destination.Coordinate, ships, Missions.Transport, Speeds.HundredPercent, _tbotInstance.UserData.researches, _tbotInstance.UserData.serverData, origin.LFBonuses, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.allianceClass);
+								if (origin.Resources.Deuterium - missingResources.Deuterium - fuelPrediction.Fuel < resToLeave.Deuterium) {
+									_tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler,
+										$"Skipping transport: sending {missingResources.Deuterium:N0} deuterium plus {fuelPrediction.Fuel:N0} fuel from {origin.ToString()} would breach the {resToLeave.Deuterium:N0} DeutToLeaveOnMoons reserve ({origin.Resources.Deuterium:N0} available).");
+									return (int) SendFleetCode.NotEnoughRessources;
+								}
 							}
 
 							if (destination.Coordinate.Type == Celestials.Planet) {
@@ -1118,7 +1177,6 @@ if (
 						origin = await _tbotOgameBridge.UpdatePlanet(origin, UpdateTypes.LFBuildings);
 						origin = await _tbotOgameBridge.UpdatePlanet(origin, UpdateTypes.LFBonuses);
 						float cargoBonus = origin.LFBonuses.GetShipCargoBonus(preferredShip);
-						long idealShips = _calcService.CalcShipNumberForPayload(missingResources, preferredShip, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, cargoBonus, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo) + 1;
 						Ships ships = new();
 						Ships tempShips = new();
 						if (maxLFBuildings == null)
@@ -1126,7 +1184,7 @@ if (
 						tempShips.Add(preferredShip, 1);
 						var flightPrediction = _calcService.CalcFleetPrediction(origin.Coordinate, destination.Coordinate, tempShips, Missions.Transport, Speeds.HundredPercent, _tbotInstance.UserData.researches, _tbotInstance.UserData.serverData, origin.LFBonuses, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.allianceClass);
 						long flightTime = flightPrediction.Time;
-						idealShips = _calcService.CalcShipNumberForPayload(missingResources, preferredShip, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, cargoBonus, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo);
+						long idealShips = _calcService.CalcShipNumberForPayload(missingResources, preferredShip, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, cargoBonus, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo);
 						var availableShips = origin.Ships.GetAmount(preferredShip);
 						if (buildable != LFBuildables.None) {
 							destination = await _tbotOgameBridge.UpdatePlanet(destination, UpdateTypes.LFBuildings);
@@ -1176,7 +1234,8 @@ if (
 						}
 
 						if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.Transports, "RoundResources") && (bool) _tbotInstance.InstanceSettings.Brain.Transports.RoundResources) {
-							missingResources = missingResources.Round();
+							var roundTo = (int) (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.Transports, "RoundTo") ? _tbotInstance.InstanceSettings.Brain.Transports.RoundTo : 1000);
+							missingResources = missingResources.Round(roundTo);
 							idealShips = _calcService.CalcShipNumberForPayload(missingResources, preferredShip, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, cargoBonus, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo);
 						}
 
@@ -1192,6 +1251,17 @@ if (
 								ships.Add(preferredShip, origin.Ships.GetAmount(preferredShip));
 							} else {
 								ships.Add(preferredShip, idealShips);
+							}
+
+							// Same fuel-vs-reserve gap as the Buildables overload above (see its comment) -
+							// DeutToLeaveOnMoons never accounted for the sending ships' own fuel cost.
+							if (resToLeave.Deuterium > 0) {
+								var fuelPrediction = _calcService.CalcFleetPrediction(origin.Coordinate, destination.Coordinate, ships, Missions.Transport, Speeds.HundredPercent, _tbotInstance.UserData.researches, _tbotInstance.UserData.serverData, origin.LFBonuses, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.allianceClass);
+								if (origin.Resources.Deuterium - missingResources.Deuterium - fuelPrediction.Fuel < resToLeave.Deuterium) {
+									_tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler,
+										$"Skipping transport: sending {missingResources.Deuterium:N0} deuterium plus {fuelPrediction.Fuel:N0} fuel from {origin.ToString()} would breach the {resToLeave.Deuterium:N0} DeutToLeaveOnMoons reserve ({origin.Resources.Deuterium:N0} available).");
+									return (int) SendFleetCode.NotEnoughRessources;
+								}
 							}
 
 							if (destination.Coordinate.Type == Celestials.Planet) {

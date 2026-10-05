@@ -10,6 +10,7 @@ namespace TBot.Ogame.Infrastructure.Enums {
 		AfterSleepTime = -1,
 		NotEnoughSlots = -2,
 		QuickerToWaitForProduction = -3,
-		NotEnoughRessources = -4
+		NotEnoughRessources = -4,
+		NotEnoughDeuterium = -5
 	}
 }
