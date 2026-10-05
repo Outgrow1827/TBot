@@ -15,20 +15,20 @@ namespace TBot.WebUI.Controllers {
 		[HttpGet]
 		public async Task<IActionResult> Index(string instance) {
 			var instances = await GetInstanceAliases();
-			return View(BuildModel(instances, instance));
+			return View(await BuildModel(instances, instance));
 		}
 
 		[HttpGet]
 		[ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 		public async Task<IActionResult> Snapshot(string instance) {
 			var instances = await GetInstanceAliases();
-			return Json(BuildModel(instances, instance));
+			return Json(await BuildModel(instances, instance));
 		}
 
-		private AutoFarmDashboardModel BuildModel(IReadOnlyList<string> instances, string instance) {
+		private async Task<AutoFarmDashboardModel> BuildModel(IReadOnlyList<string> instances, string instance) {
 			var selected = instances.FirstOrDefault(alias => string.Equals(alias, instance, StringComparison.OrdinalIgnoreCase))
 				?? instances.First();
-			var storage = _reader.Read(selected);
+			var storage = await _reader.Read(selected);
 
 			return new AutoFarmDashboardModel {
 				SelectedInstance = selected,
@@ -42,8 +42,12 @@ namespace TBot.WebUI.Controllers {
 				Slots = storage.Slots,
 				Scan = storage.Scan,
 				Systems = storage.Systems,
+				ScanMap = storage.ScanMap,
+				ScanRanges = storage.ScanRanges,
 				Logs = storage.Logs,
-				Errors = storage.Errors
+				Errors = storage.Errors,
+				CombatResults = storage.CombatResults,
+				ResultsTotal = storage.ResultsTotal
 			};
 		}
 

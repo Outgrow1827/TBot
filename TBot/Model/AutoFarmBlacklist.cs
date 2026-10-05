@@ -10,7 +10,8 @@ namespace TBot.Model {
 		HasFleet,
 		HasDefense,
 		LowResources,
-		ManuallyAdded
+		ManuallyAdded,
+		ProbeFailure
 	}
 
 	public class BlacklistedTarget {
@@ -34,13 +35,36 @@ namespace TBot.Model {
 		}
 	}
 
+	public class BlacklistedPlayer {
+		public string PlayerName { get; set; }
+		public BlacklistReason Reason { get; set; }
+		public DateTime BlacklistedAt { get; set; }
+		public DateTime ExpiresAt { get; set; }
+
+		public BlacklistedPlayer() {
+		}
+
+		public BlacklistedPlayer(string playerName, BlacklistReason reason, DateTime expiresAt) {
+			PlayerName = playerName;
+			Reason = reason;
+			BlacklistedAt = DateTime.UtcNow;
+			ExpiresAt = expiresAt;
+		}
+
+		public bool IsExpired() {
+			return DateTime.UtcNow >= ExpiresAt;
+		}
+	}
+
 	public class AutoFarmBlacklist {
 		private List<BlacklistedTarget> _blacklistedTargets;
+		private List<BlacklistedPlayer> _blacklistedPlayers;
 		private readonly object _lock = new object();
 		private string _filePath;
 
 		public AutoFarmBlacklist() {
 			_blacklistedTargets = new List<BlacklistedTarget>();
+			_blacklistedPlayers = new List<BlacklistedPlayer>();
 		}
 
 		public AutoFarmBlacklist(string filePath) {
@@ -50,6 +74,7 @@ namespace TBot.Model {
 			}
 			_filePath = Path.Combine(dataFolder, filePath);
 			_blacklistedTargets = new List<BlacklistedTarget>();
+			_blacklistedPlayers = new List<BlacklistedPlayer>();
 			LoadFromFile();
 		}
 
@@ -65,6 +90,17 @@ namespace TBot.Model {
 			}
 		}
 
+		public void AddPlayer(string playerName, BlacklistReason reason, int hoursUntilReset) {
+			if (string.IsNullOrEmpty(playerName)) return;
+			lock (_lock) {
+				_blacklistedPlayers.RemoveAll(p => string.Equals(p.PlayerName, playerName, StringComparison.OrdinalIgnoreCase));
+
+				DateTime expiresAt = DateTime.UtcNow.AddHours(hoursUntilReset);
+				_blacklistedPlayers.Add(new BlacklistedPlayer(playerName, reason, expiresAt));
+				SaveToFile();
+			}
+		}
+
 		public bool IsBlacklisted(Coordinate coordinate) {
 			lock (_lock) {
 				CleanupExpiredTargets();
@@ -73,6 +109,16 @@ namespace TBot.Model {
 					t.Coordinate.Galaxy == coordinate.Galaxy
 					&& t.Coordinate.System == coordinate.System
 					&& t.Coordinate.Position == coordinate.Position);
+			}
+		}
+
+		public bool IsPlayerBlacklisted(string playerName) {
+			if (string.IsNullOrEmpty(playerName)) return false;
+			lock (_lock) {
+				CleanupExpiredTargets();
+
+				return _blacklistedPlayers.Any(p =>
+					string.Equals(p.PlayerName, playerName, StringComparison.OrdinalIgnoreCase));
 			}
 		}
 
@@ -87,6 +133,16 @@ namespace TBot.Model {
 			}
 		}
 
+		public BlacklistedPlayer GetBlacklistedPlayer(string playerName) {
+			if (string.IsNullOrEmpty(playerName)) return null;
+			lock (_lock) {
+				CleanupExpiredTargets();
+
+				return _blacklistedPlayers.FirstOrDefault(p =>
+					string.Equals(p.PlayerName, playerName, StringComparison.OrdinalIgnoreCase));
+			}
+		}
+
 		public void RemoveTarget(Coordinate coordinate) {
 			lock (_lock) {
 				_blacklistedTargets.RemoveAll(t =>
@@ -97,9 +153,19 @@ namespace TBot.Model {
 			SaveToFile();
 		}
 
+		public void RemovePlayer(string playerName) {
+			if (string.IsNullOrEmpty(playerName)) return;
+			lock (_lock) {
+				_blacklistedPlayers.RemoveAll(p =>
+					string.Equals(p.PlayerName, playerName, StringComparison.OrdinalIgnoreCase));
+			}
+			SaveToFile();
+		}
+
 		public void ClearAll() {
 			lock (_lock) {
 				_blacklistedTargets.Clear();
+				_blacklistedPlayers.Clear();
 			}
 			SaveToFile();
 		}
@@ -107,7 +173,7 @@ namespace TBot.Model {
 		public int GetBlacklistedCount() {
 			lock (_lock) {
 				CleanupExpiredTargets();
-				return _blacklistedTargets.Count;
+				return _blacklistedTargets.Count + _blacklistedPlayers.Count;
 			}
 		}
 
@@ -118,8 +184,16 @@ namespace TBot.Model {
 			}
 		}
 
+		public List<BlacklistedPlayer> GetAllBlacklistedPlayers() {
+			lock (_lock) {
+				CleanupExpiredTargets();
+				return new List<BlacklistedPlayer>(_blacklistedPlayers);
+			}
+		}
+
 		private void CleanupExpiredTargets() {
 			_blacklistedTargets.RemoveAll(t => t.IsExpired());
+			_blacklistedPlayers.RemoveAll(p => p.IsExpired());
 		}
 
 		public void ManualCleanup() {
@@ -127,42 +201,55 @@ namespace TBot.Model {
 				CleanupExpiredTargets();
 			}
 		}
-	private void LoadFromFile() {
-		if (string.IsNullOrEmpty(_filePath) || !File.Exists(_filePath)) {
-			return;
-		}
+		private void LoadFromFile() {
+			if (string.IsNullOrEmpty(_filePath) || !File.Exists(_filePath)) {
+				return;
+			}
 
-		try {
-			string json = File.ReadAllText(_filePath);
-			var loaded = JsonConvert.DeserializeObject<List<BlacklistedTarget>>(json);
-			if (loaded != null) {
+			try {
+				string json = File.ReadAllText(_filePath);
+				var loaded = JsonConvert.DeserializeObject<BlacklistData>(json);
+				if (loaded != null) {
+					lock (_lock) {
+						_blacklistedTargets = loaded.Targets ?? new List<BlacklistedTarget>();
+						_blacklistedPlayers = loaded.Players ?? new List<BlacklistedPlayer>();
+						CleanupExpiredTargets();
+					}
+				}
+			} catch (Exception) {
 				lock (_lock) {
-					_blacklistedTargets = loaded;
-					CleanupExpiredTargets();
+					_blacklistedTargets = new List<BlacklistedTarget>();
+					_blacklistedPlayers = new List<BlacklistedPlayer>();
 				}
 			}
-		} catch (Exception) {
-			lock (_lock) {
-				_blacklistedTargets = new List<BlacklistedTarget>();
-			}
-}
-	}
+		}
 
-	private void SaveToFile() {
+		private void SaveToFile() {
 			if (string.IsNullOrEmpty(_filePath)) {
 				return;
 			}
 
-			List<BlacklistedTarget> snapshot;
+			List<BlacklistedTarget> targetsSnapshot;
+			List<BlacklistedPlayer> playersSnapshot;
 			lock (_lock) {
-				snapshot = _blacklistedTargets.ToList();
+				targetsSnapshot = _blacklistedTargets.ToList();
+				playersSnapshot = _blacklistedPlayers.ToList();
 			}
 
 			try {
-				string json = JsonConvert.SerializeObject(snapshot, Formatting.Indented);
+				var data = new BlacklistData {
+					Targets = targetsSnapshot,
+					Players = playersSnapshot
+				};
+				string json = JsonConvert.SerializeObject(data, Formatting.Indented);
 				File.WriteAllText(_filePath, json);
 			} catch (Exception) {
 			}
+		}
+
+		private class BlacklistData {
+			public List<BlacklistedTarget> Targets { get; set; }
+			public List<BlacklistedPlayer> Players { get; set; }
 		}
 	}
 }

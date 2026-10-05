@@ -27,7 +27,7 @@ namespace TBot.Model {
 		public Resources Loot { get; init; } = new();
 	}
 
-	public sealed record AutoFarmScanCursor(int RangeIndex, int Galaxy, int System);
+	public sealed record AutoFarmScanCursor(int RangeIndex, int Galaxy, int System, bool FullScanCompleted = false);
 
 	/// <summary>
 	/// Durable AutoFarm state. System snapshots and target decisions survive a
@@ -327,7 +327,7 @@ LIMIT $limit;";
 				using var connection = OpenConnection();
 				using var command = connection.CreateCommand();
 				command.CommandText = @"
-SELECT range_index, galaxy, system
+SELECT range_index, galaxy, system, full_scan_completed
 FROM scan_cursor
 WHERE id = 1;";
 
@@ -335,7 +335,8 @@ WHERE id = 1;";
 				if (!reader.Read())
 					return null;
 
-				return new AutoFarmScanCursor(reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2));
+				return new AutoFarmScanCursor(reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2),
+					!reader.IsDBNull(3) && reader.GetInt32(3) != 0);
 			} catch {
 				return null;
 			}
@@ -348,6 +349,9 @@ WHERE id = 1;";
 			try {
 				using var connection = OpenConnection();
 				using var command = connection.CreateCommand();
+				// Deliberately does not touch full_scan_completed - this is called on every cursor
+				// advance (many times per cycle), and the completed flag must only ever be set by
+				// MarkFullScanCompleted below, once the whole ScanRange has been swept through.
 				command.CommandText = @"
 INSERT INTO scan_cursor (id, range_index, galaxy, system, updated_at_utc)
 VALUES (1, $range_index, $galaxy, $system, $updated_at_utc)
@@ -359,6 +363,32 @@ ON CONFLICT(id) DO UPDATE SET
 				command.Parameters.AddWithValue("$range_index", rangeIndex);
 				command.Parameters.AddWithValue("$galaxy", galaxy);
 				command.Parameters.AddWithValue("$system", system);
+				command.Parameters.AddWithValue("$updated_at_utc", FormatUtc(updatedAtUtc));
+				command.ExecuteNonQuery();
+			} catch {
+				// Persistence must never stop AutoFarm.
+			}
+		}
+
+		// Marks that at least one full pass through every configured ScanRange has completed -
+		// requested live 2026-09-02: with TargetsProbedBeforeAttack=0 and a huge ScanRange
+		// (G1-G4), the physical fleet-slot limit (MaxSlots) forces the scan to resume across many
+		// cycles, but attacks were being dispatched every cycle from whatever partial results had
+		// accumulated so far instead of waiting for the sweep to actually finish once. Persisted
+		// (not just in-memory) so a restart doesn't silently reset back to "attack immediately".
+		public void MarkFullScanCompleted(DateTime updatedAtUtc) {
+			if (!_enabled)
+				return;
+
+			try {
+				using var connection = OpenConnection();
+				using var command = connection.CreateCommand();
+				command.CommandText = @"
+INSERT INTO scan_cursor (id, range_index, galaxy, system, updated_at_utc, full_scan_completed)
+VALUES (1, 0, 0, 0, $updated_at_utc, 1)
+ON CONFLICT(id) DO UPDATE SET
+  full_scan_completed = 1,
+  updated_at_utc = excluded.updated_at_utc;";
 				command.Parameters.AddWithValue("$updated_at_utc", FormatUtc(updatedAtUtc));
 				command.ExecuteNonQuery();
 			} catch {
@@ -477,6 +507,14 @@ CREATE TABLE IF NOT EXISTS scan_cursor (
 				try {
 					using var migration = connection.CreateCommand();
 					migration.CommandText = "ALTER TABLE targets ADD COLUMN consumed_report_id INTEGER NULL;";
+					migration.ExecuteNonQuery();
+				} catch (SqliteException ex) when (ex.Message.Contains("duplicate column", StringComparison.OrdinalIgnoreCase)) {
+					// Existing AutoFarm databases already have the new column.
+				}
+
+				try {
+					using var migration = connection.CreateCommand();
+					migration.CommandText = "ALTER TABLE scan_cursor ADD COLUMN full_scan_completed INTEGER NOT NULL DEFAULT 0;";
 					migration.ExecuteNonQuery();
 				} catch (SqliteException ex) when (ex.Message.Contains("duplicate column", StringComparison.OrdinalIgnoreCase)) {
 					// Existing AutoFarm databases already have the new column.

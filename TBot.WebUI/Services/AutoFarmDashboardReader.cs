@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using CsvHelper;
 using CsvHelper.Configuration;
 using Microsoft.Data.Sqlite;
@@ -20,9 +22,16 @@ namespace TBot.WebUI.Services {
 		private static readonly Regex CoordinatePattern = new(@"\[(?<type>[A-Za-z]+):(?<galaxy>\d+):(?<system>\d+):(?<position>\d+)\]", RegexOptions.Compiled);
 		private static readonly Regex RequiredCargo = new(@"require (?<amount>[\d ]+) (?<ship>[A-Za-z]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-		public AutoFarmDashboardStorage Read(string instanceAlias) {
+		private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(5) };
+
+		public async Task<AutoFarmDashboardStorage> Read(string instanceAlias) {
 			var storage = new AutoFarmDashboardStorage();
 			var settings = ReadSettings(instanceAlias);
+			storage.ScanRanges.AddRange(settings.Ranges.Select(r => new AutoFarmScanRangeInfo {
+				Galaxy = r.Galaxy,
+				StartSystem = r.StartSystem,
+				EndSystem = r.EndSystem
+			}));
 			var logs = ReadLogs();
 			var autoFarmLogs = logs.Where(IsAutoFarmLog).ToList();
 
@@ -31,8 +40,24 @@ namespace TBot.WebUI.Services {
 				.Where(log => IsError(log) || log.Message.Contains("503", StringComparison.OrdinalIgnoreCase) || log.Message.Contains("302", StringComparison.OrdinalIgnoreCase))
 				.TakeLast(40)
 				.Reverse()));
-			storage.Worker = BuildWorkerStatus(logs);
-			storage.Slots = BuildSlotStatus(logs, settings.MaxSlots);
+		storage.Worker = BuildWorkerStatus(logs);
+		storage.Slots = BuildSlotStatus(logs, settings.MaxSlots);
+		storage.CombatResults.AddRange(ReadCombatResults(instanceAlias));
+
+			// The log-line regex above only has data once AutoFarm has actually run a cycle and
+			// logged its own slot-budget line - with Active off, or between cycles, usedSlots/
+			// availableSlots stayed permanently null. Read the account's real fleet-slot usage
+			// straight from ogamed instead, independent of TBot's own worker/Active state.
+			var liveSlots = await ReadLiveSlots(settings.Host, settings.Port);
+			if (liveSlots != null) {
+				storage.Slots = new AutoFarmSlotStatus {
+					MaxSlots = storage.Slots.MaxSlots ?? (int) liveSlots.Value.Total,
+					UsedSlots = (int) liveSlots.Value.InUse,
+					AvailableSlots = (int) (liveSlots.Value.Total - liveSlots.Value.InUse),
+					ProbesInFlight = storage.Slots.ProbesInFlight,
+					AttacksInFlight = storage.Slots.AttacksInFlight
+				};
+			}
 
 			var databasePath = GetDatabasePath(instanceAlias);
 			if (!File.Exists(databasePath)) {
@@ -47,11 +72,23 @@ namespace TBot.WebUI.Services {
 				}.ToString());
 				connection.Open();
 
-				if (HasTable(connection, "systems"))
+				if (HasTable(connection, "systems")) {
 					ReadSystems(connection, storage, settings);
+					ReadScanMap(connection, storage);
+				}
 				if (HasTable(connection, "targets"))
 					ReadTargets(connection, storage, instanceAlias, logs);
 				ReadAttacks(connection, storage);
+				// Was summing storage.Reports - the CURRENT snapshot of the "targets" table (whatever
+				// espionage reports happen to be cached right now, for targets in any state), not
+				// actual attack results. Every cycle replaces/evicts rows there, so the "Gained (total)"
+				// panel looked like it was constantly losing history even though nothing was actually
+				// lost - it was never a total of gains to begin with. "attacks" (unlike "targets") is
+				// insert-only, never pruned/deleted, so a real lifetime sum over ALL its rows (not just
+				// the 100 read by ReadAttacks for the table view) is the genuinely eternal total.
+				// Reported live 2026-09-18 ("Gained (total) deveria ser eterno, mas muito está sendo
+				// perdido").
+				storage.ResultsTotal = ReadAttacksLifetimeTotal(connection);
 				var cursor = HasTable(connection, "scan_cursor") ? ReadCursor(connection) : null;
 
 				storage.DatabaseAvailable = true;
@@ -61,6 +98,29 @@ namespace TBot.WebUI.Services {
 			}
 
 			return storage;
+		}
+
+		// Reads farm_results_{alias}.json, written by AutoFarmWorker's FeatureResultsStore -
+		// same file/entry shape (Id/Coordinate/Summary/Resources/Ships/TimestampUtc) as the
+		// expedition/discovery results stores, just mapped to the AutoFarm-specific row type.
+		private static List<AutoFarmCombatResultRow> ReadCombatResults(string instanceAlias) {
+			try {
+				var path = Path.Combine(AppContext.BaseDirectory, "data", $"farm_results_{Path.GetFileName(instanceAlias)}.json");
+				if (!File.Exists(path))
+					return new List<AutoFarmCombatResultRow>();
+
+				var entries = JArray.Parse(File.ReadAllText(path));
+				return entries.OfType<JObject>()
+					.Select(entry => new AutoFarmCombatResultRow {
+						Coordinate = entry.Value<string>("Coordinate") ?? "",
+						Summary = entry.Value<string>("Summary") ?? "",
+						TimestampUtc = entry.Value<DateTime?>("TimestampUtc") ?? DateTime.MinValue
+					})
+					.OrderByDescending(row => row.TimestampUtc)
+					.ToList();
+			} catch {
+				return new List<AutoFarmCombatResultRow>();
+			}
 		}
 
 		private static void ReadSystems(SqliteConnection connection, AutoFarmDashboardStorage storage, DashboardSettings settings) {
@@ -105,6 +165,33 @@ LIMIT 1000;";
 				.Select(value => value!.Value)
 				.ToList();
 			storage.LastSystemObservedAtUtc = observedTimes.Count == 0 ? null : observedTimes.Max();
+		}
+
+		// Unlike ReadSystems above (LIMIT 1000, for the detailed table), this pulls every scanned
+		// coordinate - light enough to cover the full ScanRange (up to ~2000 systems) in one query.
+		// Also the authoritative source for CachedSystemCount/LastSystemObservedAtUtc/scan progress
+		// below - ReadSystems' capped 1000-row list was silently pinning "Scan progress" at 50%
+		// (1000/1996) forever once a ScanRange grew past 1000 systems, even after the real scan
+		// reached 1995/1996 and completed (confirmed live 2026-09-04 by reading the database
+		// directly: scan_cursor.full_scan_completed was already 1, but the dashboard still showed
+		// stale 50% progress and "Not available" for cursor/last-observed).
+		private static void ReadScanMap(SqliteConnection connection, AutoFarmDashboardStorage storage) {
+			using var command = connection.CreateCommand();
+			command.CommandText = "SELECT galaxy, system, is_empty, observed_at_utc FROM systems;";
+			using var reader = command.ExecuteReader();
+			DateTime? lastObserved = null;
+			while (reader.Read()) {
+				var observedAt = ParseDate(reader.GetString(3));
+				storage.ScanMap.Add(new AutoFarmScanMapCell {
+					Galaxy = reader.GetInt32(0),
+					System = reader.GetInt32(1),
+					IsEmpty = reader.GetInt64(2) != 0
+				});
+				if (observedAt.HasValue && (lastObserved == null || observedAt.Value > lastObserved.Value))
+					lastObserved = observedAt.Value;
+			}
+			storage.CachedSystemCount = storage.ScanMap.Count;
+			storage.LastSystemObservedAtUtc = lastObserved;
 		}
 
 		private static int CountEligibleTargets(string json) {
@@ -218,6 +305,25 @@ LIMIT 100;";
 			}
 		}
 
+		// Real lifetime total, unlike ReadAttacks above (LIMIT 100, for the detailed table) - "attacks"
+		// is insert-only (never pruned/deleted), so summing every row here is a genuinely eternal total.
+		private static AutoFarmResultsTotal ReadAttacksLifetimeTotal(SqliteConnection connection) {
+			if (!HasTable(connection, "attacks"))
+				return new AutoFarmResultsTotal();
+
+			using var command = connection.CreateCommand();
+			command.CommandText = "SELECT SUM(metal), SUM(crystal), SUM(deuterium) FROM attacks;";
+			using var reader = command.ExecuteReader();
+			if (!reader.Read() || reader.IsDBNull(0))
+				return new AutoFarmResultsTotal();
+
+			return new AutoFarmResultsTotal {
+				Metal = reader.GetInt64(0),
+				Crystal = reader.IsDBNull(1) ? 0 : reader.GetInt64(1),
+				Deuterium = reader.IsDBNull(2) ? 0 : reader.GetInt64(2)
+			};
+		}
+
 		private static AutoFarmScanCursorRow? ReadCursor(SqliteConnection connection) {
 			using var command = connection.CreateCommand();
 			command.CommandText = @"
@@ -236,11 +342,8 @@ WHERE id = 1;";
 		}
 
 		private static AutoFarmScanStatus BuildScanStatus(AutoFarmDashboardStorage storage, DashboardSettings settings, AutoFarmScanCursorRow? cursor, DateTime? lastObserved) {
-			var scanned = storage.Systems.Count(system => {
-				var parts = system.Coordinate.Split(':');
-				return parts.Length == 2 && int.TryParse(parts[0], out var galaxy) && int.TryParse(parts[1], out var systemNumber) &&
-					settings.Ranges.Any(range => range.Galaxy == galaxy && systemNumber >= range.StartSystem && systemNumber <= range.EndSystem);
-			});
+			var scanned = storage.ScanMap.Count(cell =>
+				settings.Ranges.Any(range => range.Galaxy == cell.Galaxy && cell.System >= range.StartSystem && cell.System <= range.EndSystem));
 			var total = settings.Ranges.Sum(range => Math.Max(0, range.EndSystem - range.StartSystem + 1));
 			return new AutoFarmScanStatus {
 				CursorGalaxy = cursor?.Galaxy ?? 0,
@@ -441,6 +544,10 @@ WHERE id = 1;";
 				if (!File.Exists(instancePath))
 					return settings;
 				var instance = JObject.Parse(File.ReadAllText(instancePath));
+				var general = instance["General"] as JObject;
+				settings.Host = general?.Value<string>("Host");
+				settings.Port = general?.Value<string>("Port");
+
 				var autoFarm = instance["AutoFarm"] as JObject;
 				if (autoFarm == null)
 					return settings;
@@ -486,7 +593,23 @@ WHERE id = 1;";
 
 		private static bool IsError(LogRecord log) => log.Level.Equals("Error", StringComparison.OrdinalIgnoreCase) || log.Level.Equals("Warning", StringComparison.OrdinalIgnoreCase) || log.Message.Contains("Exception", StringComparison.OrdinalIgnoreCase);
 
-		private static bool IsAutoFarmLog(LogRecord log) => log.Sender.Equals("AutoFarm", StringComparison.OrdinalIgnoreCase);
+		private static bool IsAutoFarmLog(LogRecord log) => log.Sender.Equals("AutoFarm", StringComparison.OrdinalIgnoreCase) && !IsAdminLifecycleLine(log.Message);
+
+		// WorkerBase's own Starting/Restarting/Closing/"not enabled by settings" lines (see
+		// WorkerBase.cs's ShouldLogAdminLines) are worker plumbing, not AutoFarm decisions - the
+		// Worker status panel already summarizes that state, so repeating it in the log/error feed
+		// just buries the handful of substantive lines a disabled or idle instance actually has.
+		private static bool IsAdminLifecycleLine(string message) {
+			// Contains, not StartsWith/EndsWith: the stored message already carries the
+			// "[Player@Server] " account prefix ahead of it (confirmed live 2026-08-29 - the
+			// StartsWith checks never matched anything because of that prefix, so this filter
+			// was silently a no-op).
+			return message.Contains("Starting Worker \"", StringComparison.OrdinalIgnoreCase)
+				|| message.Contains("Restarting Worker \"", StringComparison.OrdinalIgnoreCase)
+				|| message.Contains("Closing Worker \"", StringComparison.OrdinalIgnoreCase)
+				|| (message.Contains("Worker \"", StringComparison.OrdinalIgnoreCase) && message.Contains("closed!", StringComparison.OrdinalIgnoreCase))
+				|| message.Contains("not enabled by settings", StringComparison.OrdinalIgnoreCase);
+		}
 
 		private static string? ExtractCoordinate(string message) {
 			var match = CoordinatePattern.Match(message ?? string.Empty);
@@ -514,6 +637,26 @@ WHERE id = 1;";
 
 		private static string GetDatabasePath(string instanceAlias) {
 			return Path.Combine(AppContext.BaseDirectory, "data", Path.GetFileName($"autofarm_{instanceAlias}.db"));
+		}
+
+		private static async Task<(long InUse, long Total)?> ReadLiveSlots(string? host, string? port) {
+			if (string.IsNullOrWhiteSpace(host) || string.IsNullOrWhiteSpace(port))
+				return null;
+
+			try {
+				var response = await Http.GetAsync($"http://{host}:{port}/bot/fleets/slots");
+				if (!response.IsSuccessStatusCode)
+					return null;
+
+				var envelope = JObject.Parse(await response.Content.ReadAsStringAsync());
+				var result = (envelope["Result"] as JObject) ?? (envelope["result"] as JObject);
+				if (result == null)
+					return null;
+
+				return (result.Value<long?>("InUse") ?? 0, result.Value<long?>("Total") ?? 0);
+			} catch {
+				return null;
+			}
 		}
 
 		private static bool HasTable(SqliteConnection connection, string tableName) {
@@ -550,6 +693,8 @@ WHERE id = 1;";
 			public int SystemDataDays { get; set; } = 7;
 			public int EmptySystemCooldownDays { get; set; } = 30;
 			public List<DashboardRange> Ranges { get; } = new();
+			public string? Host { get; set; }
+			public string? Port { get; set; }
 		}
 	}
 
@@ -561,9 +706,13 @@ WHERE id = 1;";
 		public AutoFarmSlotStatus Slots { get; set; } = new();
 		public AutoFarmScanStatus Scan { get; set; } = new();
 		public List<AutoFarmSystemRow> Systems { get; } = new();
+		public List<AutoFarmScanMapCell> ScanMap { get; } = new();
+		public List<AutoFarmScanRangeInfo> ScanRanges { get; } = new();
 		public List<AutoFarmReportRow> Reports { get; } = new();
 		public List<AutoFarmAttackRow> Attacks { get; } = new();
 		public List<AutoFarmLogRow> Logs { get; } = new();
 		public List<AutoFarmLogRow> Errors { get; } = new();
+		public List<AutoFarmCombatResultRow> CombatResults { get; } = new();
+		public AutoFarmResultsTotal ResultsTotal { get; set; } = new();
 	}
 }

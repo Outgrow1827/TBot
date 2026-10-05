@@ -25,7 +25,7 @@ namespace TBot.Model {
 				.Where(planet => planet != null)
 				.ToList();
 
-			return knownPlanets.Count == 0 || knownPlanets.All(IsVacationInactive);
+			return knownPlanets.Count == 0 || knownPlanets.All(planet => !IsEligibleTarget(planet));
 		}
 
 		public static List<Celestial> GetEligibleTargets(IEnumerable<Planet> planets) {

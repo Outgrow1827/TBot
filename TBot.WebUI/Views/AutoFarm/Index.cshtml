@@ -12,7 +12,7 @@
 }
 
 @section Styles {
-    <link rel="stylesheet" href="~/css/autofarm.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/autofarm-dark.css" asp-append-version="true" />
 }
 
 <div class="autofarm-page" id="autofarm-dashboard" data-instance="@Model.SelectedInstance">
@@ -130,7 +130,15 @@
 
         function renderScan(scan) {
             const percent = Math.max(0, Math.min(100, Number(scan.progressPercent || 0)));
-            const cursor = scan.cursorGalaxy > 0 ? `${scan.cursorGalaxy}:${scan.cursorSystem}` : "Not available";
+            // Galaxy 0 is a real state, not "no data" - AutoFarmWorker resets the cursor to
+            // 0:0 once a full sweep of ScanRange completes, before starting the next one.
+            let cursor;
+            if (percent >= 100)
+                cursor = "Scan complete";
+            else if (scan.cursorGalaxy > 0)
+                cursor = `${scan.cursorGalaxy}:${scan.cursorSystem}`;
+            else
+                cursor = scan.cursorUpdatedAtUtc ? "Reset (full scan just completed)" : "Not available";
             return `<section class="panel">
                 <div class="panel-heading"><h2>Scan progress</h2><span class="panel-count">${formatNumber(percent)}%</span></div>
                 <div class="progress-line"><progress max="100" value="${percent}"></progress><strong>${formatNumber(scan.scannedSystemsInRange)} / ${formatNumber(scan.totalSystemsInRange)} systems</strong></div>
@@ -140,6 +148,50 @@
                     <div><dt>Cursor updated</dt><dd>${formatDate(scan.cursorUpdatedAtUtc)}</dd></div>
                     <div><dt>Last system observed</dt><dd>${formatDate(scan.lastSystemObservedAtUtc)}</dd></div>
                 </dl>
+            </section>`;
+        }
+
+        // One square per system, one panel per configured ScanRange galaxy - grey outline
+        // (unscanned), solid grey (scanned, no eligible target), blue (scanned, target found),
+        // orange ring (current scan cursor). Requested live 2026-09-02: "queria saber quais
+        // galaxias, sistemas... foram escaneados... com um mapa".
+        function renderScanMap(scanMap, scanRanges, scan) {
+            if (!scanRanges || !scanRanges.length) return "";
+            const byCoord = new Map();
+            (scanMap || []).forEach(cell => byCoord.set(`${cell.galaxy}:${cell.system}`, cell.isEmpty));
+            const cursorGalaxy = scan?.cursorGalaxy || 0;
+            const cursorSystem = scan?.cursorSystem || 0;
+
+            const galaxies = scanRanges.map(range => {
+                let scannedCount = 0;
+                const cells = [];
+                for (let sys = range.startSystem; sys <= range.endSystem; sys++) {
+                    const key = `${range.galaxy}:${sys}`;
+                    let cls = "map-cell";
+                    let title = `${range.galaxy}:${sys} - not scanned yet`;
+                    if (byCoord.has(key)) {
+                        scannedCount++;
+                        const isEmpty = byCoord.get(key);
+                        cls += isEmpty ? " map-empty" : " map-target";
+                        title = `${range.galaxy}:${sys} - ${isEmpty ? "scanned, no target" : "scanned, target found"}`;
+                    }
+                    if (range.galaxy === cursorGalaxy && sys === cursorSystem) {
+                        cls += " map-cursor";
+                        title += " (current scan position)";
+                    }
+                    cells.push(`<div class="${cls}" title="${escapeHtml(title)}"></div>`);
+                }
+                const total = range.endSystem - range.startSystem + 1;
+                return `<div class="map-galaxy">
+                    <div class="map-galaxy-heading"><span>Galaxy ${range.galaxy}</span><span>${formatNumber(scannedCount)} / ${formatNumber(total)}</span></div>
+                    <div class="map-grid">${cells.join("")}</div>
+                </div>`;
+            }).join("");
+
+            return `<section class="panel panel-primary">
+                <div class="panel-heading"><h2>Scan map</h2></div>
+                <p class="panel-note"><span class="map-legend-item"></span> not scanned &nbsp; <span class="map-legend-item map-empty"></span> scanned, no target &nbsp; <span class="map-legend-item map-target"></span> scanned, target found &nbsp; <span class="map-legend-item map-cursor"></span> current scan position</p>
+                <div class="map-galaxies">${galaxies}</div>
             </section>`;
         }
 
@@ -154,7 +206,7 @@
             return `<section class="panel panel-primary">
                 <div class="panel-heading"><h2>Targets and decisions</h2><span class="panel-count">${formatNumber(reports.length)}</span></div>
                 <p class="panel-note">The reason column explains why AutoFarm sent, postponed or ignored each target.</p>
-                <div class="table-wrap"><table><thead><tr><th>Target</th><th>State</th><th>Reported resources</th><th>Reason</th><th>Updated</th></tr></thead><tbody>${rows}</tbody></table></div>
+                <div class="table-wrap table-wrap-scroll"><table><thead><tr><th>Target</th><th>State</th><th>Reported resources</th><th>Reason</th><th>Updated</th></tr></thead><tbody>${rows}</tbody></table></div>
             </section>`;
         }
 
@@ -168,7 +220,7 @@
             </tr>`).join("") : emptyRow(5, "No cached systems are stored.");
             return `<section class="panel">
                 <div class="panel-heading"><h2>Cached systems</h2><span class="panel-count">${formatNumber(systems.length)}</span></div>
-                <div class="table-wrap"><table><thead><tr><th>System</th><th>Status</th><th>Last scan</th><th>Next refresh</th><th>Reason</th></tr></thead><tbody>${rows}</tbody></table></div>
+                <div class="table-wrap table-wrap-scroll"><table><thead><tr><th>System</th><th>Status</th><th>Last scan</th><th>Next refresh</th><th>Reason</th></tr></thead><tbody>${rows}</tbody></table></div>
             </section>`;
         }
 
@@ -184,6 +236,32 @@
                 <div class="panel-heading"><h2>Recorded attacks</h2><span class="panel-count">${formatNumber(attacks.length)}</span></div>
                 <p class="panel-note">Only dispatches successfully recorded after a fleet was sent are shown here.</p>
                 <div class="table-wrap"><table><thead><tr><th>When</th><th>Origin</th><th>Destination</th><th>Report</th><th>Reported resources</th></tr></thead><tbody>${rows}</tbody></table></div>
+            </section>`;
+        }
+
+        function renderResultsTotal(total) {
+            total = total || { metal: 0, crystal: 0, deuterium: 0 };
+            return `<section class="panel">
+                <div class="panel-heading"><h2>Gained (total)</h2><span class="panel-count">${formatNumber(total.metal + total.crystal + total.deuterium)}</span></div>
+                <div class="metric-grid">
+                    <div class="metric"><span>Metal</span><strong class="res-metal">${formatNumber(total.metal)}</strong></div>
+                    <div class="metric"><span>Crystal</span><strong class="res-crystal">${formatNumber(total.crystal)}</strong></div>
+                    <div class="metric"><span>Deuterium</span><strong class="res-deuterium">${formatNumber(total.deuterium)}</strong></div>
+                </div>
+                <p class="panel-note">Sum across all resolved combat reports stored in the database.</p>
+            </section>`;
+        }
+
+        function renderCombatResults(results) {
+            const rows = results.length ? results.map(result => `<tr>
+                <td class="mono">${escapeHtml(result.coordinate)}</td>
+                <td>${escapeHtml(result.summary)}</td>
+                <td class="muted">${formatDate(result.timestampUtc)}</td>
+            </tr>`).join("") : emptyRow(3, "No combat report has been resolved yet.");
+            return `<section class="panel">
+                <div class="panel-heading"><h2>Resolved combat reports</h2><span class="panel-count">${formatNumber(results.length)}</span></div>
+                <p class="panel-note">The real post-battle result for each dispatched attack, read back from the game once the fleet returns.</p>
+                <div class="table-wrap"><table><thead><tr><th>Target</th><th>Result</th><th>When</th></tr></thead><tbody>${rows}</tbody></table></div>
             </section>`;
         }
 
@@ -238,11 +316,14 @@
             const uiState = captureUiState();
             content.innerHTML = [
                 renderWorker(data.worker, data.databaseAvailable),
+                renderResultsTotal(data.resultsTotal),
                 renderSlots(data.slots),
                 renderScan(data.scan),
+                renderScanMap(data.scanMap, data.scanRanges, data.scan),
                 renderReports(data.reports),
                 renderSystems(data.systems),
                 renderAttacks(data.attacks),
+                renderCombatResults(data.combatResults),
                 renderErrors(data.errors),
                 renderLogs(data.logs)
             ].join("");
