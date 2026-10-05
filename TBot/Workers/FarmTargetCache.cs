@@ -32,15 +32,27 @@ namespace Tbot.Workers {
 			_db = db;
 		}
 
+		public int ReportRetentionDays { get; set; } = 7;
+
+		/// <summary>
+		/// Shared minimum resources threshold for filtering farm targets.
+		/// Applies to both FastFarm and AutoFarm modes. Persisted in the database so the threshold
+		/// survives bot restarts and is consistently applied across all modes (ScanOnly, FastFarm, AutoFarm).
+		/// </summary>
+		public long MinimumResources { get; set; } = 1000000;
+
 		private static string GetKey(Coordinate coord) {
 			return $"{coord.Galaxy}:{coord.System}:{coord.Position}:{coord.Type}";
 		}
 
+		// Shared with TBotDataCache (AutoHarvest) and AutoDiscovery's cursor persistence - one
+		// physical file per instance instead of one per feature, each keeping its own prefixed
+		// tables (farm_*, harvest_*, autodiscovery_*) so there's no schema collision.
 		public static string GetDatabaseFilePath(string instanceSettingsPath, string instanceAlias) {
 			var directory = Path.GetDirectoryName(Path.GetFullPath(instanceSettingsPath));
 			var dataDir = Path.Combine(directory ?? ".", "data");
 			Directory.CreateDirectory(dataDir);
-			return Path.Combine(dataDir, $"autofarm_{instanceAlias}.db");
+			return Path.Combine(dataDir, $"data_{instanceAlias}.db");
 		}
 
 		/// <summary>
@@ -104,6 +116,15 @@ namespace Tbot.Workers {
 						blacklisted_until TEXT NOT NULL
 					);
 
+					CREATE TABLE IF NOT EXISTS player_activity (
+						player_id INTEGER PRIMARY KEY,
+						player_name TEXT NOT NULL,
+						is_active INTEGER NOT NULL DEFAULT 0,
+						last_checked TEXT NOT NULL,
+						activity_days INTEGER
+					);
+					CREATE INDEX IF NOT EXISTS idx_player_activity_name ON player_activity (player_name);
+
 					CREATE TABLE IF NOT EXISTS system_scan_cache (
 						galaxy INTEGER NOT NULL,
 						system INTEGER NOT NULL,
@@ -127,11 +148,19 @@ namespace Tbot.Workers {
 						ON attack_history (coordinate_key);
 					CREATE INDEX IF NOT EXISTS idx_attack_history_player
 						ON attack_history (player_name);
+
+					CREATE TABLE IF NOT EXISTS farm_settings (
+						key TEXT PRIMARY KEY,
+						value TEXT NOT NULL
+					);
 				";
 				await cmd.ExecuteNonQueryAsync();
 			}
 
 			var cache = new FarmTargetCache(db);
+
+			// Load persisted settings (MinimumResources, etc.)
+			await cache.LoadSettings();
 
 			if (isNewDatabase) {
 				await cache.ImportLegacyJsonCacheIfPresent(GetLegacyCacheFilePath(instanceSettingsPath, instanceAlias));
@@ -167,15 +196,52 @@ namespace Tbot.Workers {
 			}
 		}
 
+		private async Task LoadSettings() {
+			try {
+				using var cmd = _db.CreateCommand();
+				cmd.CommandText = "SELECT value FROM farm_settings WHERE key = 'MinimumResources'";
+				var result = await cmd.ExecuteScalarAsync();
+				if (result != null && long.TryParse((string)result, out var minResources)) {
+					MinimumResources = minResources;
+				}
+			} catch {
+				// Settings table might not exist yet on first load, or value is invalid - use default
+			}
+		}
+
+		public async Task SaveSettings() {
+			try {
+				using var cmd = _db.CreateCommand();
+				cmd.CommandText = @"
+					INSERT INTO farm_settings (key, value)
+					VALUES ('MinimumResources', $value)
+					ON CONFLICT(key) DO UPDATE SET value = excluded.value;";
+				cmd.Parameters.AddWithValue("$value", MinimumResources.ToString());
+				await cmd.ExecuteNonQueryAsync();
+			} catch {
+				// Best-effort persistence
+			}
+		}
+
 		/// <summary>
-		/// Prunes stale entries (same 7-day TTL rule as before P20) and reconciles the in-memory read
-		/// cache with the DB. Individual entries are already persisted immediately by Upsert(), so this
-		/// no longer needs to rewrite everything - it only needs to delete what's now stale.
+		/// Prunes stale entries and reconciles the in-memory read cache with the DB.
+		/// Entries with a report (LastReportDate != null) are never pruned.
+		/// Entries marked as inactive (IsInactive == true) are now PERSISTENT/ETERNAL - never auto-cleared.
+		/// Only entries that were only seen in galaxy scans (no espionage report, not inactive) 
+		/// older than ReportRetentionDays (FastFarmReportRetentionDays) are removed.
+		/// 
+		/// DISTINCTION:
+		/// - ReportRetentionDays (FastFarmReportRetentionDays): Controls cache cleanup for entries WITHOUT
+		///   espionage reports. Applies to ScanOnly, FastFarm, and AutoFarm modes equally.
+		/// - KeepReportFor (AutoFarm setting): Controls how long espionage reports are kept before
+		///   re-probing. Only applies to AutoFarm's report processing logic (PruneOldReports).
 		/// </summary>
 		public async Task Save() {
-			var cutoff = DateTime.UtcNow.AddDays(-7);
+			var cutoff = DateTime.UtcNow.AddDays(-ReportRetentionDays);
 			var staleKeys = _entries.Values
-				.Where(e => e.LastSeenDate < cutoff && e.LastReportDate == null)
+				.Where(e => e.LastSeenDate < cutoff 
+					&& e.LastReportDate == null 
+					&& !e.IsInactive) // NEVER prune inactive targets - eternal persistence
 				.Select(e => GetKey(e.Coordinate))
 				.ToList();
 
@@ -227,10 +293,44 @@ namespace Tbot.Workers {
 			return _entries.TryGetValue(GetKey(coord), out var entry) ? entry : null;
 		}
 
+		/// <summary>
+		/// Gets all cached entries in a galaxy/system range that meet the minimum resources threshold.
+		/// Used by FastFarmMode and ScanOnly to filter targets consistently.
+		/// </summary>
 		public List<FarmTargetCacheEntry> GetInRange(int galaxy, int startSystem, int endSystem) {
 			return _entries.Values
 				.Where(e => e.Coordinate.Galaxy == galaxy && e.Coordinate.System >= startSystem && e.Coordinate.System <= endSystem)
+				.Where(e => e.LastKnownResources != null && e.LastKnownResources.TotalResources >= MinimumResources)
 				.ToList();
+		}
+
+		/// <summary>
+		/// Gets all cached entries in a galaxy/system range without MinimumResources filtering.
+		/// Used for debugging and cache management.
+		/// </summary>
+		public List<FarmTargetCacheEntry> GetAllInRange(int galaxy, int startSystem, int endSystem) {
+			return _entries.Values
+				.Where(e => e.Coordinate.Galaxy == galaxy && e.Coordinate.System >= startSystem && e.Coordinate.System <= endSystem)
+				.ToList();
+		}
+
+		/// <summary>
+		/// Highest known resource stockpile among cached, still-eligible (inactive, non-admin/banned/
+		/// vacation, meeting MinimumResources) targets in this system, or 0 if none are known.
+		/// Used by FastFarmMode to visit the most promising known systems first.
+		/// </summary>
+		public long GetBestKnownResourcesInSystem(int galaxy, int system) {
+			var candidates = _entries.Values
+				.Where(e => e.Coordinate.Galaxy == galaxy && e.Coordinate.System == system)
+				.Where(e => e.IsInactive && !e.IsAdministrator && !e.IsBanned && !e.IsVacation)
+				.Where(e => e.LastKnownResources != null && e.LastKnownResources.TotalResources >= MinimumResources);
+			long best = 0;
+			foreach (var entry in candidates) {
+				var total = entry.LastKnownResources.TotalResources;
+				if (total > best)
+					best = total;
+			}
+			return best;
 		}
 
 		// --- System scan cache (FastFarmMode: lets AutoFarm skip a live galaxy scan for a system
@@ -326,6 +426,54 @@ namespace Tbot.Workers {
 			cmd.CommandText = "DELETE FROM player_blacklist WHERE player_name = $name";
 			cmd.Parameters.AddWithValue("$name", playerName);
 			cmd.ExecuteNonQuery();
+		}
+
+		// --- Player activity tracking (keyed by PlayerId so an inactive who resettles/reactivates
+		// on a different planet is recognized immediately; avoids wasting fleets/probes on active players) ---
+
+		public bool IsPlayerActive(int playerId, out DateTime lastChecked, out int? activityDays) {
+			lastChecked = default;
+			activityDays = null;
+			if (playerId <= 0) return false;
+			using var cmd = _db.CreateCommand();
+			cmd.CommandText = "SELECT is_active, last_checked, activity_days FROM player_activity WHERE player_id = $id";
+			cmd.Parameters.AddWithValue("$id", playerId);
+			using var reader = cmd.ExecuteReader();
+			if (!reader.Read()) return false;
+			lastChecked = DateTime.Parse((string) reader["last_checked"], null, System.Globalization.DateTimeStyles.RoundtripKind);
+			activityDays = reader["activity_days"] == DBNull.Value ? null : Convert.ToInt32(reader["activity_days"]);
+			return Convert.ToInt32(reader["is_active"]) == 1;
+		}
+
+		public void SetPlayerActivity(int playerId, string playerName, bool isActive, int? activityDays) {
+			if (playerId <= 0 || string.IsNullOrEmpty(playerName)) return;
+			using var cmd = _db.CreateCommand();
+			cmd.CommandText = @"
+				INSERT INTO player_activity (player_id, player_name, is_active, last_checked, activity_days)
+				VALUES ($id, $name, $active, $checked, $days)
+				ON CONFLICT(player_id) DO UPDATE SET
+					player_name = excluded.player_name,
+					is_active = excluded.is_active,
+					last_checked = excluded.last_checked,
+					activity_days = excluded.activity_days;
+			";
+			cmd.Parameters.AddWithValue("$id", playerId);
+			cmd.Parameters.AddWithValue("$name", playerName);
+			cmd.Parameters.AddWithValue("$active", isActive ? 1 : 0);
+			cmd.Parameters.AddWithValue("$checked", DateTime.UtcNow.ToString("O"));
+			cmd.Parameters.AddWithValue("$days", activityDays.HasValue ? (object) activityDays.Value : DBNull.Value);
+			cmd.ExecuteNonQuery();
+		}
+
+		public List<int> GetActivePlayerIds() {
+			var ids = new List<int>();
+			using var cmd = _db.CreateCommand();
+			cmd.CommandText = "SELECT player_id FROM player_activity WHERE is_active = 1";
+			using var reader = cmd.ExecuteReader();
+			while (reader.Read()) {
+				ids.Add(Convert.ToInt32(reader["player_id"]));
+			}
+			return ids;
 		}
 
 		// --- Attack history (#8: real loot collected per coordinate, used both to feed the weighted

@@ -19,6 +19,9 @@ namespace TBot.Ogame.Infrastructure.Models {
 		public FarmState State { get; set; }
 		public EspionageReport Report { get; set; }
 		public int? ConsumedReportId { get; set; }
+		public double Score { get; set; }
+		public int ProbeRetryCount { get; set; }
+		public DateTime? LastProbeSentAt { get; set; }
 		public bool HasCoords(Coordinate coords) {
 			return coords != null && Celestial?.Coordinate != null
 				&& coords.Galaxy == Celestial.Coordinate.Galaxy
