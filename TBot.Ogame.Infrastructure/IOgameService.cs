@@ -14,7 +14,8 @@ namespace TBot.Ogame.Infrastructure {
 				bool hideAccountNameInLogs = false,
 				string telegramSolverBotToken = "",
 				long telegramSolverChatId = 0,
-				int manualModeTimeout = 30);
+				int manualModeTimeout = 30,
+				int httpClientTimeoutSeconds = 60);
 		string GetExecutableName();
 		bool ValidatePrerequisites();
 		Task BuildCancelable(Celestial celestial, Buildables buildable);
@@ -43,6 +44,9 @@ namespace TBot.Ogame.Infrastructure {
 		Task<EspionageReport> GetEspionageReport(Coordinate coordinate);
 		Task<EspionageReport> GetEspionageReport(int msgId);
 		Task<List<EspionageReportSummary>> GetEspionageReports();
+		Task<List<ExpeditionMessage>> GetExpeditionMessages();
+		Task<CombatReportSummary> GetCombatReportSummaryForFleet(int fleetId);
+		Task<DiscoveryCooldown> GetDiscoveryCooldown(Celestial celestial);
 		Task<Facilities> GetFacilities(Celestial celestial);
 		Task<List<Fleet>> GetFleets();
 		Task<GalaxyInfo> GetGalaxyInfo(Coordinate coordinate);

@@ -58,7 +58,8 @@ namespace TBot.Ogame.Infrastructure {
 				bool hideAccountNameInLogs = false,
 				string telegramSolverBotToken = "",
 				long telegramSolverChatId = 0,
-				int manualModeTimeout = 30) {
+				int manualModeTimeout = 30,
+				int httpClientTimeoutSeconds = 60) {
 			_credentials = credentials;
 			_device = device;
 			_host = host;
@@ -75,7 +76,7 @@ namespace TBot.Ogame.Infrastructure {
 
 			_client = new HttpClient() {
 				BaseAddress = new Uri($"http://{host}:{port}/"),
-				Timeout = TimeSpan.FromSeconds(60)
+				Timeout = TimeSpan.FromSeconds(httpClientTimeoutSeconds)
 			};
 			if (credentials.BasicAuthUsername != "" && credentials.BasicAuthPassword != "") {
 				_client.DefaultRequestHeaders.Authorization =
@@ -313,7 +314,10 @@ namespace TBot.Ogame.Infrastructure {
 
 		private AsyncRetryPolicy<HttpResponseMessage> GetRetryPolicy() {
 			return HttpPolicyExtensions.HandleTransientHttpError()
-				.WaitAndRetryAsync(3, retryCount => TimeSpan.FromSeconds(Math.Pow(2, retryCount)));
+				.OrResult(r => r.StatusCode == System.Net.HttpStatusCode.RequestTimeout)
+				.WaitAndRetryAsync(
+					retryCount: 5,
+					sleepDurationProvider: attempt => TimeSpan.FromSeconds(Math.Pow(2, attempt)) + TimeSpan.FromMilliseconds(new Random().Next(0, 500)));
 		}
 
 		private async Task<T> GetAsync<T>(string resource, bool ensureSuccess = true) {
@@ -438,6 +442,18 @@ namespace TBot.Ogame.Infrastructure {
 
 		public async Task<DateTime> GetServerTime() {
 			return await GetAsync<DateTime>("/bot/server/time");
+		}
+
+		public async Task<CombatReportSummary> GetCombatReportSummaryForFleet(int fleetId) {
+			return await GetAsync<CombatReportSummary>($"/bot/report/combat/fleet/{fleetId}");
+		}
+
+		public async Task<DiscoveryCooldown> GetDiscoveryCooldown(Celestial celestial) {
+			return await GetAsync<DiscoveryCooldown>($"/bot/planets/{celestial.ID}/discovery-cooldown");
+		}
+
+		public async Task<List<ExpeditionMessage>> GetExpeditionMessages() {
+			return await GetAsync<List<ExpeditionMessage>>("/bot/messages/expedition");
 		}
 
 		public async Task<string> GetUsername() {

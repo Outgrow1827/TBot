@@ -215,7 +215,27 @@ namespace Tbot.Services {
 					manualModeTimeout = (int) InstanceSettings.General.ManualModeTimeout;
 			} catch { }
 
-			_ogameService.Initialize(GetCredentialsFromSettings(), GetDeviceFromSettings(), proxy, (string) host, int.Parse(port), (string) captchaKey, hideAccountNameInLogs, _telegramSolverBotToken, _telegramSolverChatId, manualModeTimeout);
+			// Was hardcoded to 60s in OgameService with no way to configure it at all - a setting
+			// with this exact purpose never existed, even though ManualModeTimeout (a completely
+			// different thing: how long manual mode stays idle-locked before releasing) sat right
+			// next to it in General and looked like it should cover this. Reported live 2026-09-18
+			// ("mas nunca aparece o valor configurado no json") after repeated 60s HttpClient.Timeout
+			// exceptions during network hiccups to Gameforge - user assumed some existing json value
+			// governed it and kept not seeing it take effect, because none did.
+			int httpClientTimeoutSeconds = 60;
+			try {
+				if (SettingsService.IsSettingSet(InstanceSettings.General, "HttpClientTimeoutSeconds"))
+					httpClientTimeoutSeconds = (int) InstanceSettings.General.HttpClientTimeoutSeconds;
+			} catch { }
+
+			// Neither value was ever logged, so there was no way to confirm from the log alone
+			// whether a json edit to ManualModeTimeout actually took effect on this run, or whether
+			// the running process was still using a stale value from before a pending restart.
+			// Requested live 2026-09-18 ("deveria aparecer no log o valor que está configurado em
+			// General.ManualModeTimeout").
+			log(LogLevel.Information, LogSender.Tbot, $"General.ManualModeTimeout: {manualModeTimeout}s. General.HttpClientTimeoutSeconds: {httpClientTimeoutSeconds}s.");
+
+			_ogameService.Initialize(GetCredentialsFromSettings(), GetDeviceFromSettings(), proxy, (string) host, int.Parse(port), (string) captchaKey, hideAccountNameInLogs, _telegramSolverBotToken, _telegramSolverChatId, manualModeTimeout, httpClientTimeoutSeconds);
 			await Task.Delay(RandomizeHelper.CalcRandomInterval(IntervalType.AFewSeconds));
 		}
 
@@ -793,11 +813,16 @@ namespace Tbot.Services {
 				}
 
 				if (MaxNumToBuild > 0) {
-					if (buildable == Buildables.RocketLauncher || buildable == Buildables.LightLaser || buildable == Buildables.HeavyLaser || buildable == Buildables.GaussCannon || buildable == Buildables.IonCannon || buildable == Buildables.PlasmaTurret || buildable == Buildables.InterplanetaryMissiles || buildable == Buildables.AntiBallisticMissiles) {
-						await _ogameService.BuildDefences(celestial, buildable, (long) MaxNumToBuild);
-					} else {
-						await _ogameService.BuildShips(celestial, buildable, (long) MaxNumToBuild);
-						results += $"{celestial.Coordinate.ToString()}: {MaxNumToBuild} started\n";
+					try {
+						if (buildable == Buildables.RocketLauncher || buildable == Buildables.LightLaser || buildable == Buildables.HeavyLaser || buildable == Buildables.GaussCannon || buildable == Buildables.IonCannon || buildable == Buildables.PlasmaTurret || buildable == Buildables.InterplanetaryMissiles || buildable == Buildables.AntiBallisticMissiles) {
+							await _ogameService.BuildDefences(celestial, buildable, (long) MaxNumToBuild);
+							results += $"{celestial.Coordinate.ToString()}: {MaxNumToBuild} {buildable} started\n";
+						} else {
+							await _ogameService.BuildShips(celestial, buildable, (long) MaxNumToBuild);
+							results += $"{celestial.Coordinate.ToString()}: {MaxNumToBuild} {buildable} started\n";
+						}
+					} catch (Exception e) {
+						results += $"{celestial.Coordinate.ToString()}: Build failed - {e.Message}\n";
 					}
 				} else {
 					results += $"{celestial.Coordinate.ToString()}: Not enough resources\n";
