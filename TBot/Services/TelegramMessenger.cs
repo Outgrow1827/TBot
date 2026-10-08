@@ -263,6 +263,7 @@ namespace Tbot.Services {
 				"/ghostsleep - Wait fleets return, ghost harvest for current celestial only, and sleep for 5hours <code>/ghostsleep 4h3m or 3m50s Harvest</code>\n" +
 				"/ghostsleepall - Wait fleets return, ghost harvest for all celestial and sleep for 5hours <code>/ghostsleepall 4h3m or 3m50s Harvest</code>\n" +
 				"/ghost - Ghost for the specified amount of hours on the specified mission. Format: <code>/ghost 4h3m or 3m50s Harvest</code>\n" +
+				"/ghostto - Same as /ghost, but with a required mission argument. Format: <code>/ghostto 4h3m or 3m50s Harvest</code>\n" +
 				"/ghostmoons - Ghost moons fleet for the specified amount of hours on the specified mission. Format: <code>/ghostmoons 4h30m Harvest</code>\n" +
 				"/switch - Switch current celestial resources and fleets to its planet or moon at the specified speed. Format: <code>/switch 5</code>\n" +
 				"/deploy - Deploy to celestial with full ships and resources. Format: <code>/deploy 3:41:9 moon/planet 10</code>\n" +
@@ -335,10 +336,12 @@ namespace Tbot.Services {
 				"/ghostsleep",
 				"/ghostsleepall",
 				"/ghost",
+				"/ghostto",
 				"/ghostmoons",
 				"/switch",
 				"/sleep",
 				"/wakeup",
+				"/clearcache",
 				"/build",
 				"/collect",
 				"/collectall",
