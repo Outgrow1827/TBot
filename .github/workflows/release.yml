@@ -3,7 +3,10 @@ name: Release
 on:
   push:
     tags:
-      - '*'  
+      - '*'
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -166,7 +169,9 @@ jobs:
     - name: Draft Release
       uses: ncipollo/release-action@v1
       with:
+        name: TBot ${{ env.SNAP_VERSION }}
         artifacts: ${{ github.workspace }}/TBot-${{ env.SNAP_VERSION }}-win64.zip,${{ github.workspace }}/TBot-${{ env.SNAP_VERSION }}-win32.zip,${{ github.workspace }}/TBot-${{ env.SNAP_VERSION }}-linux64.zip,${{ github.workspace }}/TBot-${{ env.SNAP_VERSION }}-linuxarm.zip,${{ github.workspace }}/TBot-${{ env.SNAP_VERSION }}-linuxarm64.zip,${{ github.workspace }}/TBot-${{ env.SNAP_VERSION }}-osx64.zip,${{ github.workspace }}/TBot-${{ env.SNAP_VERSION }}-osx-arm64.zip
-        draft: true
+        draft: false
+        prerelease: ${{ contains(env.SNAP_VERSION, 'beta') }}
         token: ${{ secrets.GITHUB_TOKEN }}
         artifactErrorsFailBuild: false
