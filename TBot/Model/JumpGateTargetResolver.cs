@@ -39,8 +39,8 @@ namespace TBot.Model {
 
 		// Kept for callers that only ever want the first configured target.
 		public static JumpGateTarget Resolve(IDictionary<string, object> settings, out bool usedLegacyArray) {
+			usedLegacyArray = settings != null && settings.TryGetValue("Target", out var rawTarget) && rawTarget is Array;
 			var all = ResolveAll(settings);
-			usedLegacyArray = false;
 			return all[0];
 		}
 
