@@ -1420,6 +1420,16 @@ if (
 					return RepatriateCode.Failure;
 				}
 				if (tempCelestials.Count() > 0) {
+					// Brain's AutoMine/AutoResearch/LifeformAutoMine/LifeformAutoResearch workers already
+					// serialize their own resource-spend decisions against each other via this lock (see
+					// BrainTransportCoordinator), but AutoRepatriate/Collect ran outside it entirely and
+					// could sweep a celestial's resources mid-cycle while a Brain worker was still deciding
+					// how much of that same stock to spend on a build it had already committed to.
+					if (!await BrainTransportCoordinator.ResourceDecisionLock.WaitAsync(BrainTransportCoordinator.ResourceDecisionLockTimeout)) {
+						_tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler, "Skipping repatriate: resource-decision lock still held by a Brain worker after 10 minutes (likely stuck) - not waiting further.");
+						return RepatriateCode.Delay;
+					}
+					try {
 					_tbotInstance.UserData.fleets = await UpdateFleets();
 					long TotalMet = 0;
 					long TotalCri = 0;
@@ -1539,6 +1549,9 @@ if (
 						}
 					}
 					return RepatriateCode.Success;
+					} finally {
+						BrainTransportCoordinator.ResourceDecisionLock.Release();
+					}
 				} else {
 					_tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler, "Skipping autorepatriate: unable to parse custom destination");
 					return RepatriateCode.Failure;
