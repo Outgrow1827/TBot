@@ -75,6 +75,7 @@ namespace Tbot.Includes {
 		int CalcShipConsumption(Buildables buildable, Researches researches, ServerData serverData, LFBonuses lfBonuses = null, CharacterClass playerClass = CharacterClass.NoClass);
 		int CalcShipFuelCapacity(Buildables buildable, ServerData serverData,  int hyperspaceTech = 0, CharacterClass playerClass = CharacterClass.NoClass, int probeCargo = 0);
 		long CalcShipNumberForPayload(Resources payload, Buildables buildable, int hyperspaceTech, ServerData serverData, float cargoBonus = 0, CharacterClass playerClass = CharacterClass.NoClass, int probeCapacity = 0);
+		Ships CalcCargoShipsForPayload(Ships availableAtOrigin, Resources payload, int hyperspaceTech, ServerData serverData, LFBonuses lfBonuses = null, CharacterClass playerClass = CharacterClass.NoClass, int probeCargo = 0);
 		int CalcShipSpeed(Buildables buildable, int combustionDrive, int impulseDrive, int hyperspaceDrive, float lfBonus = 0, CharacterClass playerClass = CharacterClass.NoClass, AllianceClass allyClass = AllianceClass.NoClass);
 		int CalcShipSpeed(Buildables buildable, Researches researches, LFBonuses lfBonuses = null, CharacterClass playerClass = CharacterClass.NoClass, AllianceClass allyClass = AllianceClass.NoClass);
 		int CalcSlowestSpeed(Ships fleet, int combustionDrive, int impulseDrive, int hyperspaceDrive, LFBonuses lfBonuses = null, CharacterClass playerClass = CharacterClass.NoClass, AllianceClass allyClass = AllianceClass.NoClass);

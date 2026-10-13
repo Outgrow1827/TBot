@@ -604,6 +604,35 @@ namespace Tbot.Includes {
 			return (long) Math.Round(((float) payload.TotalResources / (float) CalcShipCapacity(buildable, hyperspaceTech, serverData, cargoBonus, playerClass, probeCapacity)), MidpointRounding.ToPositiveInfinity);
 		}
 
+		// Same 3 cargo-capable types AutoFarm combines (GetAllowedFarmCargoShips), biggest capacity first.
+		public static readonly Buildables[] CargoCapableShipTypes = { Buildables.LargeCargo, Buildables.SmallCargo, Buildables.Pathfinder };
+
+		// Mirrors AutoFarm's "use whatever cargo ships are actually at the origin" behavior for
+		// Brain.Transports, which previously only ever counted the single configured CargoType -
+		// an origin with plenty of resources but the "wrong" ship type sitting on it looked like it
+		// had almost no capacity, forcing MultipleOrigins to split across far more planets/moons
+		// than actually necessary. Greedily fills from the biggest ship type down, capped to what's
+		// physically present at the origin, until the payload is covered (or the fleet runs out).
+		public Ships CalcCargoShipsForPayload(Ships availableAtOrigin, Resources payload, int hyperspaceTech, ServerData serverData, LFBonuses lfBonuses = null, CharacterClass playerClass = CharacterClass.NoClass, int probeCargo = 0) {
+			var result = new Ships();
+			long remainingCapacityNeeded = payload.TotalResources;
+			foreach (var buildable in CargoCapableShipTypes) {
+				if (remainingCapacityNeeded <= 0)
+					break;
+				long ownedAtOrigin = availableAtOrigin.GetAmount(buildable);
+				if (ownedAtOrigin <= 0)
+					continue;
+				float bonusCargo = lfBonuses?.GetShipCargoBonus(buildable) ?? 0;
+				int oneShipCapacity = CalcShipCapacity(buildable, hyperspaceTech, serverData, bonusCargo, playerClass, probeCargo);
+				if (oneShipCapacity <= 0)
+					continue;
+				long needed = (long) Math.Min(ownedAtOrigin, Math.Ceiling((double) remainingCapacityNeeded / oneShipCapacity));
+				result.Add(buildable, needed);
+				remainingCapacityNeeded -= needed * oneShipCapacity;
+			}
+			return result;
+		}
+
 		public Ships CalcIdealExpeditionShips(Buildables buildable, int hyperspaceTech, float expeditionResourcesBonus, Dictionary<int, LFBonusesShip> shipBonus, ServerData serverData, CharacterClass playerClass = CharacterClass.NoClass, int probeCargo = 0) {
 			var fleet = new Ships();
 
@@ -5094,7 +5123,13 @@ namespace Tbot.Includes {
 					));
 				var destinationResources = roundRes ? destination.Resources.Round(transportSettings.RoundTo) : destination.Resources;
 				if (destinationResources.IsEnoughFor(missingResources)) {
-					if (destination.Ships.GetAmount(transportSettings.CargoType) >= CalcShipNumberForPayload(missingResources, transportSettings.CargoType, userData.researches.HyperspaceTechnology, userData.serverData, destination.LFBonuses.GetShipCargoBonus(transportSettings.CargoType), userData.userInfo.Class, userData.serverData.ProbeCargo)) {
+					// Combined cargo-capable capacity at the destination, not just the configured
+					// CargoType - same fix as the multi-origin loop below.
+					var cargoShipsAtDestination = new Ships();
+					foreach (var cargoType in CargoCapableShipTypes)
+						cargoShipsAtDestination.Add(cargoType, destination.Ships.GetAmount(cargoType));
+					var destinationCargoCapacity = CalcFleetCapacity(cargoShipsAtDestination, userData.serverData, userData.researches.HyperspaceTechnology, destination.LFBonuses, userData.userInfo.Class, userData.serverData.ProbeCargo);
+					if (destinationCargoCapacity >= missingResources.TotalResources) {
 						result.Add(new Dictionary<Celestial, Resources> { { destination, missingResources } } );
 						return result;
 					} else if (transportSettings.DoMultipleTransportIsNotEnoughShipButSamePosition) {
@@ -5128,8 +5163,13 @@ namespace Tbot.Includes {
 				.Where(celestial => celestial.Resources.TotalResources >= transportSettings.MultipleOrigin.MinimumResourcesToSend)
 				.Select(celestial => {
 					var available = celestial.Resources.Difference(new Resources(0, 0, transportSettings.DeutToLeave));
+					// Combines every cargo-capable ship type present at this origin (LargeCargo/
+					// SmallCargo/Pathfinder), not just the single configured CargoType - an origin
+					// with plenty of resources but holding a different ship type used to look like
+					// it had almost no capacity, forcing an unnecessary split across many origins.
 					var ships = new Ships();
-					ships.Add(transportSettings.CargoType, celestial.Ships.GetAmount(transportSettings.CargoType));
+					foreach (var cargoType in CargoCapableShipTypes)
+						ships.Add(cargoType, celestial.Ships.GetAmount(cargoType));
 					var transportable = CalcMaxTransportableResources(ships, available, userData.researches.HyperspaceTechnology, userData.serverData, celestial.LFBonuses, userData.userInfo.Class, 0, userData.serverData.ProbeCargo);
 					var distance = CalcDistance(celestial.Coordinate, destination.Coordinate, userData.serverData);
 					var selectionScore = transportSettings.MultipleOrigin.PriorityToProximityOverQuantity ? distance : -transportable.TotalResources;

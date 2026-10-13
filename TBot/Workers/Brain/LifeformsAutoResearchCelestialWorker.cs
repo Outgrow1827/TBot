@@ -378,8 +378,10 @@ namespace Tbot.Workers.Brain {
 													var shipmentAmount = shipment.Value;
 													if (shipmentAmount.TotalResources == 0)
 														continue;
-													var ships = new Ships();
-													ships.Add((Buildables) transportsSettings.CargoType, _calculationService.CalcShipNumberForPayload(shipmentAmount, (Buildables) transportsSettings.CargoType, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, shipmentOrigin.LFBonuses.GetShipCargoBonus(transportsSettings.CargoType), _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo));
+													// Uses whatever mix of cargo-capable ships (LargeCargo/SmallCargo/Pathfinder) is
+													// actually sitting at this origin, not just the single configured CargoType -
+													// matches the capacity estimate CalcMultipleOrigin used to pick this origin.
+													var ships = _calculationService.CalcCargoShipsForPayload(shipmentOrigin.Ships, shipmentAmount, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, shipmentOrigin.LFBonuses, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo);
 													if (shipmentOrigin.Coordinate.IsSame(destination.Coordinate) && transportsSettings.SendToTheMoonIfPossible && destination.Coordinate.Type == Celestials.Moon)
 														fleetId = await _fleetScheduler.SendFleet(shipmentOrigin, ships, celestial.Coordinate, Missions.Transport, Speeds.HundredPercent, shipmentAmount);
 													else
