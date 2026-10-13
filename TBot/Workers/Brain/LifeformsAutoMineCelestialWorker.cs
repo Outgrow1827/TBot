@@ -102,6 +102,11 @@ namespace Tbot.Workers.Brain {
 				celestial = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.LFBuildings);
 				celestial = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.Buildings);
 				celestial = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.Constructions);
+				// CalcResourcesForRoundTrip (LFBuildables overload) -> CalcProductionTime reads
+				// celestial.Facilities.RoboticsFactory/NaniteFactory directly - without this, Facilities
+				// is null here (real crash: "LifeformAutoMine Celestial Exception: Object reference not
+				// set to an instance of an object", repeated in production logs since at least 09-17).
+				celestial = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.Facilities);
 				celestial = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.LFBonuses);
 				celestial = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.Ships);
 
