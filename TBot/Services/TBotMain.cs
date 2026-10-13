@@ -331,6 +331,17 @@ namespace Tbot.Services {
 
 			if (isVacationMode) {
 				log(LogLevel.Warning, LogSender.Tbot, "Account in vacation mode");
+				// Buying the daily offer is confirmed to still work in-game during vacation mode,
+				// unlike fleet/building actions which the game itself blocks - worth one attempt
+				// before giving up on this instance entirely.
+				if ((bool) InstanceSettings.Brain.Active && (bool) InstanceSettings.Brain.BuyOfferOfTheDay.Active) {
+					try {
+						var offerStatus = await _ogameService.BuyOfferOfTheDay();
+						log(LogLevel.Information, LogSender.Tbot, $"Offer of the day attempt while in vacation mode: {offerStatus}");
+					} catch (Exception e) {
+						log(LogLevel.Warning, LogSender.Tbot, $"Unable to buy offer of the day while in vacation mode: {e.Message}");
+					}
+				}
 				loggedIn = false;
 				await _ogameService.Logout();
 				throw new AccountInVacationModeException("Account is in vacation mode");
