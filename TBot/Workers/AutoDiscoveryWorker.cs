@@ -23,6 +23,7 @@ namespace Tbot.Workers {
 		private readonly ICalculationService _calculationService;
 		private readonly ITBotOgamedBridge _tbotOgameBridge;
 		private readonly AutoDiscoveryCursorStore _cursorStore;
+		private readonly ArtifactStorageStateStore _artifactStorageStore;
 
 		private readonly Dictionary<string, DiscoveryCursorState> _originCursors = new();
 
@@ -46,6 +47,7 @@ namespace Tbot.Workers {
 			_tbotOgameBridge = tbotOgameBridge;
 			_cursorStore = new AutoDiscoveryCursorStore(
 				$"autodiscovery_cursors_{_tbotInstance.InstanceAlias}.json");
+			_artifactStorageStore = new ArtifactStorageStateStore(_tbotInstance.InstanceAlias);
 		}
 
 		private sealed class CoordinateComparer : IEqualityComparer<Coordinate> {
@@ -176,11 +178,26 @@ namespace Tbot.Workers {
 			if (discoveries <= 0 || ctx.FleetsToSend <= 0 || ctx.Stop) return discoveries;
 
 			if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoDiscovery, "PauseWhenArtifactsAbove") && (bool) _tbotInstance.InstanceSettings.AutoDiscovery.PauseWhenArtifactsAbove) {
-				const long ArtifactsStorageCap = 3600;
+				// Used to compare against a hardcoded 3600 regardless of the account's real storage
+				// cap (which varies by lifeform building level) - the API call right below already
+				// returns that real cap (artifacts.Max) but it was being ignored. Now pauses/resumes
+				// against configurable percentages of the REAL cap, with separate stop/resume
+				// thresholds (hysteresis) so the state doesn't flap on/off every cycle while
+				// artifacts hover right at the pause point.
+				long stopAtPercent = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoDiscovery, "ArtifactsStorageStopAtPercent") ?
+					(long) _tbotInstance.InstanceSettings.AutoDiscovery.ArtifactsStorageStopAtPercent : 100;
+				long resumeBelowPercent = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoDiscovery, "ArtifactsStorageResumeBelowPercent") ?
+					(long) _tbotInstance.InstanceSettings.AutoDiscovery.ArtifactsStorageResumeBelowPercent : 80;
 				try {
 					var artifacts = await _ogameService.GetArtifacts(origin);
-					if (artifacts.Collected >= ArtifactsStorageCap) {
-						DoLog(LogLevel.Information, $"Pausing: artifacts storage is at {artifacts.Collected}/{artifacts.Max}, at or above the {ArtifactsStorageCap} cap.");
+					long stopAt = artifacts.Max * stopAtPercent / 100;
+					long resumeBelow = artifacts.Max * resumeBelowPercent / 100;
+					var currentState = _artifactStorageStore.Load();
+					var nextState = ArtifactStoragePolicy.NextState(currentState, artifacts.Collected, stopAt, resumeBelow);
+					if (nextState != currentState)
+						_artifactStorageStore.Save(nextState);
+					if (nextState == ArtifactStorageState.Paused) {
+						DoLog(LogLevel.Information, $"Pausing: artifacts storage is at {artifacts.Collected}/{artifacts.Max} ({stopAtPercent}% stop / {resumeBelowPercent}% resume).");
 						return discoveries;
 					}
 				} catch (Exception e) {

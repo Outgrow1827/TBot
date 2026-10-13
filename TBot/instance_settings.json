@@ -667,6 +667,8 @@
 		"MaxFailures": 5,
 		"RandomizeDestination": false,
 		"PauseWhenArtifactsAbove": false,
+		"ArtifactsStorageStopAtPercent": 100,
+		"ArtifactsStorageResumeBelowPercent": 80,
 		"CheckIntervalMin": 30,
 		"CheckIntervalMax": 60
 	}
