@@ -272,15 +272,14 @@ namespace Tbot.Workers.Brain {
 											if (origin.ID != 0) {
 												if (origin.Resources.IsEnoughFor(missingResources)) {
 													missingResources = _tbotInstance.InstanceSettings.Brain.Transports.RoundResources ? missingResources.Round((int) (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.Transports, "RoundTo") ? _tbotInstance.InstanceSettings.Brain.Transports.RoundTo : 1000)) : missingResources;
-												preferredShip = Buildables.SmallCargo;
-													if (!Enum.TryParse<Buildables>((string) _tbotInstance.InstanceSettings.Brain.Transports.CargoType, true, out preferredShip)) {
-														_tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler, "Unable to parse CargoType. Falling back to default SmallCargo");
-														preferredShip = Buildables.SmallCargo;
-													}
-													long shipsNeeded = _calculationService.CalcShipNumberForPayload(missingResources, preferredShip, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, origin.LFBonuses.GetShipCargoBonus(preferredShip), _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo);
-													if (origin.Ships.GetAmount(preferredShip) >= shipsNeeded) {
-														Ships ships = new();
-														ships.Add((Buildables) preferredShip, shipsNeeded);
+													// Uses whatever mix of cargo-capable ships (LargeCargo/SmallCargo/Pathfinder) is
+													// actually at the origin instead of only the single configured CargoType - otherwise
+													// a moon with plenty of SmallCargo but not enough of the configured LargeCargo would
+													// fail this shortcut and fall through to MultipleOrigins, splitting the transport
+													// across many planets even though the moon alone had enough combined capacity.
+													Ships ships = _calculationService.CalcCargoShipsForPayload(origin.Ships, missingResources, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, origin.LFBonuses, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo);
+													long originCapacity = _calculationService.CalcFleetCapacity(ships, _tbotInstance.UserData.serverData, _tbotInstance.UserData.researches.HyperspaceTechnology, origin.LFBonuses, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo);
+													if (originCapacity >= missingResources.TotalResources) {
 														fleetId = await _fleetScheduler.SendFleet(origin, ships, celestial.Coordinate, Missions.Transport, Speeds.HundredPercent, missingResources);
 														if (fleetId == (int) SendFleetCode.AfterSleepTime) {
 															stop = true;
@@ -290,8 +289,6 @@ namespace Tbot.Workers.Brain {
 														}
 													} else if (_tbotInstance.InstanceSettings.Brain.Transports.DoMultipleTransportIsNotEnoughShipButSamePosition) {
 														DoLog(LogLevel.Warning, $"Not enough Cargo available. Multiple transports will take place.");
-														Ships ships = new();
-														ships.Add((Buildables) preferredShip, origin.Ships.GetAmount(preferredShip));
 														Resources transportableResources = _calculationService.CalcMaxTransportableResources(ships, missingResources, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, origin.LFBonuses, _tbotInstance.UserData.userInfo.Class, 0, _tbotInstance.UserData.serverData.ProbeCargo);
 														fleetId = await _fleetScheduler.SendFleet(origin, ships, celestial.Coordinate, Missions.Transport, Speeds.HundredPercent, transportableResources);
 														if (fleetId == (int) SendFleetCode.AfterSleepTime) {
