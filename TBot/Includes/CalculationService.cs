@@ -5178,18 +5178,49 @@ namespace Tbot.Includes {
 				.Where(source => source.Available.TotalResources > 0)
 				.ToList();
 
+			// The planner used to be called with no shipment-count cap at all, so it happily built
+			// a plan needing as many origins as it took to cover the demand (e.g. 8, picked by
+			// whatever ordering MultipleOrigin.PriorityToProximityOverQuantity selected) - only
+			// for the caller to discover AFTERWARD that the worker's actual slot budget (shared
+			// across up to 4 Brain sub-workers, see BrainTransportCoordinator) was far smaller,
+			// and discard the entire plan every single cycle forever ("Not enough slots... 8/2",
+			// "Delaying..."), never retrying with a plan that could actually fit. Real report:
+			// a player's transport never went out despite having enough total resources, because
+			// distance-first ordering kept picking many small/medium contributors before reaching
+			// the one large one that alone (or with 1-2 others) would have fit the slot budget.
+			// Capping maxShipments here makes an infeasible-within-budget attempt fail fast and
+			// cleanly instead of being silently thrown away post-hoc; falling back to a
+			// quantity-first (biggest contributors first) attempt gives a real chance of fitting
+			// within the budget when the user's preferred proximity-first ordering can't.
+			int? slotBudget = transportSettings.MaxSlots > 0 ? (int) transportSettings.MaxSlots : null;
+			var demand = new[] { new ResourceDemand(destination.ID, roundRes ? missingResources.Round(transportSettings.RoundTo) : missingResources) };
 			var shipmentPlan = ResourceShipmentPlanner.Plan(
-				new[] { new ResourceDemand(destination.ID, roundRes ? missingResources.Round(transportSettings.RoundTo) : missingResources) },
+				demand,
 				shipmentSources,
+				maxShipments: slotBudget ?? int.MaxValue,
 				minimumShipmentResources: transportSettings.MultipleOrigin.MinimumResourcesToSend);
+			if (!shipmentPlan.IsComplete && slotBudget.HasValue && transportSettings.MultipleOrigin.PriorityToProximityOverQuantity) {
+				var byQuantitySources = shipmentSources
+					.Select(source => new ResourceSource(source.OriginId, source.Available, source.Capacity, source.Distance, -source.Capacity))
+					.ToList();
+				var fallbackPlan = ResourceShipmentPlanner.Plan(
+					demand,
+					byQuantitySources,
+					maxShipments: slotBudget.Value,
+					minimumShipmentResources: transportSettings.MultipleOrigin.MinimumResourcesToSend);
+				if (fallbackPlan.IsComplete) {
+					_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Proximity-first plan needed more than the {slotBudget.Value} available slot(s); a quantity-first plan fits instead.");
+					shipmentPlan = fallbackPlan;
+				}
+			}
 			if (!shipmentPlan.IsComplete) {
-				_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Not enough resources transportable for {destination.ToString()}");
+				_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Not enough resources transportable for {destination.ToString()} within the {slotBudget?.ToString() ?? "available"} slot(s).");
 				return new();
 			}
 
 			foreach (var shipment in shipmentPlan.Shipments) {
 				var origin = sourceById[shipment.OriginId];
-				_logger.WriteLog(LogLevel.Information, LogSender.Tbot, $"Sending resources from: {origin.Coordinate.ToString()} to {destination.Coordinate.ToString()} - Resources: {shipment.Amount.TransportableResources}");
+				_logger.WriteLog(LogLevel.Information, LogSender.Tbot, $"Planned shipment from: {origin.Coordinate.ToString()} to {destination.Coordinate.ToString()} - Resources: {shipment.Amount.TransportableResources}");
 				result.Add(new Dictionary<Celestial, Resources> { { origin, shipment.Amount } });
 			}
 			_logger.WriteLog(LogLevel.Information, LogSender.Tbot, $"{result.Count()} transports will be send to {destination.ToString()}");
