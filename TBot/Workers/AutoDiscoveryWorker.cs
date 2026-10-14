@@ -23,7 +23,7 @@ namespace Tbot.Workers {
 		private readonly ICalculationService _calculationService;
 		private readonly ITBotOgamedBridge _tbotOgameBridge;
 		private readonly AutoDiscoveryCursorStore _cursorStore;
-		private readonly ArtifactStorageStateStore _artifactStorageStore;
+		private readonly Dictionary<string, ArtifactStorageStateStore> _artifactStorageStores = new();
 
 		private readonly Dictionary<string, DiscoveryCursorState> _originCursors = new();
 
@@ -47,7 +47,19 @@ namespace Tbot.Workers {
 			_tbotOgameBridge = tbotOgameBridge;
 			_cursorStore = new AutoDiscoveryCursorStore(
 				$"autodiscovery_cursors_{_tbotInstance.InstanceAlias}.json");
-			_artifactStorageStore = new ArtifactStorageStateStore(_tbotInstance.InstanceAlias);
+		}
+
+		// Artifact storage (Collected/Max) is per-celestial in-game, but AutoDiscovery.Origin can
+		// configure several origins - a single shared store used to let one origin filling up
+		// incorrectly pause/resume discovery for every other configured origin too. Scoped by the
+		// same OriginKey the cursor store already uses per origin.
+		private ArtifactStorageStateStore GetArtifactStorageStore(Celestial origin) {
+			var key = OriginKey(origin);
+			if (!_artifactStorageStores.TryGetValue(key, out var store)) {
+				store = new ArtifactStorageStateStore($"{_tbotInstance.InstanceAlias}_{key.Replace(':', '_')}");
+				_artifactStorageStores[key] = store;
+			}
+			return store;
 		}
 
 		private sealed class CoordinateComparer : IEqualityComparer<Coordinate> {
@@ -192,10 +204,11 @@ namespace Tbot.Workers {
 					var artifacts = await _ogameService.GetArtifacts(origin);
 					long stopAt = artifacts.Max * stopAtPercent / 100;
 					long resumeBelow = artifacts.Max * resumeBelowPercent / 100;
-					var currentState = _artifactStorageStore.Load();
+					var artifactStorageStore = GetArtifactStorageStore(origin);
+					var currentState = artifactStorageStore.Load();
 					var nextState = ArtifactStoragePolicy.NextState(currentState, artifacts.Collected, stopAt, resumeBelow);
 					if (nextState != currentState)
-						_artifactStorageStore.Save(nextState);
+						artifactStorageStore.Save(nextState);
 					if (nextState == ArtifactStorageState.Paused) {
 						DoLog(LogLevel.Information, $"Pausing: artifacts storage is at {artifacts.Collected}/{artifacts.Max} ({stopAtPercent}% stop / {resumeBelowPercent}% resume).");
 						return discoveries;
