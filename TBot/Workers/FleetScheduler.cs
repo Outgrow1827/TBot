@@ -566,9 +566,24 @@ if (notEnoughDeuterium || notEnoughFuelCapacity) {
                 "Unable to send fleet: ships don't have enough fuel capacity, even at the lowest speed!");
             return (int)SendFleetCode.GenericError;
         }
-        _tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler,
-            "Unable to send fleet: not enough deuterium!");
-        return (int)SendFleetCode.NotEnoughDeuterium;
+        // Rather than aborting outright, shrink the deuterium portion of the payload to whatever
+        // actually fits once the reserve and this flight's fuel are set aside - callers that size
+        // deuterium cargo as "everything above the reserve" (e.g. AutoFleetSave evacuating a
+        // celestial) never budgeted for fuel on top of that, so without this the fleet simply never
+        // leaves (real regression, 2026-10-14, reported as "fleet save doesn't work right" right
+        // after the deutToLeave+fuel check above was added). The game itself would just carry less
+        // deuterium in this situation, not refuse the flight outright.
+        long availableForDeuteriumCargo = Math.Max(0, origin.Resources.Deuterium - deutToLeave - fleetPrediction.Fuel);
+        if (payload != null && deuteriumInPayload > availableForDeuteriumCargo) {
+            _tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler,
+                $"Not enough deuterium to ship {deuteriumInPayload} and still cover {fleetPrediction.Fuel} fuel plus the {deutToLeave} reserve - shipping {availableForDeuteriumCargo} deuterium instead.");
+            payload.Deuterium = availableForDeuteriumCargo;
+            deuteriumInPayload = availableForDeuteriumCargo;
+        } else {
+            _tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler,
+                "Unable to send fleet: not enough deuterium!");
+            return (int)SendFleetCode.NotEnoughDeuterium;
+        }
     }
 }
 
