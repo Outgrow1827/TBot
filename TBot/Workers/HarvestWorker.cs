@@ -444,10 +444,14 @@ namespace Tbot.Workers {
 			if (origins.Count == 0)
 				return origins;
 
-			var bonusOrigin = await _tbotOgameBridge.UpdatePlanet(origins[0].Celestial, UpdateTypes.LFBonuses);
-			var bonuses = bonusOrigin?.LFBonuses ?? new LFBonuses();
-			foreach (var origin in origins)
-				origin.Celestial.LFBonuses = bonuses;
+			// LFBonuses (including the ship cargo bonus CalculateRequiredShips reads) are per-celestial,
+			// driven by that specific planet's own lifeform building levels - fetching it once from
+			// origins[0] and stamping it onto every other origin undercounts/overcounts required
+			// Recyclers/Pathfinders for any origin with different lifeform levels than origins[0].
+			foreach (var origin in origins) {
+				var updated = await _tbotOgameBridge.UpdatePlanet(origin.Celestial, UpdateTypes.LFBonuses);
+				origin.Celestial.LFBonuses = updated?.LFBonuses ?? new LFBonuses();
+			}
 
 			return origins;
 		}
