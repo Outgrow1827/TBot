@@ -1106,25 +1106,12 @@ if (
 								ships.Add(preferredShip, idealShips);
 							}
 
-							// DeutToLeaveOnMoons only ever protected the reserve against the Deuterium
-							// PAYLOAD being shipped (the IsEnoughFor check above) - the fuel the sending
-							// ships themselves burn for the trip was never counted against it. A moon
-							// sitting at exactly reserve+payload deuterium would have the reserve eaten
-							// into (or past zero) by fuel alone, with SendFleet's own fuel check further
-							// down having no idea a reserve even exists. Reported live 2026-09-29 (user's
-							// own words to a community member): "if it is set to a million and a transport
-							// costs a million and one, it leaves you high and dry with zero deuterium."
-							// Checked here, after the real ship count is known, instead of back at the
-							// original IsEnoughFor call (which only had a 1-ship estimate for flight time).
-							if (resToLeave.Deuterium > 0) {
-								var fuelPrediction = _calcService.CalcFleetPrediction(origin.Coordinate, destination.Coordinate, ships, Missions.Transport, Speeds.HundredPercent, _tbotInstance.UserData.researches, _tbotInstance.UserData.serverData, origin.LFBonuses, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.allianceClass);
-								if (origin.Resources.Deuterium - missingResources.Deuterium - fuelPrediction.Fuel < resToLeave.Deuterium) {
-									_tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler,
-										$"Skipping transport: sending {missingResources.Deuterium:N0} deuterium plus {fuelPrediction.Fuel:N0} fuel from {origin.ToString()} would breach the {resToLeave.Deuterium:N0} DeutToLeaveOnMoons reserve ({origin.Resources.Deuterium:N0} available).");
-									return (int) SendFleetCode.NotEnoughRessources;
-								}
-							}
-
+							// DeutToLeaveOnMoons needs to survive this flight's own fuel cost too, not just
+							// the shipped payload - now enforced by SendFleet itself via its deutToLeave
+							// parameter (shrinks the deuterium cargo to fit instead of aborting the whole
+							// transport the way this used to). Reported live 2026-09-29 (user's own words
+							// to a community member): "if it is set to a million and a transport costs a
+							// million and one, it leaves you high and dry with zero deuterium."
 							if (destination.Coordinate.Type == Celestials.Planet) {
 								destination = await _tbotOgameBridge.UpdatePlanet(destination, UpdateTypes.ResourceSettings);
 								destination = await _tbotOgameBridge.UpdatePlanet(destination, UpdateTypes.Buildings);
@@ -1151,7 +1138,7 @@ if (
 									if (differentDestination != null && differentDestination.ID != 0)
 										destination = differentDestination;
 									_tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler, $"Sending {ships.ToString()} with {missingResources.TransportableResources} from {origin.ToString()} to {destination.ToString()}");
-									return await SendFleet(origin, ships, destination.Coordinate, Missions.Transport, Speeds.HundredPercent, missingResources, _tbotInstance.UserData.userInfo.Class);
+									return await SendFleet(origin, ships, destination.Coordinate, Missions.Transport, Speeds.HundredPercent, missingResources, _tbotInstance.UserData.userInfo.Class, deutToLeave: resToLeave.Deuterium);
 								} else {
 									_tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler, "Skipping transport: it is quicker to wait for production.");
 									return (int) SendFleetCode.QuickerToWaitForProduction;
@@ -1160,7 +1147,7 @@ if (
 								if (differentDestination != null && differentDestination.ID != 0)
 									destination = differentDestination;
 								_tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler, $"Sending {ships.ToString()} with {missingResources.TransportableResources} from {origin.ToString()} to {destination.ToString()}");
-								return await SendFleet(origin, ships, destination.Coordinate, Missions.Transport, Speeds.HundredPercent, missingResources, _tbotInstance.UserData.userInfo.Class);
+								return await SendFleet(origin, ships, destination.Coordinate, Missions.Transport, Speeds.HundredPercent, missingResources, _tbotInstance.UserData.userInfo.Class, deutToLeave: resToLeave.Deuterium);
 							}
 						} else {
 							_tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler, "Skipping transport: not enough ships to transport required resources.");
@@ -1283,16 +1270,7 @@ if (
 							}
 
 							// Same fuel-vs-reserve gap as the Buildables overload above (see its comment) -
-							// DeutToLeaveOnMoons never accounted for the sending ships' own fuel cost.
-							if (resToLeave.Deuterium > 0) {
-								var fuelPrediction = _calcService.CalcFleetPrediction(origin.Coordinate, destination.Coordinate, ships, Missions.Transport, Speeds.HundredPercent, _tbotInstance.UserData.researches, _tbotInstance.UserData.serverData, origin.LFBonuses, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.allianceClass);
-								if (origin.Resources.Deuterium - missingResources.Deuterium - fuelPrediction.Fuel < resToLeave.Deuterium) {
-									_tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler,
-										$"Skipping transport: sending {missingResources.Deuterium:N0} deuterium plus {fuelPrediction.Fuel:N0} fuel from {origin.ToString()} would breach the {resToLeave.Deuterium:N0} DeutToLeaveOnMoons reserve ({origin.Resources.Deuterium:N0} available).");
-									return (int) SendFleetCode.NotEnoughRessources;
-								}
-							}
-
+							// now enforced by SendFleet itself via deutToLeave instead of aborting here.
 							if (destination.Coordinate.Type == Celestials.Planet) {
 								destination = await _tbotOgameBridge.UpdatePlanet(destination, UpdateTypes.ResourceSettings);
 								destination = await _tbotOgameBridge.UpdatePlanet(destination, UpdateTypes.Buildings);
@@ -1319,7 +1297,7 @@ if (
 									if (differentDestination != null && differentDestination.ID != 0)
 										destination = differentDestination;
 									_tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler, $"Sending {ships.ToString()} with {missingResources.TransportableResources} from {origin.ToString()} to {destination.ToString()}");
-									return await SendFleet(origin, ships, destination.Coordinate, Missions.Transport, Speeds.HundredPercent, missingResources, _tbotInstance.UserData.userInfo.Class);
+									return await SendFleet(origin, ships, destination.Coordinate, Missions.Transport, Speeds.HundredPercent, missingResources, _tbotInstance.UserData.userInfo.Class, deutToLeave: resToLeave.Deuterium);
 								} else {
 									_tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler, "Skipping transport: it is quicker to wait for production.");
 									return (int) SendFleetCode.QuickerToWaitForProduction;
@@ -1328,7 +1306,7 @@ if (
 								if (differentDestination != null && differentDestination.ID != 0)
 									destination = differentDestination;
 								_tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler, $"Sending {ships.ToString()} with {missingResources.TransportableResources} from {origin.ToString()} to {destination.ToString()}");
-								return await SendFleet(origin, ships, destination.Coordinate, Missions.Transport, Speeds.HundredPercent, missingResources, _tbotInstance.UserData.userInfo.Class);
+								return await SendFleet(origin, ships, destination.Coordinate, Missions.Transport, Speeds.HundredPercent, missingResources, _tbotInstance.UserData.userInfo.Class, deutToLeave: resToLeave.Deuterium);
 							}
 						} else {
 							_tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler, "Skipping transport: not enough ships to transport required resources.");
