@@ -4932,7 +4932,13 @@ namespace Tbot.Includes {
 			7 or 6 => pos >= 2 && pos <= 14,
 			5 or 4 => pos >= 3 && pos <= 13,
 			3 or 2 or 1 => pos >= 4 && pos <= 12,
-			_ => true
+			// Astrophysics 0 means no colonizable position at all - practically unreachable through
+			// the normal early-game flow (ColonizeWorker's CalcMaxPlanets(0)==1 already blocks a
+			// fresh 1-planet account from reaching this check), but a gift/event planet could leave
+			// currentPlanets > 1 while Astrophysics is still 0, and treating every position as valid
+			// in that edge case (the old default) was never actually correct in-game.
+			_ when astrophysics <= 0 => false,
+			_ => pos >= 1 && pos <= 15
 		};
 
 		public int CalcMaxCrawlers(Planet planet, CharacterClass userClass, bool hasGeologist) {
