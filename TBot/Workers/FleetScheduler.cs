@@ -249,8 +249,14 @@ namespace Tbot.Workers {
 			}
 
 			var payload = celestial.Resources;
-			if ((long) _tbotInstance.InstanceSettings.SleepMode.AutoFleetSave.DeutToLeave > 0)
-				payload.Deuterium -= (long) _tbotInstance.InstanceSettings.SleepMode.AutoFleetSave.DeutToLeave;
+			// Also passed as SendFleet's deutToLeave below - its low-fuel fallback shrinks the
+			// deuterium cargo to fit fuel+reserve together, and without the real reserve value it
+			// defaults to 0, letting that fallback eat into the deuterium this subtraction was meant
+			// to protect (the exact "fleet save doesn't work right" regression, just reintroduced at
+			// this call site since the deutToLeave parameter was never wired through here).
+			long autoFleetSaveDeutToLeave = (long) _tbotInstance.InstanceSettings.SleepMode.AutoFleetSave.DeutToLeave;
+			if (autoFleetSaveDeutToLeave > 0)
+				payload.Deuterium -= autoFleetSaveDeutToLeave;
 			if (payload.Deuterium < 0)
 				payload.Deuterium = 0;
 
@@ -272,7 +278,7 @@ namespace Tbot.Workers {
 				foreach (FleetHypotesis fleet in fleetHypotesis.OrderBy(pf => pf.Fuel).ThenBy(pf => pf.Duration > minDuration)) {
 					_tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler, $"checking {mission} fleet to: {fleet.Destination}");
 					if (CheckFuel(fleet, celestial)) {
-						fleetId = await SendFleet(fleet.Origin, fleet.Ships, fleet.Destination, fleet.Mission, fleet.Speed, payload, _tbotInstance.UserData.userInfo.Class, true);
+						fleetId = await SendFleet(fleet.Origin, fleet.Ships, fleet.Destination, fleet.Mission, fleet.Speed, payload, _tbotInstance.UserData.userInfo.Class, true, deutToLeave: autoFleetSaveDeutToLeave);
 
 						if (fleetId != (int)SendFleetCode.GenericError &&
     fleetId != (int)SendFleetCode.AfterSleepTime &&
@@ -301,7 +307,7 @@ namespace Tbot.Workers {
 					foreach (FleetHypotesis fleet in fleetHypotesis.OrderBy(pf => pf.Fuel).ThenBy(pf => pf.Duration > minDuration)) {
 						_tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler, $"checking {mission} fleet to: {fleet.Destination}");
 						if (CheckFuel(fleet, celestial)) {
-							fleetId = await SendFleet(fleet.Origin, fleet.Ships, fleet.Destination, fleet.Mission, fleet.Speed, payload, _tbotInstance.UserData.userInfo.Class, true);
+							fleetId = await SendFleet(fleet.Origin, fleet.Ships, fleet.Destination, fleet.Mission, fleet.Speed, payload, _tbotInstance.UserData.userInfo.Class, true, deutToLeave: autoFleetSaveDeutToLeave);
 
 							if (fleetId != (int)SendFleetCode.GenericError &&
     fleetId != (int)SendFleetCode.AfterSleepTime &&
@@ -323,7 +329,7 @@ namespace Tbot.Workers {
 					foreach (FleetHypotesis fleet in fleetHypotesis.OrderBy(pf => pf.Fuel).ThenBy(pf => pf.Duration > minDuration)) {
 						_tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler, $"checking {mission} fleet to: {fleet.Destination}");
 						if (CheckFuel(fleet, celestial)) {
-							fleetId = await SendFleet(fleet.Origin, fleet.Ships, fleet.Destination, fleet.Mission, fleet.Speed, payload, _tbotInstance.UserData.userInfo.Class, true);
+							fleetId = await SendFleet(fleet.Origin, fleet.Ships, fleet.Destination, fleet.Mission, fleet.Speed, payload, _tbotInstance.UserData.userInfo.Class, true, deutToLeave: autoFleetSaveDeutToLeave);
 
 							if (fleetId != (int)SendFleetCode.GenericError &&
     fleetId != (int)SendFleetCode.AfterSleepTime &&
@@ -347,7 +353,7 @@ namespace Tbot.Workers {
 					foreach (FleetHypotesis fleet in fleetHypotesis.OrderBy(pf => pf.Fuel).ThenBy(pf => pf.Duration > minDuration)) {
 						_tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler, $"checking {mission} fleet to: {fleet.Destination}");
 						if (CheckFuel(fleet, celestial)) {
-							fleetId = await SendFleet(fleet.Origin, fleet.Ships, fleet.Destination, fleet.Mission, fleet.Speed, payload, _tbotInstance.UserData.userInfo.Class, true);
+							fleetId = await SendFleet(fleet.Origin, fleet.Ships, fleet.Destination, fleet.Mission, fleet.Speed, payload, _tbotInstance.UserData.userInfo.Class, true, deutToLeave: autoFleetSaveDeutToLeave);
 
 							if (fleetId != (int)SendFleetCode.GenericError &&
     fleetId != (int)SendFleetCode.AfterSleepTime &&
@@ -371,7 +377,7 @@ namespace Tbot.Workers {
 					foreach (FleetHypotesis fleet in fleetHypotesis.OrderBy(pf => pf.Fuel).ThenBy(pf => pf.Duration > minDuration)) {
 						_tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler, $"checking {mission} fleet to: {fleet.Destination}");
 						if (CheckFuel(fleet, celestial)) {
-							fleetId = await SendFleet(fleet.Origin, fleet.Ships, fleet.Destination, fleet.Mission, fleet.Speed, payload, _tbotInstance.UserData.userInfo.Class, true);
+							fleetId = await SendFleet(fleet.Origin, fleet.Ships, fleet.Destination, fleet.Mission, fleet.Speed, payload, _tbotInstance.UserData.userInfo.Class, true, deutToLeave: autoFleetSaveDeutToLeave);
 
 							if (fleetId != (int)SendFleetCode.GenericError &&
     fleetId != (int)SendFleetCode.AfterSleepTime &&
