@@ -4996,6 +4996,21 @@ namespace Tbot.Includes {
 				.Count();
 		}
 
+		// The account's original planet always has the lowest ID (OGame assigns IDs in colonization
+		// order) - using that instead of the configured Defender.Home coordinate means this can't
+		// silently stop protecting the main planet just because that setting was never filled in or
+		// went stale after switching capitals. Single source of truth: ColonizeWorker and
+		// AutoMineCelestialWorker both need this to never treat the home planet as an abandon/skip
+		// candidate, and used to compute it independently until that duplication let the home-planet
+		// protection apply in one of them but not the other.
+		public int GetHomePlanetId(List<Celestial> celestials) {
+			return celestials
+				.Where(c => c is Planet)
+				.Select(c => c.ID)
+				.DefaultIfEmpty(0)
+				.Min();
+		}
+
 		public bool	IsThereMoonHere(List<Celestial> planets, Celestial celestial) {
 			Celestial moon = planets.SingleOrDefault(
 				c => c.HasCoords(new(

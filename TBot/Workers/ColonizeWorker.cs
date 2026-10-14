@@ -200,15 +200,7 @@ namespace Tbot.Workers {
 					List<Celestial> newCelestials = _tbotInstance.UserData.celestials.ToList();
 					var dic = new Dictionary<Coordinate, Celestial>();
 
-					// The account's original planet always has the lowest ID (OGame assigns IDs in
-					// colonization order) - using that instead of the configured Defender.Home
-					// coordinate means this can't silently stop protecting the main planet just
-					// because that setting was never filled in or went stale after switching capitals.
-					int homePlanetId = _tbotInstance.UserData.celestials
-						.Where(c => c is Planet)
-						.Select(c => c.ID)
-						.DefaultIfEmpty(0)
-						.Min();
+					int homePlanetId = _calculationService.GetHomePlanetId(_tbotInstance.UserData.celestials);
 
 					foreach (Planet planet in _tbotInstance.UserData.celestials.Where(c => c is Planet)) {
 						if (planet.ID == homePlanetId) {

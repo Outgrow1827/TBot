@@ -157,7 +157,14 @@ namespace Tbot.Workers.Brain {
 						DoLog(LogLevel.Information, $"Skipping {celestial.ToString()}: not enough fields available.");
 						return;
 					}
-					if (_tbotInstance.UserData.celestials.Count > 1 && celestial.Coordinate.Type == Celestials.Planet && celestial.Fields.Built == 0 && (bool) _tbotInstance.InstanceSettings.AutoColonize.Abandon.Active) {
+					// Mirrors ColonizeWorker's own abandon check: the home planet must never be treated
+					// as a disposable colony candidate here - its field count is fixed by its position
+					// and can never reach a typical MinFields threshold, so without this guard it gets
+					// flagged "should be abandoned" from cycle 1 onward and never gets to build anything
+					// (Fields.Built only ever becomes >0 once something gets built, but nothing ever
+					// builds while flagged - a permanent deadlock on a fresh/single-planet account).
+					int homePlanetId = _calculationService.GetHomePlanetId(_tbotInstance.UserData.celestials);
+					if (celestial.ID != homePlanetId && _tbotInstance.UserData.celestials.Count > 1 && celestial.Coordinate.Type == Celestials.Planet && celestial.Fields.Built == 0 && (bool) _tbotInstance.InstanceSettings.AutoColonize.Abandon.Active) {
 						if (_calculationService.ShouldAbandon(celestial as Planet, celestial.Fields.Total, abaCelestial.Temperature.Max, fieldsSettings, temperaturesSettings)) {
 							DoLog(LogLevel.Debug, $"Skipping {celestial.ToString()}: planet should be abandoned.");
 							//DoLog(LogLevel.Debug, $"Because: cases -> {abaCelestial.Fields.Total.ToString()}/{fieldsSettings.Total.ToString()}, MinimumTemp -> {abaCelestial.Temperature.Max.ToString()}>={temperaturesSettings.Min.ToString()}, MaximumTemp -> {abaCelestial.Temperature.Max.ToString()}<={temperaturesSettings.Max.ToString()}");
@@ -434,8 +441,11 @@ namespace Tbot.Workers.Brain {
 												// across many planets even though the moon alone had enough combined capacity.
 												Ships ships = _calculationService.CalcCargoShipsForPayload(origin.Ships, missingResources, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, origin.LFBonuses, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo);
 												long originCapacity = _calculationService.CalcFleetCapacity(ships, _tbotInstance.UserData.serverData, _tbotInstance.UserData.researches.HyperspaceTechnology, origin.LFBonuses, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo);
+												// DeutToLeaveOnMoons must also survive this flight's own fuel draw, not just the
+												// payload sizing - see SendFleet's deutToLeave parameter.
+												long originDeutToLeave = origin.Coordinate.Type == Celestials.Moon ? (long) _tbotInstance.InstanceSettings.Brain.Transports.DeutToLeaveOnMoons : 0;
 												if (originCapacity >= missingResources.TotalResources) {
-													fleetId = await _fleetScheduler.SendFleet(origin, ships, celestial.Coordinate, Missions.Transport, Speeds.HundredPercent, missingResources);
+													fleetId = await _fleetScheduler.SendFleet(origin, ships, celestial.Coordinate, Missions.Transport, Speeds.HundredPercent, missingResources, deutToLeave: originDeutToLeave);
 													if (fleetId == (int) SendFleetCode.AfterSleepTime) {
 														stop = true;
 													}
@@ -445,7 +455,7 @@ namespace Tbot.Workers.Brain {
 												} else if (_tbotInstance.InstanceSettings.Brain.Transports.DoMultipleTransportIsNotEnoughShipButSamePosition) {
 													DoLog(LogLevel.Warning, $"Not enough Cargo available. Multiple transports will take place.");
 													Resources transportableResources = _calculationService.CalcMaxTransportableResources(ships, missingResources, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, origin.LFBonuses, _tbotInstance.UserData.userInfo.Class, 0, _tbotInstance.UserData.serverData.ProbeCargo);
-													fleetId = await _fleetScheduler.SendFleet(origin, ships, celestial.Coordinate, Missions.Transport, Speeds.HundredPercent, transportableResources);
+													fleetId = await _fleetScheduler.SendFleet(origin, ships, celestial.Coordinate, Missions.Transport, Speeds.HundredPercent, transportableResources, deutToLeave: originDeutToLeave);
 													if (fleetId == (int) SendFleetCode.AfterSleepTime) {
 														stop = true;
 													}
@@ -539,10 +549,11 @@ namespace Tbot.Workers.Brain {
 												// actually sitting at this origin, not just the single configured CargoType -
 												// matches the capacity estimate CalcMultipleOrigin used to pick this origin.
 												var ships = _calculationService.CalcCargoShipsForPayload(shipmentOrigin.Ships, shipmentAmount, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, shipmentOrigin.LFBonuses, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo);
+												long shipmentOriginDeutToLeave = shipmentOrigin.Coordinate.Type == Celestials.Moon ? (long) _tbotInstance.InstanceSettings.Brain.Transports.DeutToLeaveOnMoons : 0;
 												if (shipmentOrigin.Coordinate.IsSame(destination.Coordinate) && transportsSettings.SendToTheMoonIfPossible && destination.Coordinate.Type == Celestials.Moon)
-													fleetId = await _fleetScheduler.SendFleet(shipmentOrigin, ships, celestial.Coordinate, Missions.Transport, Speeds.HundredPercent, shipmentAmount);
+													fleetId = await _fleetScheduler.SendFleet(shipmentOrigin, ships, celestial.Coordinate, Missions.Transport, Speeds.HundredPercent, shipmentAmount, deutToLeave: shipmentOriginDeutToLeave);
 												else
-													fleetId = await _fleetScheduler.SendFleet(shipmentOrigin, ships, destination.Coordinate, Missions.Transport, Speeds.HundredPercent, shipmentAmount);
+													fleetId = await _fleetScheduler.SendFleet(shipmentOrigin, ships, destination.Coordinate, Missions.Transport, Speeds.HundredPercent, shipmentAmount, deutToLeave: shipmentOriginDeutToLeave);
 
 												if (fleetId == (int) SendFleetCode.AfterSleepTime) {
 													stop = true;
