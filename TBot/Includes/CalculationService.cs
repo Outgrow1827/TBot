@@ -5191,6 +5191,13 @@ namespace Tbot.Includes {
 					var ships = new Ships();
 					foreach (var cargoType in CargoCapableShipTypes)
 						ships.Add(cargoType, celestial.Ships.GetAmount(cargoType));
+					// This leg's own fuel cost also has to come out of this origin's deuterium, on top
+					// of the DeutToLeave reserve already subtracted into `available` above - otherwise
+					// the planner can report a plan "complete" using per-origin capacities that look
+					// fine on paper, while the real per-leg SendFleet call (fuel-aware since this
+					// session) silently ships less than promised once it shrinks to cover its own fuel.
+					var fuelPrediction = CalcFleetPrediction(celestial.Coordinate, destination.Coordinate, ships, Missions.Transport, Speeds.HundredPercent, userData.researches, userData.serverData, celestial.LFBonuses, userData.userInfo.Class, userData.allianceClass);
+					available.Deuterium = Math.Max(0, available.Deuterium - fuelPrediction.Fuel);
 					var transportable = CalcMaxTransportableResources(ships, available, userData.researches.HyperspaceTechnology, userData.serverData, celestial.LFBonuses, userData.userInfo.Class, 0, userData.serverData.ProbeCargo);
 					var distance = CalcDistance(celestial.Coordinate, destination.Coordinate, userData.serverData);
 					var selectionScore = transportSettings.MultipleOrigin.PriorityToProximityOverQuantity ? distance : -transportable.TotalResources;
