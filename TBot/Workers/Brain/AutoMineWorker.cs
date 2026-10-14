@@ -169,7 +169,14 @@ namespace Tbot.Workers.Brain {
 						}
 					}
 					bool includeCelestial = true;
-					if (cel.Coordinate.Type == Celestials.Planet && cel.Fields.Built == 0 && (bool) _tbotInstance.InstanceSettings.AutoColonize.Abandon.Active) {
+					// Same home-planet deadlock this sibling worker (AutoMineCelestialWorker.cs) was
+					// already fixed for this session: the home/lowest-ID planet's field count is fixed
+					// by its position and can never satisfy a typical MinFields threshold, so without
+					// this guard it gets silently dropped from celestialsToMine forever on a fresh
+					// account - Fields.Built only becomes >0 once something gets built, but nothing
+					// ever builds here while the celestial is excluded.
+					int homePlanetId = _calculationService.GetHomePlanetId(_tbotInstance.UserData.celestials);
+					if (cel.ID != homePlanetId && cel.Coordinate.Type == Celestials.Planet && cel.Fields.Built == 0 && (bool) _tbotInstance.InstanceSettings.AutoColonize.Abandon.Active) {
 						if (_calculationService.ShouldAbandon(cel as Planet, cel.Fields.Total, abaCelestial.Temperature.Max, fieldsSettings, temperaturesSettings)) {
 							DoLog(LogLevel.Debug, $"Skipping {cel.ToString()}: planet should be abandoned.");
 							includeCelestial = false;
