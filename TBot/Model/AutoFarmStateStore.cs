@@ -25,6 +25,9 @@ namespace TBot.Model {
 		public string Mission { get; init; } = "Attack";
 		public DateTime DispatchedAtUtc { get; init; }
 		public Resources Loot { get; init; } = new();
+		// Stable player identity, 0 when unknown (e.g. older rows written before this column
+		// existed). TargetName is the celestial's name, not the player's - use this for identity.
+		public int PlayerId { get; init; }
 	}
 
 	public sealed record AutoFarmScanCursor(int RangeIndex, int Galaxy, int System, bool FullScanCompleted = false);
@@ -249,10 +252,10 @@ VALUES ($report_id, $galaxy, $system, $position, $celestial_type, $consumed_at_u
 INSERT OR IGNORE INTO attacks (
   report_id, galaxy, system, position, celestial_type, target_name,
   dispatched_at_utc, metal, crystal, deuterium,
-  origin_galaxy, origin_system, origin_position, origin_celestial_type, mission)
+  origin_galaxy, origin_system, origin_position, origin_celestial_type, mission, player_id)
 VALUES ($report_id, $galaxy, $system, $position, $celestial_type, $target_name,
   $dispatched_at_utc, $metal, $crystal, $deuterium,
-  $origin_galaxy, $origin_system, $origin_position, $origin_celestial_type, $mission);";
+  $origin_galaxy, $origin_system, $origin_position, $origin_celestial_type, $mission, $player_id);";
 					attack.Parameters.AddWithValue("$report_id", target.Report.ID);
 					attack.Parameters.AddWithValue("$galaxy", coordinate.Galaxy);
 					attack.Parameters.AddWithValue("$system", coordinate.System);
@@ -268,6 +271,11 @@ VALUES ($report_id, $galaxy, $system, $position, $celestial_type, $target_name,
 					attack.Parameters.AddWithValue("$origin_position", origin?.Position ?? (object) DBNull.Value);
 					attack.Parameters.AddWithValue("$origin_celestial_type", origin == null ? (object) DBNull.Value : (int) origin.Type);
 					attack.Parameters.AddWithValue("$mission", string.IsNullOrWhiteSpace(mission) ? "Attack" : mission);
+					// Stable identity for the attacked player - target_name above is the CELESTIAL's
+					// name, not the player's, and either way names can change; this is what lets
+					// history be reconciled by actual player identity instead of a name that can drift.
+					var playerId = (target.Celestial as Planet)?.Player?.ID ?? 0;
+					attack.Parameters.AddWithValue("$player_id", playerId > 0 ? playerId : (object) DBNull.Value);
 					attack.ExecuteNonQuery();
 				}
 
@@ -290,7 +298,7 @@ VALUES ($report_id, $galaxy, $system, $position, $celestial_type, $target_name,
 				command.CommandText = @"
 SELECT report_id, galaxy, system, position, celestial_type, target_name,
   dispatched_at_utc, metal, crystal, deuterium,
-  origin_galaxy, origin_system, origin_position, origin_celestial_type, mission
+  origin_galaxy, origin_system, origin_position, origin_celestial_type, mission, player_id
 FROM attacks
 ORDER BY dispatched_at_utc DESC
 LIMIT $limit;";
@@ -309,7 +317,8 @@ LIMIT $limit;";
 						DispatchedAtUtc = ParseUtc(reader.GetString(6)),
 						Loot = new Resources(reader.GetInt64(7), reader.GetInt64(8), reader.GetInt64(9)),
 						OriginCoordinate = origin,
-						Mission = reader.IsDBNull(14) ? "Attack" : reader.GetString(14)
+						Mission = reader.IsDBNull(14) ? "Attack" : reader.GetString(14),
+						PlayerId = reader.IsDBNull(15) ? 0 : reader.GetInt32(15)
 					});
 				}
 			} catch {
@@ -493,7 +502,8 @@ CREATE TABLE IF NOT EXISTS attacks (
   origin_system INTEGER NULL,
   origin_position INTEGER NULL,
   origin_celestial_type INTEGER NULL,
-  mission TEXT NULL
+  mission TEXT NULL,
+  player_id INTEGER NULL
 );
 CREATE TABLE IF NOT EXISTS scan_cursor (
   id INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
@@ -525,7 +535,8 @@ CREATE TABLE IF NOT EXISTS scan_cursor (
 					"origin_system INTEGER NULL",
 					"origin_position INTEGER NULL",
 					"origin_celestial_type INTEGER NULL",
-					"mission TEXT NULL"
+					"mission TEXT NULL",
+					"player_id INTEGER NULL"
 				}) {
 					try {
 						using var migration = connection.CreateCommand();

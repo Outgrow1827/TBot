@@ -58,6 +58,12 @@ namespace Tbot.Workers {
 			if (record == null && !string.IsNullOrEmpty(playerName))
 				_byName.TryGetValue(playerName, out record);
 
+			// A player's display name can change in-game; the ID is what's stable. Without this,
+			// a renamed player's record silently keeps showing their old name everywhere this
+			// database is read, even though the same account (same ID) is being tracked correctly.
+			if (record != null && !string.IsNullOrEmpty(playerName) && record.PlayerName != playerName)
+				record.PlayerName = playerName;
+
 			if (record == null) {
 				record = new PlayerRecord {
 					PlayerID = playerId,
