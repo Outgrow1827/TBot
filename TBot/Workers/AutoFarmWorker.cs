@@ -2956,31 +2956,15 @@ _tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"[GLOBAL SPACING] T
 					continue;
 				}
 			}
-
-			int deleteRetries = 3;
-			for (int i = 0; i < deleteRetries; i++) {
-				try {
-					await _ogameService.DeleteAllEspionageReports();
-					break;
-				} catch (Exception e) {
-					var message = e.Message ?? string.Empty;
-					var retryable = message.Contains("503", StringComparison.OrdinalIgnoreCase)
-						|| message.Contains("Service Unavailable", StringComparison.OrdinalIgnoreCase)
-						|| message.Contains("Unable to delete", StringComparison.OrdinalIgnoreCase);
-
-					if (retryable && i < deleteRetries - 1) {
-						_tbotInstance.log(LogLevel.Warning, LogSender.AutoFarm,
-							$"Failed to delete espionage reports ({message}), retry {i + 1}/{deleteRetries}...");
-						await Task.Delay(3000, _ct);
-						continue;
-					}
-
-					_tbotInstance.log(LogLevel.Warning, LogSender.AutoFarm,
-						$"Could not delete espionage reports after {i + 1} attempt(s): {message}. Attack decisions are retained for the next cycle.");
-					break;
-				}
-			}
-
+			// No bulk DeleteAllEspionageReports() call here on purpose - every report this loop
+			// actually finishes with is already deleted individually above (consumed, expired,
+			// duplicate/repeated, superseded, or NotSuitable). A bulk delete here would also wipe
+			// reports still legitimately in use (ProbesRequired/AttackPending, awaited by a later
+			// cycle) and any manual espionage the player did outside AutoFarm - real player report,
+			// 2026-10-14. This bulk call existed in the original 2021 AutoFarm implementation (with
+			// the original author's own TODO questioning whether it was even needed) and has been
+			// removed and accidentally reintroduced by merges/refactors several times since; ronnie32
+			// independently reached the same per-report-only conclusion in their v3.5.1-beta2 rewrite.
 		}
 	}
 }
