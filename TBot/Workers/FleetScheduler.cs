@@ -439,7 +439,7 @@ if (fleet == null) return;
     }
 }
 		}
-		public async Task<int> SendFleet(Celestial origin, Ships ships, Coordinate destination, Missions mission, decimal speed, Resources payload = null, CharacterClass playerClass = CharacterClass.NoClass, bool force = false, bool allowSpeedReduction = false) {
+		public async Task<int> SendFleet(Celestial origin, Ships ships, Coordinate destination, Missions mission, decimal speed, Resources payload = null, CharacterClass playerClass = CharacterClass.NoClass, bool force = false, bool allowSpeedReduction = false, long deutToLeave = 0) {
 			_tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler, $"Sending fleet from {origin.Coordinate.ToString()} to {destination.ToString()}. Mission: {mission.ToString()}. Speed: {(speed * 10).ToString()}% Ships: {ships.ToString()}");
 
 			if (playerClass == CharacterClass.NoClass)
@@ -525,7 +525,15 @@ long fuelCapacity = _calcService.CalcFleetFuelCapacity(
 // planet itself has plenty of deuterium. Both constraints shrink at lower speed, so they need to
 // be solved together: keep dropping speed until a level satisfies both, instead of only retrying
 // on the deuterium-stock check and failing outright on the tank-capacity one.
-bool notEnoughDeuterium = origin.Resources.Deuterium < fleetPrediction.Fuel;
+//
+// deutToLeave also has to come out of this same stock. Deuterium already queued as part of
+// `payload` was only ever checked against the configured reserve BEFORE this call, never against
+// the reserve PLUS this flight's own fuel together - a transport could be sized to leave exactly
+// deutToLeave behind, then the fuel draw on top of that still left the origin below the reserve
+// (real report, 2026-10-14: 500k on hand, 400k reserve, 100k payload leaves exactly 100k spare,
+// fine on its own, but a 20k fuel cost on top drops the origin to 380k - under reserve).
+long deuteriumInPayload = payload?.Deuterium ?? 0;
+bool notEnoughDeuterium = (origin.Resources.Deuterium - deuteriumInPayload - deutToLeave) < fleetPrediction.Fuel;
 bool notEnoughFuelCapacity = fuelCapacity != 0 && fuelCapacity < fleetPrediction.Fuel;
 if (notEnoughDeuterium || notEnoughFuelCapacity) {
     bool speedReduced = false;
@@ -537,7 +545,7 @@ if (notEnoughDeuterium || notEnoughFuelCapacity) {
                 origin.Coordinate, destination, ships, mission, lowerSpeed,
                 _tbotInstance.UserData.researches, _tbotInstance.UserData.serverData,
                 origin.LFBonuses, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.allianceClass);
-            if (origin.Resources.Deuterium >= lowerPrediction.Fuel && (fuelCapacity == 0 || fuelCapacity >= lowerPrediction.Fuel)) {
+            if ((origin.Resources.Deuterium - deuteriumInPayload - deutToLeave) >= lowerPrediction.Fuel && (fuelCapacity == 0 || fuelCapacity >= lowerPrediction.Fuel)) {
                 _tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler,
                     $"Insufficient fuel at {speed * 10}% speed ({fleetPrediction.Fuel} fuel needed, {origin.Resources.Deuterium} available, tank capacity {fuelCapacity}). Reducing to {lowerSpeed * 10}% speed ({lowerPrediction.Fuel} fuel needed).");
                 fleetPrediction = lowerPrediction;
@@ -1493,13 +1501,16 @@ if (
 						}
 						Resources payload = tempCelestial.Resources;
 
+						long applicableDeutToLeave = 0;
 						if ((long) _tbotInstance.InstanceSettings.Brain.AutoRepatriate.LeaveDeut.DeutToLeave > 0) {
 							if ((bool) _tbotInstance.InstanceSettings.Brain.AutoRepatriate.LeaveDeut.OnlyOnMoons) {
 								if (tempCelestial.Coordinate.Type == Celestials.Moon) {
-									payload = payload.Difference(new(0, 0, (long) _tbotInstance.InstanceSettings.Brain.AutoRepatriate.LeaveDeut.DeutToLeave));
+									applicableDeutToLeave = (long) _tbotInstance.InstanceSettings.Brain.AutoRepatriate.LeaveDeut.DeutToLeave;
+									payload = payload.Difference(new(0, 0, applicableDeutToLeave));
 								}
 							} else {
-								payload = payload.Difference(new(0, 0, (long) _tbotInstance.InstanceSettings.Brain.AutoRepatriate.LeaveDeut.DeutToLeave));
+								applicableDeutToLeave = (long) _tbotInstance.InstanceSettings.Brain.AutoRepatriate.LeaveDeut.DeutToLeave;
+								payload = payload.Difference(new(0, 0, applicableDeutToLeave));
 							}
 						}
 
@@ -1522,7 +1533,7 @@ if (
 							payload = _calcService.CalcMaxTransportableResources(ships, payload, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, tempCelestial.LFBonuses, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo);
 
 							if (payload.TotalResources > 0) {
-								var fleetId = await SendFleet(tempCelestial, ships, destinationCoordinate, Missions.Transport, Speeds.HundredPercent, payload);
+								var fleetId = await SendFleet(tempCelestial, ships, destinationCoordinate, Missions.Transport, Speeds.HundredPercent, payload, deutToLeave: applicableDeutToLeave);
 								if (fleetId == (int) SendFleetCode.AfterSleepTime) {
 									return RepatriateCode.Stop;
 								}
