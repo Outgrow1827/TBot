@@ -2851,10 +2851,16 @@ _tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"[GLOBAL SPACING] T
 						(SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "Blacklist") &&
 						SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm.Blacklist, "ProcessAllReports") &&
 						(bool) _tbotInstance.InstanceSettings.AutoFarm.Blacklist.ProcessAllReports);
-					if (processAllReports && report.IsInactive) {
+					// Used to require report.IsInactive, discarding manual espionage of an active player
+					// entirely (not even cached for stats/history). Now captured too, but gated below
+					// (newFarmTarget.State forced to Idle, never AttackPending) so this never turns into
+					// an actual attack on an active player - only closes the data gap, doesn't change
+					// who AutoFarm is willing to attack.
+					if (processAllReports) {
 						_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"Processing report for {report.Coordinate} not scanned by TBot (ProcessAllReports enabled)...");
 						var galaxyInfo = await _ogameService.GetGalaxyInfo(report.Coordinate.Galaxy, report.Coordinate.System);
-						var planet = galaxyInfo.Planets.FirstOrDefault(p => p != null && p.Inactive && !p.Administrator && !p.Banned && !p.Vacation && p.HasCoords(report.Coordinate));
+						var planet = galaxyInfo.Planets.FirstOrDefault(p => p != null && !p.Administrator && !p.Banned && !p.Vacation && p.HasCoords(report.Coordinate));
+						bool isActivePlayer = planet != null && !planet.Inactive;
 						if (planet != null) {
 							var target = GetFarmTarget(planet);
 							if (target != null) {
@@ -2891,11 +2897,11 @@ _tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"[GLOBAL SPACING] T
 								if (report.Loot(_tbotInstance.UserData.userInfo.Class).TotalResources > minimumResources) {
 									if (report.HasFleetInformation && report.HasDefensesInformation) {
 										if (report.IsDefenceless(isUsingProbes)) {
-											newFarmTarget.State = scanOnly ? FarmState.Idle : FarmState.AttackPending;
-											_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"{(scanOnly ? "Suitable target catalogued (ScanOnly)" : "Attack pending")} on {report.Coordinate}. Loot: {report.Loot(_tbotInstance.UserData.userInfo.Class)}");
+											newFarmTarget.State = (scanOnly || isActivePlayer) ? FarmState.Idle : FarmState.AttackPending;
+											_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"{(isActivePlayer ? "Suitable target catalogued (active player, never attacked)" : scanOnly ? "Suitable target catalogued (ScanOnly)" : "Attack pending")} on {report.Coordinate}. Loot: {report.Loot(_tbotInstance.UserData.userInfo.Class)}");
 										} else if (GetAcceptableFleetLossPercentage() > 0) {
-											newFarmTarget.State = scanOnly ? FarmState.Idle : FarmState.AttackPending;
-											_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"{(scanOnly ? "Suitable target catalogued (ScanOnly)" : "Attack pending")} on {report.Coordinate} (defended - will simulate battle before sending). Loot: {report.Loot(_tbotInstance.UserData.userInfo.Class)}");
+											newFarmTarget.State = (scanOnly || isActivePlayer) ? FarmState.Idle : FarmState.AttackPending;
+											_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"{(isActivePlayer ? "Suitable target catalogued (active player, never attacked)" : scanOnly ? "Suitable target catalogued (ScanOnly)" : "Attack pending")} on {report.Coordinate} (defended - will simulate battle before sending). Loot: {report.Loot(_tbotInstance.UserData.userInfo.Class)}");
 										} else {
 											newFarmTarget.State = FarmState.NotSuitable;
 											bool blacklistActiveDefense2 = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "Blacklist") &&
