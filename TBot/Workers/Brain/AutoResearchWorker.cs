@@ -227,6 +227,14 @@ namespace Tbot.Workers.Brain {
 							
 							if (MaxSlots > 0) {
 								if (!_calculationService.IsThereTransportTowardsCelestial(celestial, _tbotInstance.UserData.fleets)) {
+									// See AutoMineCelestialWorker for the rationale: the outer worker's
+									// ResourceDecisionLock only serializes the scheduling handoff (fire-and-
+									// forget), not this actual resource-read/decide/SendFleet sequence - lock
+									// here too, or this Brain item can race another one and double-spend the
+									// same origin's resources.
+									if (!await BrainTransportCoordinator.ResourceDecisionLock.WaitAsync(BrainTransportCoordinator.ResourceDecisionLockTimeout))
+										return;
+									try {
 									Celestial origin = new() { ID = 0 };
 									List<Celestial> allCelestials = _tbotInstance.UserData.celestials;
 									for (int i = 0; i < allCelestials.Count(); i++) {
@@ -251,7 +259,8 @@ namespace Tbot.Workers.Brain {
 												Enum.Parse<Celestials>((string) _tbotInstance.InstanceSettings.Brain.Transports.Origin.Type)),
 											preferredShip, research, level, _tbotInstance.UserData.researches, _tbotInstance.UserData.serverData,
 											celestial.Facilities, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.allianceClass,
-											cumulativeLabLevel);
+											cumulativeLabLevel,
+											widenStockpileWindow: SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.Transports, "WidenStockpileWindow") && (bool) _tbotInstance.InstanceSettings.Brain.Transports.WidenStockpileWindow);
 									}
 									Resources missingResources = costToCover.Difference(celestial.Resources);
 									if ((bool) _tbotInstance.InstanceSettings.Brain.Transports.CheckMoonOrPlanetFirst) {
@@ -272,6 +281,16 @@ namespace Tbot.Workers.Brain {
 												.SingleOrDefault() ?? new() { ID = 0 };
 										}
 										if (origin.ID != 0) {
+										// See AutoMineCelestialWorker for the rationale: StockpileForRoundTrip can
+										// inflate missingResources beyond what's affordable; fall back to whatever
+										// is available rather than sending nothing, as long as it still covers cost.
+										if (!origin.Resources.IsEnoughFor(missingResources) && origin.Resources.IsEnoughFor(cost)) {
+											missingResources = new Resources(
+												Math.Min(missingResources.Metal, origin.Resources.Metal),
+												Math.Min(missingResources.Crystal, origin.Resources.Crystal),
+												Math.Min(missingResources.Deuterium, origin.Resources.Deuterium)
+											);
+										}
 										if (origin.Resources.IsEnoughFor(missingResources)) {
 											missingResources = _tbotInstance.InstanceSettings.Brain.Transports.RoundResources ? missingResources.Round((int) (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.Transports, "RoundTo") ? _tbotInstance.InstanceSettings.Brain.Transports.RoundTo : 1000)) : missingResources;
 												// Uses whatever mix of cargo-capable ships (LargeCargo/SmallCargo/Pathfinder) is
@@ -433,6 +452,9 @@ namespace Tbot.Workers.Brain {
 											}
 										}
 									}
+					} finally {
+						BrainTransportCoordinator.ResourceDecisionLock.Release();
+					}
 								} else {
 									DoLog(LogLevel.Information, $"Skipping transport: there is already a transport incoming in {celestial.ToString()}");
 									fleetId = _tbotInstance.UserData.fleets.Where(f => f.Mission == Missions.Transport)

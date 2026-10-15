@@ -4173,16 +4173,18 @@ namespace Tbot.Includes {
 		}
 
 		public LFTechno GetNextLFTechToBuild(Celestial celestial, LFTechs MaxReasearchLevel) {
-			//TODO
-			//As planets can have any lifeform techs, its complicated to find which techs are existing on a planet if the techs are not at least level 1
-			//Therefore, for the moment, up only techs that are minimum level 1, its a way to also allows player to chose which research to up
+			// Previously required level > 0 (already started in-game) before the bot would touch a
+			// tech, so a fresh tech at level 0 was never picked even if its MaxTechsXX setting allowed
+			// it - selection had to happen manually in-game first. Now any tech the player hasn't
+			// capped at 0 in settings is eligible from level 0 onward, so which tech starts first is
+			// controlled purely by MaxTechsXX (set the ones you don't want touched yet to 0).
 			foreach (LFTechno nextLFTech in Enum.GetValues<LFTechno>()) {
 				int? level = celestial.LFTechs.GetLevel(nextLFTech);
 				if (level is null) {
 						continue;
 				}
 
-				if (level > 0 && GetNextLevel(celestial, nextLFTech) <= MaxReasearchLevel.GetLevel(nextLFTech)) {
+				if (GetNextLevel(celestial, nextLFTech) <= MaxReasearchLevel.GetLevel(nextLFTech)) {
 					//Console.WriteLine($"-----------------------------> {nextLFTech}: {GetNextLevel(celestial, nextLFTech)} / {MaxReasearchLevel.GetLevel(nextLFTech)}");
 					return nextLFTech;
 				}
@@ -4202,7 +4204,7 @@ namespace Tbot.Includes {
 					continue;
 				}
 
-				if (level > 0 && GetNextLevel(celestial, next) <= MaxReasearchLevel.GetLevel(next)) {
+				if (GetNextLevel(celestial, next) <= MaxReasearchLevel.GetLevel(next)) {
 					//Console.WriteLine($"-----------------------------> {next}: {GetNextLevel(celestial, next)} / {MaxReasearchLevel.GetLevel(next)}");
 					var nextLFtechlvl = GetNextLevel(celestial, next);
 					Resources newcost = CalcPrice(next, nextLFtechlvl, costReduction);
@@ -5122,8 +5124,21 @@ namespace Tbot.Includes {
 
 			Resources TotalResources = closestCelestials.Aggregate(new Resources(), (total, celestial) => total.Sum(celestial.Resources.Difference(new Resources(0, 0, transportSettings.DeutToLeave))) );
 			if (!TotalResources.IsEnoughFor(missingResources)) {
-				_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Not enough resources available on all celestials: Needed: {missingResources.TransportableResources} - Available: {TotalResources.TransportableResources}");
-				return new();
+				// missingResources may cover several future levels worth of a StockpileForRoundTrip
+				// window, which can exceed what the whole account can gather. Rather than send nothing,
+				// cap the request to what's actually available across all celestials - as long as that
+				// still clears the configured minimum, it's still real progress.
+				if (TotalResources.TotalResources >= transportSettings.MultipleOrigin.MinimumResourcesToSend) {
+					_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Not enough resources available on all celestials for the full stockpile window: Needed: {missingResources.TransportableResources} - Available: {TotalResources.TransportableResources}. Sending what's available instead.");
+					missingResources = new Resources(
+						Math.Min(missingResources.Metal, TotalResources.Metal),
+						Math.Min(missingResources.Crystal, TotalResources.Crystal),
+						Math.Min(missingResources.Deuterium, TotalResources.Deuterium)
+					);
+				} else {
+					_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Not enough resources available on all celestials: Needed: {missingResources.TransportableResources} - Available: {TotalResources.TransportableResources}");
+					return new();
+				}
 			} else {
 				_logger.WriteLog(LogLevel.Information, LogSender.Brain, $"Enough resources available on all celestials: Needed: {missingResources.TransportableResources} - Available: {TotalResources.TransportableResources}");
 			}

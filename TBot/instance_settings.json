@@ -180,6 +180,7 @@
 			"CheckMoonOrPlanetFirst": false,
 			"DoMultipleTransportIsNotEnoughShipButSamePosition": false,
 			"StockpileForRoundTrip": false,
+			"WidenStockpileWindow": false,
 			"MultipleOrigins": {
 				"Active": false,
 				"OnlyFromMoons": true,

@@ -389,6 +389,18 @@ namespace Tbot.Workers.Brain {
 
 							if (MaxSlots > 0) {
 								if (!_calculationService.IsThereTransportTowardsCelestial(celestial, _tbotInstance.UserData.fleets)) {
+									// The outer AutoMineWorker's ResourceDecisionLock only serializes the cheap
+									// scheduling loop that hands off to this per-celestial worker - StartWorker
+									// schedules the AsyncTimer and returns immediately (fire-and-forget), so the
+									// lock is long released by the time this actually runs. Without a lock HERE,
+									// around the real read-resources -> decide -> SendFleet sequence, two Brain
+									// item types (eg. AutoMine and AutoResearch) can both read the same origin's
+									// surplus resources and both commit a transport against it, double-spending
+					// what was only ever available once. Reported by the user: a construction's
+					// reserved resources got consumed by a different one that finished deciding first.
+					if (!await BrainTransportCoordinator.ResourceDecisionLock.WaitAsync(BrainTransportCoordinator.ResourceDecisionLockTimeout))
+						return;
+					try {
 									Celestial origin = new() { ID = 0 };
 									List<Celestial> allCelestials = _tbotInstance.UserData.celestials;
 									for (int i = 0; i < allCelestials.Count(); i++) {
@@ -411,7 +423,8 @@ namespace Tbot.Workers.Brain {
 												(int) _tbotInstance.InstanceSettings.Brain.Transports.Origin.Position,
 												Enum.Parse<Celestials>((string) _tbotInstance.InstanceSettings.Brain.Transports.Origin.Type)),
 											preferredShip, buildable, level, _tbotInstance.UserData.researches, _tbotInstance.UserData.serverData,
-											celestial.Facilities, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.allianceClass);
+											celestial.Facilities, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.allianceClass,
+												widenStockpileWindow: SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.Transports, "WidenStockpileWindow") && (bool) _tbotInstance.InstanceSettings.Brain.Transports.WidenStockpileWindow);
 									}
 									Resources missingResources = costToCover.Difference(celestial.Resources);
 									if ((bool) _tbotInstance.InstanceSettings.Brain.Transports.CheckMoonOrPlanetFirst) {
@@ -432,6 +445,19 @@ namespace Tbot.Workers.Brain {
 												.SingleOrDefault() ?? new() { ID = 0 };
 										}
 										if (origin.ID != 0) {
+										// StockpileForRoundTrip inflates missingResources to cover every level that
+										// would finish within the round-trip window (up to 50 levels ahead), which
+										// can easily exceed what the account can realistically gather. Rather than
+										// send nothing when the full stockpile isn't affordable, fall back to
+										// whatever is available, as long as it still covers at least the one level
+										// about to be queued (xCostBuildable) - real progress beats none.
+										if (!origin.Resources.IsEnoughFor(missingResources) && origin.Resources.IsEnoughFor(xCostBuildable)) {
+											missingResources = new Resources(
+												Math.Min(missingResources.Metal, origin.Resources.Metal),
+												Math.Min(missingResources.Crystal, origin.Resources.Crystal),
+												Math.Min(missingResources.Deuterium, origin.Resources.Deuterium)
+											);
+										}
 										if (origin.Resources.IsEnoughFor(missingResources)) {
 											missingResources = _tbotInstance.InstanceSettings.Brain.Transports.RoundResources ? missingResources.Round((int) (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.Transports, "RoundTo") ? _tbotInstance.InstanceSettings.Brain.Transports.RoundTo : 1000)) : missingResources;
 												// Uses whatever mix of cargo-capable ships (LargeCargo/SmallCargo/Pathfinder) is
@@ -602,6 +628,9 @@ namespace Tbot.Workers.Brain {
 											}
 										}
 									}
+					} finally {
+						BrainTransportCoordinator.ResourceDecisionLock.Release();
+					}
 								} else {
 									DoLog(LogLevel.Information, $"Skipping transport: there is already a transport incoming in {celestial.ToString()}");
 									fleetId = _tbotInstance.UserData.fleets.Where(f => f.Mission == Missions.Transport)

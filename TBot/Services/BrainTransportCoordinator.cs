@@ -62,7 +62,8 @@ namespace Tbot.Services {
 			Facilities facilities,
 			CharacterClass playerClass,
 			AllianceClass allianceClass,
-			int cumulativeLabLevel = 0) {
+			int cumulativeLabLevel = 0,
+			bool widenStockpileWindow = false) {
 
 			var timeShips = new Ships();
 			timeShips.Add(preferredShip, 1);
@@ -70,7 +71,10 @@ namespace Tbot.Services {
 				origin, celestial.Coordinate, timeShips, Missions.Transport,
 				Speeds.HundredPercent, researches, serverData, celestial.LFBonuses, playerClass, allianceClass
 			);
-			long flightWindowSeconds = fleetPrediction.Time * 2;
+			// Brain.Transports.WidenStockpileWindow (JSON, default off): widens the round-trip window
+			// from 2x to 3x the one-way flight time, so a slower account's construction queue has more
+			// chance of catching up to the stockpile target before the fleet lands.
+			long flightWindowSeconds = fleetPrediction.Time * (widenStockpileWindow ? 3 : 2);
 
 			bool isShip = buildable == Buildables.SolarSatellite || buildable == Buildables.Crawler;
 
@@ -116,7 +120,8 @@ namespace Tbot.Services {
 			double energyCostReduction,
 			double populationCostReduction,
 			CharacterClass playerClass,
-			AllianceClass allianceClass) {
+			AllianceClass allianceClass,
+			bool widenStockpileWindow = false) {
 
 			var timeShips = new Ships();
 			timeShips.Add(preferredShip, 1);
@@ -124,7 +129,7 @@ namespace Tbot.Services {
 				origin, celestial.Coordinate, timeShips, Missions.Transport,
 				Speeds.HundredPercent, researches, serverData, celestial.LFBonuses, playerClass, allianceClass
 			);
-			long flightWindowSeconds = fleetPrediction.Time * 2;
+			long flightWindowSeconds = fleetPrediction.Time * (widenStockpileWindow ? 3 : 2);
 
 			int level = startingLevel;
 			Resources total = calculationService.CalcPrice(buildable, level, costReduction, energyCostReduction, populationCostReduction);
@@ -162,7 +167,8 @@ namespace Tbot.Services {
 			ServerData serverData,
 			double costReduction,
 			CharacterClass playerClass,
-			AllianceClass allianceClass) {
+			AllianceClass allianceClass,
+			bool widenStockpileWindow = false) {
 
 			var timeShips = new Ships();
 			timeShips.Add(preferredShip, 1);
@@ -170,7 +176,7 @@ namespace Tbot.Services {
 				origin, celestial.Coordinate, timeShips, Missions.Transport,
 				Speeds.HundredPercent, researches, serverData, celestial.LFBonuses, playerClass, allianceClass
 			);
-			long flightWindowSeconds = fleetPrediction.Time * 2;
+			long flightWindowSeconds = fleetPrediction.Time * (widenStockpileWindow ? 3 : 2);
 
 			int level = startingLevel;
 			Resources total = calculationService.CalcPrice(buildable, level, costReduction);
