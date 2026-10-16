@@ -2,6 +2,7 @@ let _logsUrl = "";
 let _getLogsUrl = "";
 let logData = [];
 let _connection = null;
+let _everConnected = false;
 let logsDiv;
 let _maxElements = 100;
 let _loadMoreButton;
@@ -224,7 +225,7 @@ function renderLogEntry(timestamp, level, message, sender) {
 		render = false;
 
 	let searchText = $("#logsearch").val();
-	if (searchText !== "" && !message.toLowerCase().includes(searchText.toLowerCase()))
+	if (searchText !== "" && !(message ?? "").toLowerCase().includes(searchText.toLowerCase()))
 		render = false;
 
 	let logSenderSelected = $("#logsenderfilter option:selected").val();
@@ -248,12 +249,28 @@ function defineConnection() {
 	_connection = new signalR.HubConnectionBuilder()
 		.withUrl(_logsUrl)
 		.configureLogging(signalR.LogLevel.Information)
-		.withAutomaticReconnect()
+		//Default policy gives up after 4 attempts (0/2/10/30 s); keep retrying every 10 s instead
+		.withAutomaticReconnect({ nextRetryDelayInMilliseconds: ctx => ctx.previousRetryCount < 3 ? 2000 : 10000 })
 		.build();
+
+	//Background tabs throttle timers, so the server's keep-alive can look late; must match
+	//ClientTimeoutInterval on the server side (Program.cs) or the client drops a healthy connection
+	_connection.serverTimeoutInMilliseconds = 3 * 60 * 1000;
 
 	//If the connection closes unexpectedly, start again
 	_connection.onclose(async () => {
 		await start();
+	});
+
+	//Entries pushed while disconnected never arrive through the hub; reload them from the log file
+	_connection.onreconnected(() => {
+		applyFilter();
+	});
+
+	//When the tab comes back to the foreground, reconnect right away if the connection dropped
+	document.addEventListener("visibilitychange", () => {
+		if (document.visibilityState === "visible" && _connection.state === signalR.HubConnectionState.Disconnected)
+			start();
 	});
 
 	//Event that receives each message from the hub
@@ -264,9 +281,17 @@ function defineConnection() {
 }
 //Function to start the connection
 async function start() {
+	//avoid a second start() (onclose retry + visibilitychange) while one is already connecting
+	if (_connection.state !== signalR.HubConnectionState.Disconnected)
+		return;
+	let wasStartedBefore = _everConnected;
 	try {
 		await _connection.start();
 		console.log("SignalR Connected.");
+		_everConnected = true;
+		//a full stop/start (not an automatic reconnect) also loses entries; backfill from the file
+		if (wasStartedBefore)
+			applyFilter();
 	} catch (err) {
 		console.log(err);
 		setTimeout(start, 5000);

@@ -23,7 +23,13 @@ namespace TBot.WebUI {
 				.AddRazorRuntimeCompilation()
 				.AddApplicationPart(assembly)
 				.AddControllersAsServices();
-			_builder.Services.AddSignalR();
+			// Browsers throttle timers in background tabs (Chrome: ~1/min after 5 min hidden), so the
+			// client's 15 s keep-alive ping can arrive late. With the default 30 s ClientTimeoutInterval
+			// the server dropped the log connection and every entry pushed meanwhile was lost.
+			_builder.Services.AddSignalR(options => {
+				options.ClientTimeoutInterval = TimeSpan.FromMinutes(3);
+				options.KeepAliveInterval = TimeSpan.FromSeconds(15);
+			});
 
 			_builder.Services.AddResponseCompression(options =>
 			{
