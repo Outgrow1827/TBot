@@ -601,7 +601,13 @@ namespace Tbot.Includes {
 		}
 
 		public long CalcShipNumberForPayload(Resources payload, Buildables buildable, int hyperspaceTech, ServerData serverData, float cargoBonus = 0, CharacterClass playerClass = CharacterClass.NoClass, int probeCapacity = 0) {
-			return (long) Math.Round(((float) payload.TotalResources / (float) CalcShipCapacity(buildable, hyperspaceTech, serverData, cargoBonus, playerClass, probeCapacity)), MidpointRounding.ToPositiveInfinity);
+			// CalcShipCapacity returns 0 for any non-cargo buildable (its switch default). Dividing by it
+			// gives Infinity, and casting that to long is undefined in C# - a garbage ship count that can
+			// slip past every later sanity check. No capacity means this ship can't carry the payload.
+			int capacity = CalcShipCapacity(buildable, hyperspaceTech, serverData, cargoBonus, playerClass, probeCapacity);
+			if (capacity <= 0)
+				return 0;
+			return (long) Math.Round(((float) payload.TotalResources / (float) capacity), MidpointRounding.ToPositiveInfinity);
 		}
 
 		// Same 3 cargo-capable types AutoFarm combines (GetAllowedFarmCargoShips), biggest capacity first.
@@ -3467,6 +3473,10 @@ namespace Tbot.Includes {
 			}
 
 			float delta = nextLevelProd - currentProd;
+			// A zero cost (price lookup failure) would make this Infinity/NaN, and CalcROI is used to rank
+			// which mine to build next - an Infinity would always win the ranking regardless of real value.
+			if (cost <= 0)
+				return 0;
 			return delta / cost;
 		}
 
