@@ -244,12 +244,16 @@ namespace Tbot.Workers.Brain {
 											return;
 										try {
 										Celestial origin = new() { ID = 0 };
-										List<Celestial> allCelestials = _tbotInstance.UserData.celestials;
+										// Work on a copy and publish it back: UserData.celestials is shared with every other worker, and
+										// assigning allCelestials[i] on the shared List bumps its version, so any worker enumerating it at
+										// the same moment (eg. AutoFarm picking origins) failed with "Collection was modified".
+										List<Celestial> allCelestials = _tbotInstance.UserData.celestials.ToList();
 										for (int i = 0; i < allCelestials.Count(); i++) {
 											allCelestials[i] = await _tbotOgameBridge.UpdatePlanet(allCelestials[i], UpdateTypes.Resources);
 											allCelestials[i] = await _tbotOgameBridge.UpdatePlanet(allCelestials[i], UpdateTypes.Ships);
 											allCelestials[i] = await _tbotOgameBridge.UpdatePlanet(allCelestials[i], UpdateTypes.LFBonuses);
 										}
+										_tbotInstance.UserData.celestials = allCelestials;
 											Buildables preferredShip = Buildables.SmallCargo;
 											if (!Enum.TryParse<Buildables>((string) _tbotInstance.InstanceSettings.Brain.Transports.CargoType, true, out preferredShip)) {
 												_tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler, "Unable to parse CargoType. Falling back to default SmallCargo");

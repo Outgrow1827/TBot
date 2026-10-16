@@ -646,7 +646,8 @@ if (
 						_tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler, $"Unable to send fleet from {origin.Coordinate.ToString()}: no ships to send.");
 						return (int) SendFleetCode.GenericError;
 					}
-					_tbotInstance.UserData.fleets.Add(newFleet);
+					// Copy-on-write instead of Add(): fleets is shared and enumerated by other workers concurrently.
+					_tbotInstance.UserData.fleets = _tbotInstance.UserData.fleets.Append(newFleet).ToList();
 					_tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler, "Fleet sent successfully!");
 					_tbotInstance.UserData.slots = await _tbotOgameBridge.UpdateSlots();
 					return newFleet.ID;
