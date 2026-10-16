@@ -227,14 +227,15 @@ namespace Tbot.Workers.Brain {
 							
 							if (MaxSlots > 0) {
 								if (!_calculationService.IsThereTransportTowardsCelestial(celestial, _tbotInstance.UserData.fleets)) {
-									// See AutoMineCelestialWorker for the rationale: the outer worker's
-									// ResourceDecisionLock only serializes the scheduling handoff (fire-and-
-									// forget), not this actual resource-read/decide/SendFleet sequence - lock
-									// here too, or this Brain item can race another one and double-spend the
-									// same origin's resources.
-									if (!await BrainTransportCoordinator.ResourceDecisionLock.WaitAsync(BrainTransportCoordinator.ResourceDecisionLockTimeout))
-										return;
-									try {
+									// NOTE: unlike AutoMine/LifeformAutoMine/LifeformAutoResearch, this worker
+									// does its resource-read/decide/SendFleet inline in Execute() instead of
+									// delegating to a separately-scheduled *CelestialWorker - the outer
+									// ResourceDecisionLock acquired at the top of Execute() already covers
+									// this whole method's call stack. Taking the lock again here would be a
+									// self-deadlock (SemaphoreSlim(1,1) is not reentrant): this method already
+									// holds it, so WaitAsync here would block for the full 10-minute timeout on
+									// every cycle that reaches this branch, then give up without ever sending
+									// the needed transport.
 									Celestial origin = new() { ID = 0 };
 									List<Celestial> allCelestials = _tbotInstance.UserData.celestials;
 									for (int i = 0; i < allCelestials.Count(); i++) {
@@ -452,9 +453,6 @@ namespace Tbot.Workers.Brain {
 											}
 										}
 									}
-					} finally {
-						BrainTransportCoordinator.ResourceDecisionLock.Release();
-					}
 								} else {
 									DoLog(LogLevel.Information, $"Skipping transport: there is already a transport incoming in {celestial.ToString()}");
 									fleetId = _tbotInstance.UserData.fleets.Where(f => f.Mission == Missions.Transport)
