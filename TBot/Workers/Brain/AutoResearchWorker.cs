@@ -80,8 +80,15 @@ namespace Tbot.Workers.Brain {
 						.FirstOrDefault() as Planet;
 				}
 
+				// Null when the configured Target coordinate doesn't match any planet and the fallback found
+				// no planet at all (eg. celestials not loaded yet) - without this the next line threw an NRE
+				// that aborted the cycle while holding the resource-decision lock.
+				if (celestial == null) {
+					DoLog(LogLevel.Warning, "Skipping AutoResearch: no target planet found (check Brain.AutoResearch.Target).");
+					return;
+				}
 				celestial = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.Facilities) as Planet;
-				if (celestial.Facilities.ResearchLab == 0) {
+				if (celestial == null || celestial.Facilities == null || celestial.Facilities.ResearchLab == 0) {
 					DoLog(LogLevel.Information, "Skipping AutoResearch: Research Lab is missing on target planet.");
 					return;
 				}
