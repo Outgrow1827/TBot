@@ -49,7 +49,7 @@ jobs:
       with:
         args: zip -qq -r TBot-${{ env.SNAP_VERSION }}-win64.zip publish/win64/
     - name: Upload win64
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: TBot-${{ env.SNAP_VERSION }}-win64
         path: ${{ github.workspace }}/TBot-${{ env.SNAP_VERSION }}-win64.zip
@@ -67,7 +67,7 @@ jobs:
       with:
         args: zip -qq -r TBot-${{ env.SNAP_VERSION }}-win32.zip publish/win32/
     - name: Upload win32
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: TBot-${{ env.SNAP_VERSION }}-win32
         path: ${{ github.workspace }}/TBot-${{ env.SNAP_VERSION }}-win32.zip
@@ -87,7 +87,7 @@ jobs:
       with:
         args: zip -qq -r TBot-${{ env.SNAP_VERSION }}-linux64.zip publish/linux64/
     - name: Upload linux64
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: TBot-${{ env.SNAP_VERSION }}-linux64
         path: ${{ github.workspace }}/TBot-${{ env.SNAP_VERSION }}-linux64.zip
@@ -107,7 +107,7 @@ jobs:
       with:
         args: zip -qq -r TBot-${{ env.SNAP_VERSION }}-linuxarm.zip publish/linuxarm/
     - name: Upload linuxarm
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: TBot-${{ env.SNAP_VERSION }}-linuxarm
         path: ${{ github.workspace }}/TBot-${{ env.SNAP_VERSION }}-linuxarm.zip
@@ -127,7 +127,7 @@ jobs:
       with:
         args: zip -qq -r TBot-${{ env.SNAP_VERSION }}-linuxarm64.zip publish/linuxarm64/
     - name: Upload linuxarm64
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: TBot-${{ env.SNAP_VERSION }}-linuxarm64
         path: ${{ github.workspace }}/TBot-${{ env.SNAP_VERSION }}-linuxarm64.zip
@@ -147,7 +147,7 @@ jobs:
       with:
         args: zip -qq -r TBot-${{ env.SNAP_VERSION }}-osx64.zip publish/osx64/
     - name: Upload osx64
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: TBot-${{ env.SNAP_VERSION }}-osx64
         path: ${{ github.workspace }}/TBot-${{ env.SNAP_VERSION }}-osx64.zip
@@ -167,7 +167,7 @@ jobs:
       with:
         args: zip -qq -r TBot-${{ env.SNAP_VERSION }}-osx-arm64.zip publish/osx-arm64/
     - name: Upload osx-arm64
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: TBot-${{ env.SNAP_VERSION }}-osx-arm64
         path: ${{ github.workspace }}/TBot-${{ env.SNAP_VERSION }}-osx-arm64.zip
