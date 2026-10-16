@@ -151,7 +151,7 @@
 			"Messages": [
 				"hey",
 				"hello",
-				"i'm online'"
+				"i'm online"
 			]
 		},
 		"TelegramMessenger": {
@@ -171,9 +171,9 @@
 			"RoundTo": 1000,
 			"SendToTheMoonIfPossible": false,
 			"Origin": {
-				"Galaxy": 3,
-				"System": 333,
-				"Position": 8,
+				"Galaxy": 1,
+				"System": 1,
+				"Position": 1,
 				"Type": "Moon"
 			},
 			"MaxSlots": 10,
@@ -224,9 +224,9 @@
 			"RandomOrder": true,
 			"Exclude": [
 				{
-					"Galaxy": 3,
-					"System": 333,
-					"Position": 15,
+					"Galaxy": 1,
+					"System": 1,
+					"Position": 1,
 					"Type": "Planet"
 				}
 			],
@@ -261,9 +261,9 @@
 			"MaxBuilding12": 5,
 			"Exclude": [
 				{
-					"Galaxy": 3,
-					"System": 333,
-					"Position": 15,
+					"Galaxy": 1,
+					"System": 1,
+					"Position": 1,
 					"Type": "Planet"
 				}
 			],
@@ -327,9 +327,9 @@
 			"MaxShieldingTechnology": 25,
 			"MaxArmourTechnology": 25,
 			"Target": {
-				"Galaxy": 3,
-				"System": 333,
-				"Position": 8,
+				"Galaxy": 1,
+				"System": 1,
+				"Position": 1,
 				"Type": "Planet"
 			},
 			"OptimizeForStart": true,
@@ -353,9 +353,9 @@
 			"SkipIfIncomingTransport": true,
 			"Exclude": [
 				{
-					"Galaxy": 3,
-					"System": 333,
-					"Position": 15,
+					"Galaxy": 1,
+					"System": 1,
+					"Position": 1,
 					"Type": "Moon"
 				}
 			],
@@ -383,9 +383,9 @@
 			},
 			"Exclude": [
 				{
-					"Galaxy": 3,
-					"System": 333,
-					"Position": 15,
+					"Galaxy": 1,
+					"System": 1,
+					"Position": 1,
 					"Type": "Moon"
 				}
 			],
@@ -402,9 +402,9 @@
 			},
 			"Target": [
 				{
-					"Galaxy": 5,
-					"System": 63,
-					"Position": 8,
+					"Galaxy": 1,
+					"System": 1,
+					"Position": 1,
 					"Type": "Moon"
 				}
 			],
@@ -458,8 +458,8 @@
 		},
 		"ScanRange": [
 			{
-				"Galaxy": 5,
-				"StartSystem": 199,
+				"Galaxy": 1,
+				"StartSystem": 1,
 				"EndSystem": 499
 			}
 		],
@@ -467,16 +467,16 @@
 			{
 				"Galaxy": 1,
 				"System": 1,
-				"Planet": 1
+				"Position": 1
 			}
 		],
 		"KeepReportFor": 1440,
 		"NumProbes": 52,
 		"Origin": [
 			{
-				"Galaxy": 5,
-				"System": 313,
-				"Position": 8,
+				"Galaxy": 1,
+				"System": 1,
+				"Position": 1,
 				"Type": "Planet"
 			}
 		],
@@ -533,7 +533,7 @@
 		"ScanDelayMaxMs": 2500,
 		"ScanRange": [
 			{
-				"Galaxy": 3,
+				"Galaxy": 1,
 				"StartSystem": 1,
 				"EndSystem": 20
 			}
@@ -567,7 +567,17 @@
 				"LightFighter": 26000,
 				"Reaper": 1,
 				"Pathfinder": 1,
-				"EspionageProbe": 1
+				"EspionageProbe": 1,
+				"HeavyFighter": 0,
+				"Cruiser": 0,
+				"Battleship": 0,
+				"Battlecruiser": 0,
+				"Bomber": 0,
+				"Destroyer": 0,
+				"Deathstar": 0,
+				"SmallCargo": 0,
+				"ColonyShip": 0,
+				"Recycler": 0
 			}
 		},
 		"WaitForAllExpeditions": false,
@@ -583,25 +593,21 @@
 		"MaxExpeditionsPerOrigin": 1,
 		"Origin": [
 			{
-				"Galaxy": 5,
-				"System": 63,
-				"Position": 8,
-				"Type": "Moon"
-			},
-			{
-				"Galaxy": 5,
-				"System": 64,
-				"Position": 8,
+				"Galaxy": 1,
+				"System": 1,
+				"Position": 1,
 				"Type": "Moon"
 			}
-		]
+		],
+		"CheckIntervalMin": 30,
+		"CheckIntervalMax": 60
 	},
 	"AutoColonize": {
-		"Active": true,
+		"Active": false,
 		"Origin": {
-			"Galaxy": 5,
-			"System": 64,
-			"Position": 8,
+			"Galaxy": 1,
+			"System": 1,
+			"Position": 1,
 			"Type": "Planet"
 		},
 		"SlotsToLeaveFree": 0,
@@ -638,7 +644,7 @@
 				"ExcludeSystems": []
 			},
 			{
-				"Galaxy": 3,
+				"Galaxy": 1,
 				"StartSystem": 150,
 				"EndSystem": 350,
 				"StartPosition": 15,
@@ -658,9 +664,9 @@
 		"Active": false,
 		"Origin": [
 			{
-				"Galaxy": 5,
-				"System": 64,
-				"Position": 8,
+				"Galaxy": 1,
+				"System": 1,
+				"Position": 1,
 				"Type": "Planet"
 			}
 		],
