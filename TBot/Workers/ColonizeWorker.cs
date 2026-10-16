@@ -76,7 +76,12 @@ namespace Tbot.Workers {
 		// Cache freshness window is tied to CheckIntervalMax instead of a separate fixed constant -
 		// systems don't need rescanning any more often than Colonize itself would otherwise re-run.
 		private async Task<GalaxyInfo> GetGalaxyInfoCached(Coordinate coordinate) {
-			string key = $"{coordinate.Galaxy}:{coordinate.System}";
+			// _galaxyScanCache is static (shared process-wide) so multiple TBot instances in the same
+			// process reuse one cache instead of each scanning independently - but without the
+			// universe in the key, two instances pointed at DIFFERENT servers would read each other's
+			// occupancy data for the same Galaxy:System, risking colonizing an already-taken position
+			// or skipping a genuinely free one.
+			string key = $"{_tbotInstance.InstanceSettings.Credentials.Universe}:{coordinate.Galaxy}:{coordinate.System}";
 			TimeSpan maxAge = TimeSpan.FromMinutes((int) _tbotInstance.InstanceSettings.AutoColonize.CheckIntervalMax);
 			if (_galaxyScanCache.TryGetValue(key, out var cached)) {
 				if (DateTime.UtcNow - cached.FetchedAt < maxAge) {
@@ -217,7 +222,7 @@ namespace Tbot.Workers {
 									// The now-freed system may already be cached (empty-systems/buffer
 									// checks) with pre-abandon data showing it as occupied - drop it so the
 									// next lookup re-scans live instead of returning stale "occupied" info.
-									_galaxyScanCache.Remove($"{tempCelestial.Coordinate.Galaxy}:{tempCelestial.Coordinate.System}");
+									_galaxyScanCache.Remove($"{_tbotInstance.InstanceSettings.Credentials.Universe}:{tempCelestial.Coordinate.Galaxy}:{tempCelestial.Coordinate.System}");
 								} else {
 									DoLog(LogLevel.Debug, $"Failed Abandon on {tempCelestial.ToString()} - {abandonCriteria}.");
 								}
@@ -306,9 +311,21 @@ namespace Tbot.Workers {
 								var maxTemp = (int) _tbotInstance.InstanceSettings.AutoColonize.Abandon.MaxTemperatureAcceptable;
 								var minFields = (int) _tbotInstance.InstanceSettings.AutoColonize.Abandon.MinFields;
 								List <Coordinate> targets = new();
+								// Each range's own MaxPlanets is checked here to decide whether to scan it at
+								// all, but every range's candidates then get pooled into one flat `targets`
+								// list and picked globally by distance/flight-time - without tracking which
+								// range each target came from, a range configured for eg. MaxPlanets=1 could
+								// still receive 2-3 colony ships in one cycle if its candidates happen to sort
+								// closest. targetRangeIndex + rangeRemainingQuota let the final dispatch loop
+								// below enforce each range's own remaining quota too, not just the scan gate.
+								var targetRangeIndex = new Dictionary<Coordinate, int>();
+								var rangeRemainingQuota = new Dictionary<int, int>();
+								int rangeIdx = -1;
 								foreach (var t in _tbotInstance.InstanceSettings.AutoColonize.Targets) {
+									rangeIdx++;
 									var planetsInThisRange = _calculationService.CountPlanetsInRange(_tbotInstance.UserData.celestials, (int) t.Galaxy, (int) t.StartSystem, (int) t.EndSystem, (int) t.StartPosition, (int) t.EndPosition, minFields, minTemp, maxTemp);
 									var maxPlanetsInThisRange = (int) t.MaxPlanets;
+									rangeRemainingQuota[rangeIdx] = Math.Max(0, maxPlanetsInThisRange - planetsInThisRange);
 									if (planetsInThisRange >= maxPlanetsInThisRange) {
 										DoLog(LogLevel.Information, $"You already have {planetsInThisRange.ToString()} planets that fit temperature and fields settings in the range [{t.Galaxy}:{t.StartSystem}-{t.EndSystem}:{t.StartPosition}-{t.EndPosition}]. The max number is {maxPlanetsInThisRange}. Skipping...");
 										continue;
@@ -448,6 +465,7 @@ namespace Tbot.Workers {
 
 											if (_calculationService.IsAstrophysicsPositionValid((int) targetCoords.Position, (int) _tbotInstance.UserData.researches.Astrophysics)) {
 												targets.Add(targetCoords);
+												targetRangeIndex[targetCoords] = rangeIdx;
 											}
 										}
 									}
@@ -512,6 +530,10 @@ namespace Tbot.Workers {
 											_tbotInstance.log(LogLevel.Information, LogSender.Colonize, $"No more colony ships available at {origin.ToString()} for the remaining targets this cycle - stopping.");
 											break;
 										}
+										if (targetRangeIndex.TryGetValue(target, out int targetRangeIdx) && rangeRemainingQuota.TryGetValue(targetRangeIdx, out int quotaLeft) && quotaLeft <= 0) {
+											_tbotInstance.log(LogLevel.Information, LogSender.Colonize, $"Skipping {target.ToString()}: its range's MaxPlanets quota was already filled by an earlier target this same cycle.");
+											continue;
+										}
 										_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
 										var colonize = _tbotInstance.UserData.fleets
 											.Where(f => f.Mission == Missions.Colonize)
@@ -540,6 +562,9 @@ namespace Tbot.Workers {
 											var fleetId = await _fleetScheduler.SendFleet(origin, ships, target, Missions.Colonize, Speeds.HundredPercent, null, _tbotInstance.UserData.userInfo.Class, false, true);
 											if (fleetId > (int) SendFleetCode.GenericError) {
 												colonyShipsRemaining--;
+												if (targetRangeIndex.TryGetValue(target, out int sentRangeIdx) && rangeRemainingQuota.ContainsKey(sentRangeIdx)) {
+													rangeRemainingQuota[sentRangeIdx]--;
+												}
 											}
 											_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
 											List<Fleet> orderedFleet = _tbotInstance.UserData.fleets
