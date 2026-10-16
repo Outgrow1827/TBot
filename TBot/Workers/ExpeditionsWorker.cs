@@ -145,23 +145,23 @@ namespace Tbot.Workers {
 
 		private Ships BuildManualExpeditionFleet() {
 			return new Ships(
-				(long)_tbotInstance.InstanceSettings.Expeditions.ManualShips.Ships.LightFighter,
-				(long)_tbotInstance.InstanceSettings.Expeditions.ManualShips.Ships.HeavyFighter,
-				(long)_tbotInstance.InstanceSettings.Expeditions.ManualShips.Ships.Cruiser,
-				(long)_tbotInstance.InstanceSettings.Expeditions.ManualShips.Ships.Battleship,
-				(long)_tbotInstance.InstanceSettings.Expeditions.ManualShips.Ships.Battlecruiser,
-				(long)_tbotInstance.InstanceSettings.Expeditions.ManualShips.Ships.Bomber,
-				(long)_tbotInstance.InstanceSettings.Expeditions.ManualShips.Ships.Destroyer,
-				(long)_tbotInstance.InstanceSettings.Expeditions.ManualShips.Ships.Deathstar,
-				(long)_tbotInstance.InstanceSettings.Expeditions.ManualShips.Ships.SmallCargo,
-				(long)_tbotInstance.InstanceSettings.Expeditions.ManualShips.Ships.LargeCargo,
-				(long)_tbotInstance.InstanceSettings.Expeditions.ManualShips.Ships.ColonyShip,
-				(long)_tbotInstance.InstanceSettings.Expeditions.ManualShips.Ships.Recycler,
-				(long)_tbotInstance.InstanceSettings.Expeditions.ManualShips.Ships.EspionageProbe,
+				(long) SettingsService.GetSetting(_tbotInstance.InstanceSettings.Expeditions.ManualShips.Ships, "LightFighter", 0L),
+				(long) SettingsService.GetSetting(_tbotInstance.InstanceSettings.Expeditions.ManualShips.Ships, "HeavyFighter", 0L),
+				(long) SettingsService.GetSetting(_tbotInstance.InstanceSettings.Expeditions.ManualShips.Ships, "Cruiser", 0L),
+				(long) SettingsService.GetSetting(_tbotInstance.InstanceSettings.Expeditions.ManualShips.Ships, "Battleship", 0L),
+				(long) SettingsService.GetSetting(_tbotInstance.InstanceSettings.Expeditions.ManualShips.Ships, "Battlecruiser", 0L),
+				(long) SettingsService.GetSetting(_tbotInstance.InstanceSettings.Expeditions.ManualShips.Ships, "Bomber", 0L),
+				(long) SettingsService.GetSetting(_tbotInstance.InstanceSettings.Expeditions.ManualShips.Ships, "Destroyer", 0L),
+				(long) SettingsService.GetSetting(_tbotInstance.InstanceSettings.Expeditions.ManualShips.Ships, "Deathstar", 0L),
+				(long) SettingsService.GetSetting(_tbotInstance.InstanceSettings.Expeditions.ManualShips.Ships, "SmallCargo", 0L),
+				(long) SettingsService.GetSetting(_tbotInstance.InstanceSettings.Expeditions.ManualShips.Ships, "LargeCargo", 0L),
+				(long) SettingsService.GetSetting(_tbotInstance.InstanceSettings.Expeditions.ManualShips.Ships, "ColonyShip", 0L),
+				(long) SettingsService.GetSetting(_tbotInstance.InstanceSettings.Expeditions.ManualShips.Ships, "Recycler", 0L),
+				(long) SettingsService.GetSetting(_tbotInstance.InstanceSettings.Expeditions.ManualShips.Ships, "EspionageProbe", 0L),
 				0,
 				0,
-				(long)_tbotInstance.InstanceSettings.Expeditions.ManualShips.Ships.Reaper,
-				(long)_tbotInstance.InstanceSettings.Expeditions.ManualShips.Ships.Pathfinder);
+				(long) SettingsService.GetSetting(_tbotInstance.InstanceSettings.Expeditions.ManualShips.Ships, "Reaper", 0L),
+				(long) SettingsService.GetSetting(_tbotInstance.InstanceSettings.Expeditions.ManualShips.Ships, "Pathfinder", 0L));
 		}
 
 		private Ships BuildExpeditionFleet(Celestial origin, LFBonuses lfBonuses, int expeditionsRemainingFromOrigin) {
@@ -610,12 +610,12 @@ if (!suppressLogging) {
 							interval = returningFleets.Any()
 								? (returningFleets.Min(f => f.BackIn.Value) * 1000) + RandomizeHelper.CalcRandomInterval(IntervalType.SomeSeconds)
 								: RandomizeHelper.CalcRandomInterval(
-									(int)_tbotInstance.InstanceSettings.Expeditions.CheckIntervalMin,
-									(int)_tbotInstance.InstanceSettings.Expeditions.CheckIntervalMax);
+									(int) SettingsService.GetSetting(_tbotInstance.InstanceSettings.Expeditions, "CheckIntervalMin", 30),
+									(int) SettingsService.GetSetting(_tbotInstance.InstanceSettings.Expeditions, "CheckIntervalMax", 60));
 						} catch {
 							interval = RandomizeHelper.CalcRandomInterval(
-								(int)_tbotInstance.InstanceSettings.Expeditions.CheckIntervalMin,
-								(int)_tbotInstance.InstanceSettings.Expeditions.CheckIntervalMax);
+								(int) SettingsService.GetSetting(_tbotInstance.InstanceSettings.Expeditions, "CheckIntervalMin", 30),
+								(int) SettingsService.GetSetting(_tbotInstance.InstanceSettings.Expeditions, "CheckIntervalMax", 60));
 						}
 						ChangeWorkerPeriod(interval);
 					}
