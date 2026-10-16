@@ -63,7 +63,7 @@ namespace Tbot.Workers.Brain {
 			// same origin celestials independently, and without this they can race to spend the same
 			// resources or starve each other of the shared Transports.MaxSlots budget. See
 			// BrainTransportCoordinator and project memory 2026-08-03.
-			if (!await BrainTransportCoordinator.ResourceDecisionLock.WaitAsync(BrainTransportCoordinator.ResourceDecisionLockTimeout)) {
+			if (!await BrainTransportCoordinator.GetResourceDecisionLock(_tbotInstance.InstanceAlias).WaitAsync(BrainTransportCoordinator.ResourceDecisionLockTimeout)) {
 				DoLog(LogLevel.Warning, "Skipping this cycle: resource-decision lock still held by another Brain item after 10 minutes (likely stuck) - not waiting further.");
 				return;
 			}
@@ -256,7 +256,7 @@ namespace Tbot.Workers.Brain {
 				}
 			}
 			} finally {
-				BrainTransportCoordinator.ResourceDecisionLock.Release();
+				BrainTransportCoordinator.GetResourceDecisionLock(_tbotInstance.InstanceAlias).Release();
 			}
 		}
 	}

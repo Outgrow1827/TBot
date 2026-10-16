@@ -398,7 +398,7 @@ namespace Tbot.Workers.Brain {
 									// surplus resources and both commit a transport against it, double-spending
 					// what was only ever available once. Reported by the user: a construction's
 					// reserved resources got consumed by a different one that finished deciding first.
-					if (!await BrainTransportCoordinator.ResourceDecisionLock.WaitAsync(BrainTransportCoordinator.ResourceDecisionLockTimeout))
+					if (!await BrainTransportCoordinator.GetResourceDecisionLock(_tbotInstance.InstanceAlias).WaitAsync(BrainTransportCoordinator.ResourceDecisionLockTimeout))
 						return;
 					try {
 									Celestial origin = new() { ID = 0 };
@@ -629,7 +629,7 @@ namespace Tbot.Workers.Brain {
 										}
 									}
 					} finally {
-						BrainTransportCoordinator.ResourceDecisionLock.Release();
+						BrainTransportCoordinator.GetResourceDecisionLock(_tbotInstance.InstanceAlias).Release();
 					}
 								} else {
 									DoLog(LogLevel.Information, $"Skipping transport: there is already a transport incoming in {celestial.ToString()}");

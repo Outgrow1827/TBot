@@ -28,7 +28,7 @@ namespace Tbot.Workers {
 		// block (TBotDataCache wiring, ScanRange, retry/pacing) existed as uncommitted work before
 		// and was lost in an earlier reset; recovered from C:\github\TBot.backup\TBot\Workers\HarvestWorker.cs
 		// and re-merged onto the newer HarvestPlanner-based Execute()/DiscoverTargets() below.
-		private static readonly Dictionary<string, (GalaxyInfo Info, DateTime FetchedAt)> _galaxyScanCache = new();
+		private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (GalaxyInfo Info, DateTime FetchedAt)> _galaxyScanCache = new();
 		private const int MaxGalaxyScanCacheEntries = 1000;
 		private TBotDataCache _harvestCache;
 
@@ -215,13 +215,15 @@ namespace Tbot.Workers {
 		}
 
 		private async Task<GalaxyInfo> GetGalaxyInfoCached(Coordinate coordinate) {
-			string key = $"{coordinate.Galaxy}:{coordinate.System}";
+			// Universe in the key: the cache is static (shared by every account in the process), and the same
+			// Galaxy:System on two different servers is two different places.
+			string key = $"{_tbotInstance.InstanceSettings.Credentials.Universe}:{coordinate.Galaxy}:{coordinate.System}";
 			TimeSpan maxAge = TimeSpan.FromMinutes((int) _tbotInstance.InstanceSettings.AutoHarvest.CheckIntervalMax);
 			if (_galaxyScanCache.TryGetValue(key, out var cached)) {
 				if (DateTime.UtcNow - cached.FetchedAt < maxAge) {
 					return cached.Info;
 				}
-				_galaxyScanCache.Remove(key);
+				_galaxyScanCache.TryRemove(key, out _);
 			}
 			GalaxyInfo info = await GetGalaxyInfoWithRetry(coordinate);
 			// Deliberately paced, not just a perf afterthought - scanning too fast previously triggered
@@ -238,7 +240,7 @@ namespace Tbot.Workers {
 			await Task.Delay(new Random().Next(delayMinMs, delayMaxMs));
 			if (_galaxyScanCache.Count >= MaxGalaxyScanCacheEntries) {
 				foreach (var oldKey in _galaxyScanCache.OrderBy(kv => kv.Value.FetchedAt).Take(_galaxyScanCache.Count - MaxGalaxyScanCacheEntries + 1).Select(kv => kv.Key).ToList()) {
-					_galaxyScanCache.Remove(oldKey);
+					_galaxyScanCache.TryRemove(oldKey, out _);
 				}
 			}
 			_galaxyScanCache[key] = (info, DateTime.UtcNow);

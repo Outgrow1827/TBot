@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Threading;
 using Tbot.Includes;
 using TBot.Ogame.Infrastructure.Enums;
@@ -19,7 +20,13 @@ namespace Tbot.Services {
 	// "check what's needed -> send transport" critical section across all 4 workers so they can never
 	// double-spend the same resources.
 	public static class BrainTransportCoordinator {
-		public static readonly SemaphoreSlim ResourceDecisionLock = new SemaphoreSlim(1, 1);
+		// One lock per instance (account), not one process-wide: the 4 Brain workers of the SAME account
+		// must serialize against each other, but two different accounts running in the same process
+		// never share resources, so a single static lock only made one account's slow/stalled worker
+		// block every other account's Brain cycle for up to ResourceDecisionLockTimeout.
+		private static readonly ConcurrentDictionary<string, SemaphoreSlim> _resourceDecisionLocks = new();
+		public static SemaphoreSlim GetResourceDecisionLock(string instanceAlias) =>
+			_resourceDecisionLocks.GetOrAdd(instanceAlias ?? "", _ => new SemaphoreSlim(1, 1));
 
 		// A network call stuck inside one worker's locked section (no response, no error - the
 		// kind of silent connection stall seen against Gameforge's servers) would otherwise hold

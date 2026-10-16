@@ -233,7 +233,7 @@ namespace Tbot.Workers.Brain {
 											// forget), not this actual resource-read/decide/SendFleet sequence - lock
 											// here too, or this Brain item can race another one and double-spend the
 											// same origin's resources.
-											if (!await BrainTransportCoordinator.ResourceDecisionLock.WaitAsync(BrainTransportCoordinator.ResourceDecisionLockTimeout))
+											if (!await BrainTransportCoordinator.GetResourceDecisionLock(_tbotInstance.InstanceAlias).WaitAsync(BrainTransportCoordinator.ResourceDecisionLockTimeout))
 												return;
 											try {
 											Celestial origin = new() { ID = 0 };
@@ -446,7 +446,7 @@ namespace Tbot.Workers.Brain {
 												}
 											}
 							} finally {
-								BrainTransportCoordinator.ResourceDecisionLock.Release();
+								BrainTransportCoordinator.GetResourceDecisionLock(_tbotInstance.InstanceAlias).Release();
 							}
 										} else {
 											DoLog(LogLevel.Information, $"Skipping transport: there is already a transport incoming in {celestial.ToString()}");

@@ -1432,7 +1432,7 @@ if (
 					// BrainTransportCoordinator), but AutoRepatriate/Collect ran outside it entirely and
 					// could sweep a celestial's resources mid-cycle while a Brain worker was still deciding
 					// how much of that same stock to spend on a build it had already committed to.
-					if (!await BrainTransportCoordinator.ResourceDecisionLock.WaitAsync(BrainTransportCoordinator.ResourceDecisionLockTimeout)) {
+					if (!await BrainTransportCoordinator.GetResourceDecisionLock(_tbotInstance.InstanceAlias).WaitAsync(BrainTransportCoordinator.ResourceDecisionLockTimeout)) {
 						_tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler, "Skipping repatriate: resource-decision lock still held by a Brain worker after 10 minutes (likely stuck) - not waiting further.");
 						return RepatriateCode.Delay;
 					}
@@ -1560,7 +1560,7 @@ if (
 					}
 					return RepatriateCode.Success;
 					} finally {
-						BrainTransportCoordinator.ResourceDecisionLock.Release();
+						BrainTransportCoordinator.GetResourceDecisionLock(_tbotInstance.InstanceAlias).Release();
 					}
 				} else {
 					_tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler, "Skipping autorepatriate: unable to parse custom destination");

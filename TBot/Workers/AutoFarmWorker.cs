@@ -127,7 +127,11 @@ namespace Tbot.Workers {
 		// survives worker re-instantiation, matching the cross-cycle nature of "wait for this fleet
 		// to arrive, then wait for it to either return or not."
 		private record DefenseProbeInfo(int FleetId, DateTime SentAt, DateTime? ArrivalTime, bool SeenReturning);
-		private static readonly Dictionary<string, DefenseProbeInfo> _defenseProbeFleets = new();
+		private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DefenseProbeInfo> _defenseProbeFleets = new();
+		// Static (shared by every instance in the process) so it survives worker restarts - keyed by instance
+		// alias plus the raw coordinate, NOT Coordinate.ToString(): with HideSensitiveDataInLogs on, ToString()
+		// returns "[P:hidden]" for every coordinate, collapsing all targets onto one key.
+		private string DefenseProbeKey(Coordinate c) => $"{_tbotInstance.InstanceAlias}:{c.Galaxy}:{c.System}:{c.Position}:{c.Type}";
 
 		public AutoFarmWorker(ITBotMain parentInstance,
 			IOgameService ogameService,
@@ -851,7 +855,7 @@ namespace Tbot.Workers {
 
 				if (fleetId > (int) SendFleetCode.GenericError) {
 					freeSlots--;
-					_defenseProbeFleets[target.Celestial.Coordinate.ToString()] = new DefenseProbeInfo(fleetId, DateTime.UtcNow, null, false);
+					_defenseProbeFleets[DefenseProbeKey(target.Celestial.Coordinate)] = new DefenseProbeInfo(fleetId, DateTime.UtcNow, null, false);
 					target.State = FarmState.DefenseProbing;
 				} else if (fleetId == (int) SendFleetCode.AfterSleepTime) {
 					break;
@@ -878,7 +882,7 @@ namespace Tbot.Workers {
 			_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
 
 			foreach (var target in probingTargets) {
-				string coordKey = target.Celestial.Coordinate.ToString();
+				string coordKey = DefenseProbeKey(target.Celestial.Coordinate);
 				if (!_defenseProbeFleets.TryGetValue(coordKey, out var info)) {
 					target.State = FarmState.ProbesPending;
 					target.Report = null;
@@ -902,13 +906,13 @@ namespace Tbot.Workers {
 						bool scanOnly = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "ScanOnly")
 							&& (bool) _tbotInstance.InstanceSettings.AutoFarm.ScanOnly;
 						target.State = scanOnly ? FarmState.Idle : FarmState.AttackPending;
-						_defenseProbeFleets.Remove(coordKey);
+						_defenseProbeFleets.TryRemove(coordKey, out _);
 					} else if (info.ArrivalTime == null) {
 						_defenseProbeFleets[coordKey] = info with { ArrivalTime = fleet.ArrivalTime };
 					}
 				} else {
 					if (info.SeenReturning) {
-						_defenseProbeFleets.Remove(coordKey);
+						_defenseProbeFleets.TryRemove(coordKey, out _);
 					} else if (info.ArrivalTime.HasValue && info.ArrivalTime.Value.AddMinutes(5) < now) {
 						_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm,
 							$"ProbeAttack: EP not seen returning after arrival at {coordKey} - defenses present, blacklisting.");
@@ -933,7 +937,7 @@ namespace Tbot.Workers {
 							}
 						}
 						target.State = FarmState.NotSuitable;
-						_defenseProbeFleets.Remove(coordKey);
+						_defenseProbeFleets.TryRemove(coordKey, out _);
 					}
 				}
 			}

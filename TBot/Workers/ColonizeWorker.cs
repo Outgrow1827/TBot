@@ -29,7 +29,7 @@ namespace Tbot.Workers {
 		// Stale entries were previously only ever overwritten, never removed, so a wide
 		// AutoColonize.Targets range (many distinct Galaxy:System keys) left this growing for
 		// the whole process lifetime. GetGalaxyInfoCached now actively evicts on every write.
-		private static readonly Dictionary<string, (GalaxyInfo Info, DateTime FetchedAt)> _galaxyScanCache = new();
+		private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (GalaxyInfo Info, DateTime FetchedAt)> _galaxyScanCache = new();
 		// Hard cap independent of CheckIntervalMax, in case a very wide scan range (many
 		// galaxies) is configured - bounds worst-case memory instead of growing unbounded.
 		private const int MaxGalaxyScanCacheEntries = 1000;
@@ -90,7 +90,7 @@ namespace Tbot.Workers {
 				// Stale - remove instead of leaving it to be silently overwritten below, so a
 				// key that stops being scanned (eg. AutoColonize.Targets reconfigured) doesn't
 				// linger in the dictionary forever.
-				_galaxyScanCache.Remove(key);
+				_galaxyScanCache.TryRemove(key, out _);
 			}
 			GalaxyInfo info = await GetGalaxyInfoWithRetry(coordinate);
 			await Task.Delay(RandomizeHelper.CalcRandomInterval(IntervalType.LessThanFiveSeconds));
@@ -98,7 +98,7 @@ namespace Tbot.Workers {
 				// Hard cap hit (very wide scan range) - drop the oldest entries to make room
 				// instead of growing past the cap.
 				foreach (var oldKey in _galaxyScanCache.OrderBy(kv => kv.Value.FetchedAt).Take(_galaxyScanCache.Count - MaxGalaxyScanCacheEntries + 1).Select(kv => kv.Key).ToList()) {
-					_galaxyScanCache.Remove(oldKey);
+					_galaxyScanCache.TryRemove(oldKey, out _);
 				}
 			}
 			_galaxyScanCache[key] = (info, DateTime.UtcNow);
@@ -222,7 +222,7 @@ namespace Tbot.Workers {
 									// The now-freed system may already be cached (empty-systems/buffer
 									// checks) with pre-abandon data showing it as occupied - drop it so the
 									// next lookup re-scans live instead of returning stale "occupied" info.
-									_galaxyScanCache.Remove($"{_tbotInstance.InstanceSettings.Credentials.Universe}:{tempCelestial.Coordinate.Galaxy}:{tempCelestial.Coordinate.System}");
+									_galaxyScanCache.TryRemove($"{_tbotInstance.InstanceSettings.Credentials.Universe}:{tempCelestial.Coordinate.Galaxy}:{tempCelestial.Coordinate.System}", out _);
 								} else {
 									DoLog(LogLevel.Debug, $"Failed Abandon on {tempCelestial.ToString()} - {abandonCriteria}.");
 								}

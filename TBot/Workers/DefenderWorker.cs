@@ -19,7 +19,10 @@ using Tbot.Common.Settings;
 
 namespace Tbot.Workers {
 	internal class DefenderWorker : WorkerBase {
-		private static readonly ConcurrentDictionary<int, DateTime> _handledAttackIds = new();
+		// Keyed by instance alias + attack ID: this dictionary is static (shared by every account in the
+		// process), and attack IDs are only unique per universe, so a bare int key let one account marking
+		// an attack "handled" suppress another account's reaction to an unrelated attack with the same ID.
+		private static readonly ConcurrentDictionary<string, DateTime> _handledAttackIds = new();
 		private static readonly TimeSpan _handledAttackTtl = TimeSpan.FromMinutes(60);
 
 		// Per attack-origin cooldown for the SpyWatch Telegram notification, so a player re-probing
@@ -257,13 +260,13 @@ namespace Tbot.Workers {
 						_handledAttackIds.TryRemove(kv.Key, out _);
 				}
 				if (attack != null && attack.ID != 0 &&
-					_handledAttackIds.TryGetValue(attack.ID, out var seenAt) &&
+					_handledAttackIds.TryGetValue($"{_tbotInstance.InstanceAlias}:{attack.ID}", out var seenAt) &&
 					(nowUtc - seenAt) <= _handledAttackTtl) {
 					DoLog(LogLevel.Information, $"Attack {attack.ID} already handled recently; skipping duplicate actions.");
 					return;
 				}
 				if (attack != null && attack.ID != 0) {
-					_handledAttackIds[attack.ID] = nowUtc;
+					_handledAttackIds[$"{_tbotInstance.InstanceAlias}:{attack.ID}"] = nowUtc;
 				}
 
 			if (_tbotInstance.UserData.celestials.Count() == 0) {

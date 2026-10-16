@@ -32,6 +32,7 @@ using static System.Reflection.Metadata.BlobBuilder;
 
 namespace Tbot.Services {
 	public class TBotMain : IEquatable<TBotMain>, IAsyncDisposable, ITBotMain {
+		private static readonly ConcurrentDictionary<string, bool> _privacyByInstance = new();
 		private readonly IOgameService _ogameService;
 		private readonly IFleetScheduler _fleetScheduler;
 		private readonly ILoggerService<TBotMain> _logger;
@@ -205,9 +206,16 @@ namespace Tbot.Services {
 			try {
 				hideAccountNameInLogs = SettingsService.IsSettingSet(InstanceSettings.General, "HideSensitiveDataInLogs") && (bool) InstanceSettings.General.HideSensitiveDataInLogs;
 			} catch { }
-			TBot.Ogame.Infrastructure.Models.LogPrivacy.HideCoordinates = hideAccountNameInLogs;
-			TBot.Ogame.Infrastructure.Models.LogPrivacy.HideAccountInfo = hideAccountNameInLogs;
-			LoggerServiceSharedState.HideTimestampPrecision = hideAccountNameInLogs;
+			// LogPrivacy/LoggerServiceSharedState are process-wide statics (read inside Coordinate.ToString()
+			// and the log sinks, which have no instance context), but HideSensitiveDataInLogs is a per-instance
+			// setting. Plain assignment meant whichever instance initialized last won for every account - an
+			// account that asked for hiding could end up logging coordinates/names because another one didn't.
+			// Track each instance's wish and hide if ANY instance asks for it.
+			_privacyByInstance[InstanceAlias ?? ""] = hideAccountNameInLogs;
+			bool anyHide = _privacyByInstance.Values.Any(v => v);
+			TBot.Ogame.Infrastructure.Models.LogPrivacy.HideCoordinates = anyHide;
+			TBot.Ogame.Infrastructure.Models.LogPrivacy.HideAccountInfo = anyHide;
+			LoggerServiceSharedState.HideTimestampPrecision = anyHide;
 
 			int manualModeTimeout = 30;
 			try {
