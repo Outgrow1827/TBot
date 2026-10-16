@@ -29,7 +29,7 @@ jobs:
         DOTNET_VERSION="${TAG_VERSION#v}"
         # assembly/file version comes from TBot.csproj (e.g. 3.5.0.1); a beta tag only adds ".betaN"
         # to the informational version, which is what the console title shows (TBot v3.5.0.1.beta11)
-        ASSEMBLY_VERSION="$(grep -oP '(?<=<AssemblyVersion>)[^<]+' TBot/TBot.csproj)"
+        ASSEMBLY_VERSION="$(grep -oP '^\s*<AssemblyVersion>\K[0-9.]+(?=</AssemblyVersion>)' TBot/TBot.csproj | head -n1)"
         if [[ "$DOTNET_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-beta([0-9]+)$ ]]; then
           INFO_VERSION="${ASSEMBLY_VERSION}.beta${BASH_REMATCH[1]}"
         else

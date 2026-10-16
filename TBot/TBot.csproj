@@ -20,7 +20,7 @@
     <RepositoryUrl>https://github.com/0xE232FE/TBot</RepositoryUrl>
     <AssemblyVersion>3.5.0.1</AssemblyVersion>
     <FileVersion>3.5.0.1</FileVersion>
-    <!-- shown in the console title; release.yml overrides it with <AssemblyVersion>.beta<N> from the tag -->
+    <!-- shown in the console title; release.yml overrides it with the AssemblyVersion plus ".betaN" taken from the tag -->
     <InformationalVersion>3.5.0.1.beta11</InformationalVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Description>OGame Bot</Description>
