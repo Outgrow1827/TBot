@@ -27,14 +27,18 @@ jobs:
       run: |
         TAG_VERSION="${GITHUB_REF_NAME}"
         DOTNET_VERSION="${TAG_VERSION#v}"
-        if [[ "$DOTNET_VERSION" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-beta([0-9]+)$ ]]; then
-          ASSEMBLY_VERSION="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+        # assembly/file version comes from TBot.csproj (e.g. 3.5.0.1); a beta tag only adds ".betaN"
+        # to the informational version, which is what the console title shows (TBot v3.5.0.1.beta11)
+        ASSEMBLY_VERSION="$(grep -oP '(?<=<AssemblyVersion>)[^<]+' TBot/TBot.csproj)"
+        if [[ "$DOTNET_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-beta([0-9]+)$ ]]; then
+          INFO_VERSION="${ASSEMBLY_VERSION}.beta${BASH_REMATCH[1]}"
         else
-          ASSEMBLY_VERSION="${DOTNET_VERSION%%-*}.0"
+          INFO_VERSION="${ASSEMBLY_VERSION}"
         fi
         echo "SNAP_VERSION=$TAG_VERSION" >> "$GITHUB_ENV"
         echo "DOTNET_VERSION=$DOTNET_VERSION" >> "$GITHUB_ENV"
         echo "ASSEMBLY_VERSION=$ASSEMBLY_VERSION" >> "$GITHUB_ENV"
+        echo "INFO_VERSION=$INFO_VERSION" >> "$GITHUB_ENV"
     - name: Setup .NET
       uses: actions/setup-dotnet@v1
       with:
@@ -53,7 +57,7 @@ jobs:
       working-directory: ogame
       
     - name: Build TBot win64
-      run: dotnet publish TBot -c Release -p:Version=${{ env.DOTNET_VERSION }} -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} -p:FileVersion=${{ env.ASSEMBLY_VERSION }} -p:InformationalVersion=${{ env.DOTNET_VERSION }} -r win-x64 -o publish/win64/ -p:PublishSingleFile=true --self-contained true
+      run: dotnet publish TBot -c Release -p:Version=${{ env.DOTNET_VERSION }} -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} -p:FileVersion=${{ env.ASSEMBLY_VERSION }} -p:InformationalVersion=${{ env.INFO_VERSION }} -r win-x64 -o publish/win64/ -p:PublishSingleFile=true --self-contained true
     - name: Build ogamed win64
       run: | 
         cd ${{ github.workspace }}/ogame/cmd/ogamed
@@ -67,7 +71,7 @@ jobs:
         args: zip -qq -r TBot-${{ env.SNAP_VERSION }}-win64.zip publish/win64/
 
     - name: Build TBot win32
-      run: dotnet publish TBot -c Release -p:Version=${{ env.DOTNET_VERSION }} -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} -p:FileVersion=${{ env.ASSEMBLY_VERSION }} -p:InformationalVersion=${{ env.DOTNET_VERSION }} -r win-x86 -o publish/win32/ -p:PublishSingleFile=true --self-contained true
+      run: dotnet publish TBot -c Release -p:Version=${{ env.DOTNET_VERSION }} -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} -p:FileVersion=${{ env.ASSEMBLY_VERSION }} -p:InformationalVersion=${{ env.INFO_VERSION }} -r win-x86 -o publish/win32/ -p:PublishSingleFile=true --self-contained true
     - name: Build ogamed win32
       run: | 
         cd ${{ github.workspace }}/ogame/cmd/ogamed
@@ -81,7 +85,7 @@ jobs:
         args: zip -qq -r TBot-${{ env.SNAP_VERSION }}-win32.zip publish/win32/
         
     - name: Build TBot TBot linux64
-      run: dotnet publish TBot -c Release -p:Version=${{ env.DOTNET_VERSION }} -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} -p:FileVersion=${{ env.ASSEMBLY_VERSION }} -p:InformationalVersion=${{ env.DOTNET_VERSION }} -r linux-x64 -o publish/linux64/ -p:PublishSingleFile=true --self-contained true
+      run: dotnet publish TBot -c Release -p:Version=${{ env.DOTNET_VERSION }} -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} -p:FileVersion=${{ env.ASSEMBLY_VERSION }} -p:InformationalVersion=${{ env.INFO_VERSION }} -r linux-x64 -o publish/linux64/ -p:PublishSingleFile=true --self-contained true
     - name: Build ogamed linux64
       run: | 
         cd ${{ github.workspace }}/ogame/cmd/ogamed
@@ -97,7 +101,7 @@ jobs:
         args: zip -qq -r TBot-${{ env.SNAP_VERSION }}-linux64.zip publish/linux64/
         
     - name: Build TBot TBot linuxarm
-      run: dotnet publish TBot -c Release -p:Version=${{ env.DOTNET_VERSION }} -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} -p:FileVersion=${{ env.ASSEMBLY_VERSION }} -p:InformationalVersion=${{ env.DOTNET_VERSION }} -r linux-arm -o publish/linuxarm/ -p:PublishSingleFile=true --self-contained true
+      run: dotnet publish TBot -c Release -p:Version=${{ env.DOTNET_VERSION }} -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} -p:FileVersion=${{ env.ASSEMBLY_VERSION }} -p:InformationalVersion=${{ env.INFO_VERSION }} -r linux-arm -o publish/linuxarm/ -p:PublishSingleFile=true --self-contained true
     - name: Build ogamed linuxarm
       run: | 
         cd ${{ github.workspace }}/ogame/cmd/ogamed
@@ -113,7 +117,7 @@ jobs:
         args: zip -qq -r TBot-${{ env.SNAP_VERSION }}-linuxarm.zip publish/linuxarm/
 
     - name: Build TBot TBot linuxarm64
-      run: dotnet publish TBot -c Release -p:Version=${{ env.DOTNET_VERSION }} -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} -p:FileVersion=${{ env.ASSEMBLY_VERSION }} -p:InformationalVersion=${{ env.DOTNET_VERSION }} -r linux-arm64 -o publish/linuxarm64/ -p:PublishSingleFile=true --self-contained true
+      run: dotnet publish TBot -c Release -p:Version=${{ env.DOTNET_VERSION }} -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} -p:FileVersion=${{ env.ASSEMBLY_VERSION }} -p:InformationalVersion=${{ env.INFO_VERSION }} -r linux-arm64 -o publish/linuxarm64/ -p:PublishSingleFile=true --self-contained true
     - name: Build ogamed linuxarm64
       run: | 
         cd ${{ github.workspace }}/ogame/cmd/ogamed
@@ -135,7 +139,7 @@ jobs:
     # Windows/Linux artifacts that already built fine from reaching the release.
     - name: Build TBot TBot osx64
       continue-on-error: true
-      run: dotnet publish TBot -c Release -p:Version=${{ env.DOTNET_VERSION }} -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} -p:FileVersion=${{ env.ASSEMBLY_VERSION }} -p:InformationalVersion=${{ env.DOTNET_VERSION }} -r osx-x64 -o publish/osx64/ -p:PublishSingleFile=true --self-contained true
+      run: dotnet publish TBot -c Release -p:Version=${{ env.DOTNET_VERSION }} -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} -p:FileVersion=${{ env.ASSEMBLY_VERSION }} -p:InformationalVersion=${{ env.INFO_VERSION }} -r osx-x64 -o publish/osx64/ -p:PublishSingleFile=true --self-contained true
     - name: Build ogamed osx64
       continue-on-error: true
       run: |
@@ -154,7 +158,7 @@ jobs:
 
     - name: Build TBot TBot osx-arm64
       continue-on-error: true
-      run: dotnet publish TBot -c Release -p:Version=${{ env.DOTNET_VERSION }} -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} -p:FileVersion=${{ env.ASSEMBLY_VERSION }} -p:InformationalVersion=${{ env.DOTNET_VERSION }} -r osx-arm64 -o publish/osx-arm64/ -p:PublishSingleFile=true --self-contained true
+      run: dotnet publish TBot -c Release -p:Version=${{ env.DOTNET_VERSION }} -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} -p:FileVersion=${{ env.ASSEMBLY_VERSION }} -p:InformationalVersion=${{ env.INFO_VERSION }} -r osx-arm64 -o publish/osx-arm64/ -p:PublishSingleFile=true --self-contained true
     - name: Build ogamed osx-arm64
       continue-on-error: true
       run: |

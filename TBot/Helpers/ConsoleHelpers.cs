@@ -9,8 +9,12 @@ using System.Threading.Tasks;
 namespace Tbot.Helpers {
 	public static class ConsoleHelpers {
 		public static void SetTitle(string content = "") {
-			AssemblyName exeInfo = Assembly.GetExecutingAssembly().GetName();
-			string info = $"{exeInfo.Name} v{exeInfo.Version}";
+			var assembly = Assembly.GetExecutingAssembly();
+			AssemblyName exeInfo = assembly.GetName();
+			// informational version carries the beta label (3.5.0.1.beta11); fall back to the numeric version
+			string version = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+				?? exeInfo.Version?.ToString();
+			string info = $"{exeInfo.Name} v{version}";
 			Console.Title = (content != "") ? $"{content} - {info}" : info;
 			return;
 		}
