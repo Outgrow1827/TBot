@@ -2,7 +2,9 @@
 
 Log of changes in our fork. History below v3.5.0-beta4 is inherited from `ronnie32/TBot`'s `fix/ogame-v13-tbot-3.4.7` branch (the base this fork now builds on); the `[Unreleased]` section at the top lists fixes made in this fork that aren't in that upstream history yet.
 
-## [Unreleased] — post-3.5.0-beta5 (Outgrow1827 fork)
+## [Unreleased]
+
+## v3.5.0-beta11 — 2026-10-16 (Outgrow1827 fork)
 
 - **fix** (2026-10-10): `AutoFarmSystemPolicy.IsEmptySystem` treated any system with no *eligible* farm target as "empty" - including a system whose only known planet was a real active player (just not currently farmable). That wrongly applied the long 30-day empty-system skip cooldown to systems that were actually visited and populated, instead of the normal 7-day rescan interval. Found via `TBot.Tests` (`AutoFarmDistinguishesARealEmptySystemFromAVisitedSystemWithoutTargets`) failing in CI. Now "empty" only when nothing was seen, or every known planet is specifically vacation-mode inactive.
 - **fix** (2026-10-10): `JumpGateTargetResolver.Resolve`'s `usedLegacyArray` output was hardcoded to `false` after the method was rewritten to delegate to `ResolveAll` - never actually reported the legacy single-item-array shape was used. No production worker calls `Resolve` any more (they use `ResolveAll` directly), so this had no runtime effect, but it was failing its own test in CI.
