@@ -375,9 +375,13 @@ namespace Tbot.Workers {
 
 						return;
 					}
+					// A misconfigured WeakAttackRatio of 0 would divide by zero and silently skip this
+					// whole check via the generic catch around this block - fall back to "not weak"
+					// (1) instead, same as treating the setting as unset.
+					int weakAttackRatio = Math.Max(1, (int) _tbotInstance.InstanceSettings.Defender.WeakAttackRatio);
 					if (
 						(bool) _tbotInstance.InstanceSettings.Defender.IgnoreWeakAttack &&
-						attack.Ships.GetFleetPoints() < (attackedCelestial.Ships.GetFleetPoints() / (int) _tbotInstance.InstanceSettings.Defender.WeakAttackRatio)
+						attack.Ships.GetFleetPoints() < (attackedCelestial.Ships.GetFleetPoints() / weakAttackRatio)
 					) {
 						DoLog(LogLevel.Information, $"Attack {attack.ID.ToString()} skipped: weak attack.");
 						return;

@@ -300,11 +300,12 @@ namespace Tbot.Workers {
 					_blacklist.AddTarget(target.Celestial.Coordinate, BlacklistReason.ProbeFailure, blacklistHours);
 					_farmTargetCache?.Blacklist(target.Celestial.Coordinate, DateTime.UtcNow.AddHours(blacklistHours));
 					string playerName = target.Report?.Username;
+					int blacklistPlayerId = (target.Celestial as Planet)?.Player?.ID ?? 0;
 					if (string.IsNullOrEmpty(playerName) && target.Celestial is Planet planet)
 						playerName = planet.Player?.Name;
 					if (!string.IsNullOrEmpty(playerName)) {
 						_blacklist.AddPlayer(playerName, BlacklistReason.ProbeFailure, blacklistHours);
-						_farmTargetCache?.BlacklistPlayer(playerName, DateTime.UtcNow.AddHours(blacklistHours));
+						_farmTargetCache?.BlacklistPlayer(playerName, DateTime.UtcNow.AddHours(blacklistHours), blacklistPlayerId);
 					}
 					
 					var blacklistedTarget = target;
@@ -923,11 +924,12 @@ namespace Tbot.Workers {
 							int resetHours = SettingsService.GetSetting(_tbotInstance.InstanceSettings.AutoFarm.Blacklist, "ResetAfterHours", 168);
 							_farmTargetCache.Blacklist(target.Celestial.Coordinate, DateTime.UtcNow.AddHours(resetHours));
 							string playerName = target.Report?.Username;
+							int blacklistPlayerId = (target.Celestial as Planet)?.Player?.ID ?? 0;
 							if (string.IsNullOrEmpty(playerName) && target.Celestial is Planet planet)
 								playerName = planet.Player?.Name;
 							if (!string.IsNullOrEmpty(playerName)) {
 								_blacklist.AddPlayer(playerName, BlacklistReason.HasDefense, resetHours);
-								_farmTargetCache.BlacklistPlayer(playerName, DateTime.UtcNow.AddHours(resetHours));
+								_farmTargetCache.BlacklistPlayer(playerName, DateTime.UtcNow.AddHours(resetHours), blacklistPlayerId);
 							}
 						}
 						target.State = FarmState.NotSuitable;
@@ -1203,13 +1205,14 @@ namespace Tbot.Workers {
 
 		// Check player blacklist - if the player is blacklisted, skip all their planets
 		string playerName = planet is Planet p ? p.Player?.Name : null;
+		int blacklistPlayerId = (planet as Planet)?.Player?.ID ?? 0;
 		if (blacklistActive && _blacklist.IsPlayerBlacklisted(playerName)) {
 			var blacklistedPlayer = _blacklist.GetBlacklistedPlayer(playerName);
 			_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm, $"Player {playerName} is blacklisted (Reason: {blacklistedPlayer?.Reason}). Skipping {planet.ToString()}...");
 			return null;
 		}
 
-		if (blacklistActive && _farmTargetCache != null && !string.IsNullOrEmpty(playerName) && _farmTargetCache.IsPlayerBlacklisted(playerName, out DateTime playerBlacklistedUntil)) {
+		if (blacklistActive && _farmTargetCache != null && !string.IsNullOrEmpty(playerName) && _farmTargetCache.IsPlayerBlacklisted(playerName, out DateTime playerBlacklistedUntil, blacklistPlayerId)) {
 			_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm, $"Player {playerName} is blacklisted until {playerBlacklistedUntil}. Skipping {planet.ToString()}...");
 			return null;
 		}

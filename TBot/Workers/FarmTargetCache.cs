@@ -113,7 +113,8 @@ namespace Tbot.Workers {
 
 					CREATE TABLE IF NOT EXISTS player_blacklist (
 						player_name TEXT PRIMARY KEY,
-						blacklisted_until TEXT NOT NULL
+						blacklisted_until TEXT NOT NULL,
+						player_id INTEGER NULL
 					);
 
 					CREATE TABLE IF NOT EXISTS player_activity (
@@ -155,6 +156,14 @@ namespace Tbot.Workers {
 					);
 				";
 				await cmd.ExecuteNonQueryAsync();
+			}
+
+			try {
+				using var migration = db.CreateCommand();
+				migration.CommandText = "ALTER TABLE player_blacklist ADD COLUMN player_id INTEGER NULL;";
+				await migration.ExecuteNonQueryAsync();
+			} catch (SqliteException ex) when (ex.Message.Contains("duplicate column", StringComparison.OrdinalIgnoreCase)) {
+				// Existing databases already have the column.
 			}
 
 			var cache = new FarmTargetCache(db);
@@ -393,11 +402,26 @@ namespace Tbot.Workers {
 			cmd.ExecuteNonQuery();
 		}
 
-		// --- Player blacklist (#10: same idea as coordinate blacklist, but keyed by player ID so an
-		// inactive who resettles/reactivates on a different planet is still recognized) ---
+		// --- Player blacklist (#10: same idea as coordinate blacklist). This table's primary key is
+		// still player_name (changing it would be a bigger migration), but player_id - when the
+		// caller has it - is now also stored and checked first: a renamed player (OGame allows
+		// renames) used to silently drop out of this blacklist because the lookup only ever matched
+		// the old name, and a new player reusing a stale name could wrongly inherit someone else's
+		// blacklist entry. Callers without an id (eg. from an EspionageReport, which has no PlayerID
+		// field) still work via the name-only path. ---
 
-		public bool IsPlayerBlacklisted(string playerName, out DateTime blacklistedUntil) {
+		public bool IsPlayerBlacklisted(string playerName, out DateTime blacklistedUntil, int playerId = 0) {
 			blacklistedUntil = default;
+			if (playerId > 0) {
+				using var idCmd = _db.CreateCommand();
+				idCmd.CommandText = "SELECT blacklisted_until FROM player_blacklist WHERE player_id = $id";
+				idCmd.Parameters.AddWithValue("$id", playerId);
+				var idResult = idCmd.ExecuteScalar();
+				if (idResult != null) {
+					blacklistedUntil = DateTime.Parse((string) idResult, null, System.Globalization.DateTimeStyles.RoundtripKind);
+					return true;
+				}
+			}
 			if (string.IsNullOrEmpty(playerName)) return false;
 			using var cmd = _db.CreateCommand();
 			cmd.CommandText = "SELECT blacklisted_until FROM player_blacklist WHERE player_name = $name";
@@ -408,16 +432,17 @@ namespace Tbot.Workers {
 			return true;
 		}
 
-		public void BlacklistPlayer(string playerName, DateTime until) {
+		public void BlacklistPlayer(string playerName, DateTime until, int playerId = 0) {
 			if (string.IsNullOrEmpty(playerName)) return;
 			using var cmd = _db.CreateCommand();
 			cmd.CommandText = @"
-				INSERT INTO player_blacklist (player_name, blacklisted_until)
-				VALUES ($name, $until)
-				ON CONFLICT(player_name) DO UPDATE SET blacklisted_until = excluded.blacklisted_until;
+				INSERT INTO player_blacklist (player_name, blacklisted_until, player_id)
+				VALUES ($name, $until, $id)
+				ON CONFLICT(player_name) DO UPDATE SET blacklisted_until = excluded.blacklisted_until, player_id = excluded.player_id;
 			";
 			cmd.Parameters.AddWithValue("$name", playerName);
 			cmd.Parameters.AddWithValue("$until", until.ToString("O"));
+			cmd.Parameters.AddWithValue("$id", playerId > 0 ? (object) playerId : DBNull.Value);
 			cmd.ExecuteNonQuery();
 		}
 

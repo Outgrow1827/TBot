@@ -1011,7 +1011,12 @@ namespace Tbot.Includes {
 			long fleetDebrisValue = (long) (fleetCost * serverData.DebrisFactor);
 
 			const float lootPercent = 75f;
-			double debrisPct = serverData.DebrisFactorDef * 100;
+			// Clamped below 100: a server reporting DebrisFactorDef == 1.0 (100%) would otherwise make
+			// every "(100.0 - debrisPct)" denominator below exactly 0, turning the needed* calculations
+			// into Infinity/NaN - casting that to long is undefined in C# (same class of bug already
+			// fixed in CalcNeededSolarSatellites). The caller already caps the result against affordable
+			// resources, but there's no reason to compute garbage in the first place.
+			double debrisPct = Math.Min(99.0, serverData.DebrisFactorDef * 100);
 			double totalLoot = fleetDebrisValue + (productionOverPeriod + currentStock) * (lootPercent / 100.0);
 
 			double neededPT = Math.Ceiling(5.0658556 * totalLoot * (70.0 / (100.0 - debrisPct)) / 100000.0);
