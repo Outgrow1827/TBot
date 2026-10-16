@@ -3330,16 +3330,28 @@ namespace Tbot.Includes {
 		// order burning every resource at once.
 		private const int MaxSatellitesPerOrderMargin = 50;
 		public int CalcNeededSolarSatellites(Planet planet, long requiredEnergy = 0, bool isCollector = false, bool hasEngineer = false, bool hasFullStaff = false) {
+			int cap = (int) planet.Ships.SolarSatellite + MaxSatellitesPerOrderMargin;
+
+			// An extreme (likely unreachable in practice) planet temperature can make
+			// GetSolarSatelliteOutput return 0, turning the division below into Infinity/NaN -
+			// casting that to int is undefined in C# and can yield a garbage value that slips past
+			// the "needed > cap" check entirely (eg. a huge negative number). Guard it explicitly
+			// instead of relying on the cap to catch every possible float edge case.
+			int output = GetSolarSatelliteOutput(planet, isCollector, hasEngineer, hasFullStaff);
+			if (output <= 0) {
+				_logger.WriteLog(LogLevel.Warning, LogSender.Brain, $"{planet}: GetSolarSatelliteOutput returned {output} (implausible planet temperature?) - cannot size a SolarSatellite order, capping to {cap}.");
+				return cap;
+			}
+
 			int needed;
 			if (requiredEnergy <= 0) {
 				if (planet.Resources.Energy > 0)
 					return 0;
-				needed = (int) Math.Round((float) (Math.Abs(planet.Resources.Energy) / (float) GetSolarSatelliteOutput(planet, isCollector, hasEngineer, hasFullStaff)), MidpointRounding.ToPositiveInfinity);
+				needed = (int) Math.Round((float) Math.Abs(planet.Resources.Energy) / output, MidpointRounding.ToPositiveInfinity);
 			} else
-				needed = (int) Math.Round((float) (Math.Abs(requiredEnergy) / (float) GetSolarSatelliteOutput(planet, isCollector, hasEngineer, hasFullStaff)), MidpointRounding.ToPositiveInfinity);
+				needed = (int) Math.Round((float) Math.Abs(requiredEnergy) / output, MidpointRounding.ToPositiveInfinity);
 
-			int cap = (int) planet.Ships.SolarSatellite + MaxSatellitesPerOrderMargin;
-			if (needed > cap) {
+			if (needed > cap || needed < 0) {
 				_logger.WriteLog(LogLevel.Warning, LogSender.Brain, $"{planet}: computed need of {needed} SolarSatellite looks implausible (existing: {planet.Ships.SolarSatellite}) - capping this order to {cap}. Will re-evaluate and continue next cycle if the real deficit is still there.");
 				return cap;
 			}
