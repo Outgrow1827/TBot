@@ -37,6 +37,8 @@ namespace TBot.Model {
 
 	public class BlacklistedPlayer {
 		public string PlayerName { get; set; }
+		// 0 = unknown (old entries, or a caller that only had the name, eg. an espionage report).
+		public int PlayerId { get; set; }
 		public BlacklistReason Reason { get; set; }
 		public DateTime BlacklistedAt { get; set; }
 		public DateTime ExpiresAt { get; set; }
@@ -44,8 +46,9 @@ namespace TBot.Model {
 		public BlacklistedPlayer() {
 		}
 
-		public BlacklistedPlayer(string playerName, BlacklistReason reason, DateTime expiresAt) {
+		public BlacklistedPlayer(string playerName, BlacklistReason reason, DateTime expiresAt, int playerId = 0) {
 			PlayerName = playerName;
+			PlayerId = playerId;
 			Reason = reason;
 			BlacklistedAt = DateTime.UtcNow;
 			ExpiresAt = expiresAt;
@@ -57,6 +60,15 @@ namespace TBot.Model {
 	}
 
 	public class AutoFarmBlacklist {
+		// Player names can change in OGame; the ID cannot. Match by ID whenever both sides know it, so a
+		// renamed player stays blacklisted and a new player reusing an old name does not inherit the entry.
+		// Falls back to the name when either side has no ID.
+		private static bool PlayerMatches(BlacklistedPlayer p, string playerName, int playerId) {
+			if (playerId > 0 && p.PlayerId > 0)
+				return p.PlayerId == playerId;
+			return !string.IsNullOrEmpty(playerName) && string.Equals(p.PlayerName, playerName, StringComparison.OrdinalIgnoreCase);
+		}
+
 		private List<BlacklistedTarget> _blacklistedTargets;
 		private List<BlacklistedPlayer> _blacklistedPlayers;
 		private readonly object _lock = new object();
@@ -90,13 +102,13 @@ namespace TBot.Model {
 			}
 		}
 
-		public void AddPlayer(string playerName, BlacklistReason reason, int hoursUntilReset) {
+		public void AddPlayer(string playerName, BlacklistReason reason, int hoursUntilReset, int playerId = 0) {
 			if (string.IsNullOrEmpty(playerName)) return;
 			lock (_lock) {
-				_blacklistedPlayers.RemoveAll(p => string.Equals(p.PlayerName, playerName, StringComparison.OrdinalIgnoreCase));
+				_blacklistedPlayers.RemoveAll(p => PlayerMatches(p, playerName, playerId));
 
 				DateTime expiresAt = DateTime.UtcNow.AddHours(hoursUntilReset);
-				_blacklistedPlayers.Add(new BlacklistedPlayer(playerName, reason, expiresAt));
+				_blacklistedPlayers.Add(new BlacklistedPlayer(playerName, reason, expiresAt, playerId));
 				SaveToFile();
 			}
 		}
@@ -112,13 +124,12 @@ namespace TBot.Model {
 			}
 		}
 
-		public bool IsPlayerBlacklisted(string playerName) {
+		public bool IsPlayerBlacklisted(string playerName, int playerId = 0) {
 			if (string.IsNullOrEmpty(playerName)) return false;
 			lock (_lock) {
 				CleanupExpiredTargets();
 
-				return _blacklistedPlayers.Any(p =>
-					string.Equals(p.PlayerName, playerName, StringComparison.OrdinalIgnoreCase));
+				return _blacklistedPlayers.Any(p => PlayerMatches(p, playerName, playerId));
 			}
 		}
 
@@ -133,13 +144,12 @@ namespace TBot.Model {
 			}
 		}
 
-		public BlacklistedPlayer GetBlacklistedPlayer(string playerName) {
+		public BlacklistedPlayer GetBlacklistedPlayer(string playerName, int playerId = 0) {
 			if (string.IsNullOrEmpty(playerName)) return null;
 			lock (_lock) {
 				CleanupExpiredTargets();
 
-				return _blacklistedPlayers.FirstOrDefault(p =>
-					string.Equals(p.PlayerName, playerName, StringComparison.OrdinalIgnoreCase));
+				return _blacklistedPlayers.FirstOrDefault(p => PlayerMatches(p, playerName, playerId));
 			}
 		}
 
