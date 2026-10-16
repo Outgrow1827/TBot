@@ -12,11 +12,7 @@ jobs:
   build:
 
     runs-on: ubuntu-latest
-    env:
-      # ImageSharp 4.x checks this at build time - set the SIXLABORS_LICENSE_KEY repo secret
-      # (Settings > Secrets and variables > Actions) with a license key from
-      # licensing.sixlabors.com (free for open-source projects).
-      SixLaborsLicenseKey: ${{ secrets.SIXLABORS_LICENSE_KEY }}
+    # ImageSharp 4.x license: TBot/sixlabors.lic (assembly-scoped community key, committed on purpose)
 
     steps:
     - name: Checkout repository
