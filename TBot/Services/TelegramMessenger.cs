@@ -262,7 +262,7 @@ namespace Tbot.Services {
 				"/subscribeauction - Get a notification when next auction will start\n" +
 				"/ghostsleep - Wait fleets return, ghost harvest for current celestial only, and sleep for 5hours <code>/ghostsleep 4h3m or 3m50s Harvest</code>\n" +
 				"/ghostsleepall - Wait fleets return, ghost harvest for all celestial and sleep for 5hours <code>/ghostsleepall 4h3m or 3m50s Harvest</code>\n" +
-				"/ghost - Ghost for the specified amount of hours on the specified mission. Format: <code>/ghost 4h3m or 3m50s Harvest</code>\n" +
+				"/ghost - Ghost for the specified amount of time, mission chosen automatically (use /ghostto to pick one). Format: <code>/ghost 4h3m or 3m50s</code>\n" +
 				"/ghostto - Same as /ghost, but with a required mission argument. Format: <code>/ghostto 4h3m or 3m50s Harvest</code>\n" +
 				"/ghostmoons - Ghost moons fleet for the specified amount of hours on the specified mission. Format: <code>/ghostmoons 4h30m Harvest</code>\n" +
 				"/switch - Switch current celestial resources and fleets to its planet or moon at the specified speed. Format: <code>/switch 5</code>\n" +
