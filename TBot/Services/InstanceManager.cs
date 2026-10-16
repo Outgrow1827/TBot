@@ -54,6 +54,10 @@ namespace Tbot.Services {
 
 		public async void OnSettingsChanged() {
 			await instancesSem.WaitAsync();
+			// try/finally: an exception anywhere below (bad settings, an instance failing to init or
+			// dispose) used to skip the Release() at the end, leaving instancesSem held forever - every
+			// later settings change then blocked on it and the bot never reloaded settings again.
+			try {
 
 			_logger.WriteLog(LogLevel.Information, LogSender.Main, $"Reading settings \"{Path.GetFileName(SettingsAbsoluteFilepath)}\"");
 
@@ -184,11 +188,15 @@ namespace Tbot.Services {
 
 			_logger.WriteLog(LogLevel.Information, LogSender.Main, $"Instances stats: Initialized {instances.Count} - Deinitialized {deinitingInstances.Count}");
 
-			// Initialize settingsWatcher 
-			if (settingsWatcher == null)
-				settingsWatcher = new SettingsFileWatcher(OnSettingsChanged, SettingsAbsoluteFilepath);
-
-			instancesSem.Release();
+			} catch (Exception ex) {
+				_logger.WriteLog(LogLevel.Error, LogSender.Main, $"Settings reload failed: {ex.Message}");
+			} finally {
+				// In the finally so a failed first load (eg. invalid JSON) still starts watching the file -
+				// otherwise fixing the file afterwards would never be picked up.
+				if (settingsWatcher == null)
+					settingsWatcher = new SettingsFileWatcher(OnSettingsChanged, SettingsAbsoluteFilepath);
+				instancesSem.Release();
+			}
 		}
 
 		public async ValueTask DisposeAsync() {
@@ -281,19 +289,24 @@ namespace Tbot.Services {
 		}
 
 		private async void TBotInstance_OnError(object sender, EventArgs e) {
-			ITBotMain tbotInstance = (ITBotMain) sender;
-			var alias = tbotInstance.InstanceAlias;
-			_logger.WriteLog(LogLevel.Error, LogSender.Main, $"Error on tboInstance instance \"{alias}\"");
+			// async void: an exception escaping here would be unobserved and can crash the process.
 			try {
-				TbotInstanceData fInstance = instances.First(c => c._botMain.InstanceAlias == alias);
-				ITBotMain tbotToDispose = fInstance._botMain;
+				ITBotMain tbotInstance = (ITBotMain) sender;
+				var alias = tbotInstance.InstanceAlias;
+				_logger.WriteLog(LogLevel.Error, LogSender.Main, $"Error on tboInstance instance \"{alias}\"");
+				try {
+					TbotInstanceData fInstance = instances.First(c => c._botMain.InstanceAlias == alias);
+					ITBotMain tbotToDispose = fInstance._botMain;
 
-				_logger.WriteLog(LogLevel.Error, LogSender.Main, $"Removing TBot instance \"{alias}\"");
+					_logger.WriteLog(LogLevel.Error, LogSender.Main, $"Removing TBot instance \"{alias}\"");
 
-				instances.Remove(fInstance);
-				await tbotToDispose.DisposeAsync();
-			} catch(InvalidOperationException) {
-				// OK!
+					instances.Remove(fInstance);
+					await tbotToDispose.DisposeAsync();
+				} catch(InvalidOperationException) {
+					// OK!
+				}
+			} catch (Exception asyncVoidEx) {
+				_logger.WriteLog(LogLevel.Error, LogSender.Main, $"Error handler failed: {asyncVoidEx.Message}");
 			}
 		}
 	}

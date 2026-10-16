@@ -262,12 +262,12 @@ namespace Tbot.Workers {
 		/// Marks a target's inactive status as confirmed by espionage report.
 		/// This reinforces the eternal lock from universe view.
 		/// </summary>
-		public void ConfirmInactivityFromEspionage(Coordinate coordinate) {
+		public async Task ConfirmInactivityFromEspionage(Coordinate coordinate) {
 			var entry = _farmTargetCache.Get(coordinate);
 			if (entry != null && entry.IsInactive) {
 				entry.InactivitySource = "espionage_report";
 				entry.InactiveStatusLocked = true;
-				_farmTargetCache.Upsert(entry).Wait();
+				await _farmTargetCache.Upsert(entry);
 			}
 		}
 

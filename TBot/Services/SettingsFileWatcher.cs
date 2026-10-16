@@ -40,12 +40,20 @@ namespace Tbot.Services {
 		}
 
 		private async void onChanged(object state) {
-
+			// async void (file-provider change callback): an exception escaping here would crash the
+			// process, and without the finally a throw from _watchFunc() would leave _changedSem held
+			// forever, so every later settings change would wait on it indefinitely. initWatch() is in
+			// the finally too, otherwise one failed reload would stop watching the file for good.
 			await _changedSem.WaitAsync();
-			_watchFunc();
-			_changedSem.Release();
-
-			initWatch();
+			try {
+				_watchFunc();
+			} catch {
+				// Swallowed on purpose: the watch callback logs its own failures; this only has to keep
+				// the watcher alive.
+			} finally {
+				_changedSem.Release();
+				initWatch();
+			}
 		}
 	}
 }

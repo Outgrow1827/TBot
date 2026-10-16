@@ -445,8 +445,13 @@ namespace Tbot.Services {
 		}
 
 		private async void InitializeFeatures() {
-			foreach(var feat in Features.AllFeatures) {
-				await InitializeFeature(feat);
+			// async void: an exception escaping here would be unobserved and can crash the process.
+			try {
+				foreach(var feat in Features.AllFeatures) {
+					await InitializeFeature(feat);
+				}
+			} catch (Exception asyncVoidEx) {
+				log(LogLevel.Error, LogSender.Tbot, $"Failed to initialize features: {asyncVoidEx.Message}");
 			}
 		}
 
@@ -1264,28 +1269,33 @@ namespace Tbot.Services {
 		}
 
 		public async void TelegramSetCurrentCelestial(Coordinate coord, string celestialType, Feature updateType = Feature.Null, bool editsettings = false) {
-			userData.celestials = await _tbotOgameBridge.UpdateCelestials();
+			// async void: an exception escaping here would be unobserved and can crash the process.
+			try {
+				userData.celestials = await _tbotOgameBridge.UpdateCelestials();
 
-			//check if no error in submitted celestial (belongs to the current player)
-			telegramUserData.CurrentCelestial = userData.celestials
-				.Unique()
-				.Where(c => c.Coordinate.Galaxy == (int) coord.Galaxy)
-				.Where(c => c.Coordinate.System == (int) coord.System)
-				.Where(c => c.Coordinate.Position == (int) coord.Position)
-				.Where(c => c.Coordinate.Type == Enum.Parse<Celestials>(celestialType))
-				.SingleOrDefault() ?? new() { ID = 0 };
+				//check if no error in submitted celestial (belongs to the current player)
+				telegramUserData.CurrentCelestial = userData.celestials
+					.Unique()
+					.Where(c => c.Coordinate.Galaxy == (int) coord.Galaxy)
+					.Where(c => c.Coordinate.System == (int) coord.System)
+					.Where(c => c.Coordinate.Position == (int) coord.Position)
+					.Where(c => c.Coordinate.Type == Enum.Parse<Celestials>(celestialType))
+					.SingleOrDefault() ?? new() { ID = 0 };
 
-			if (telegramUserData.CurrentCelestial.ID == 0) {
-				await SendTelegramMessage("Error! Wrong information. Verify coordinate.\n");
+				if (telegramUserData.CurrentCelestial.ID == 0) {
+					await SendTelegramMessage("Error! Wrong information. Verify coordinate.\n");
+					return;
+				}
+				if (editsettings) {
+					await EditSettings(telegramUserData.CurrentCelestial, updateType);
+					await SendTelegramMessage($"JSON settings updated to: {telegramUserData.CurrentCelestial.Coordinate.ToString()}\nWait few seconds for Bot to reload before sending commands.");
+				} else {
+					await SendTelegramMessage($"Main celestial successfuly updated to {telegramUserData.CurrentCelestial.Coordinate.ToString()}");
+				}
 				return;
+			} catch (Exception asyncVoidEx) {
+				log(LogLevel.Error, LogSender.Tbot, $"TelegramSetCurrentCelestial failed: {asyncVoidEx.Message}");
 			}
-			if (editsettings) {
-				await EditSettings(telegramUserData.CurrentCelestial, updateType);
-				await SendTelegramMessage($"JSON settings updated to: {telegramUserData.CurrentCelestial.Coordinate.ToString()}\nWait few seconds for Bot to reload before sending commands.");
-			} else {
-				await SendTelegramMessage($"Main celestial successfuly updated to {telegramUserData.CurrentCelestial.Coordinate.ToString()}");
-			}
-			return;
 		}
 
 		public async Task<Celestial> TelegramGetCurrentCelestial() {
@@ -1362,7 +1372,12 @@ namespace Tbot.Services {
 			}
 		}
 		private async void HandleSleepMode(object state) {
-			await HandleSleepModeAsync(state);
+			// async void: an exception escaping here would be unobserved and can crash the process.
+			try {
+				await HandleSleepModeAsync(state);
+			} catch (Exception asyncVoidEx) {
+				log(LogLevel.Error, LogSender.SleepMode, $"HandleSleepMode failed: {asyncVoidEx.Message}");
+			}
 		}
 		private async Task HandleSleepModeAsync(object state) {
 			if (timers.TryGetValue("TelegramSleepModeTimer", out Timer value)) {
@@ -1494,7 +1509,12 @@ namespace Tbot.Services {
 		}
 
 		private async void GoToSleep(object state) {
-			await GoToSleepAsync(state);
+			// async void: an exception escaping here would be unobserved and can crash the process.
+			try {
+				await GoToSleepAsync(state);
+			} catch (Exception asyncVoidEx) {
+				log(LogLevel.Error, LogSender.SleepMode, $"GoToSleep failed: {asyncVoidEx.Message}");
+			}
 		}
 		private async Task GoToSleepAsync(object state) {
 			try {
@@ -1606,32 +1626,42 @@ namespace Tbot.Services {
 
 
 		public async void WakeUpNow(object state) {
-			if (timers.TryGetValue("TelegramSleepModeTimer", out Timer value))
-				value.Dispose();
-			timers.Remove("TelegramSleepModeTimer");
-			await SendTelegramMessage($"Bot woke up!");
+			// async void: an exception escaping here would be unobserved and can crash the process.
+			try {
+				if (timers.TryGetValue("TelegramSleepModeTimer", out Timer value))
+					value.Dispose();
+				timers.Remove("TelegramSleepModeTimer");
+				await SendTelegramMessage($"Bot woke up!");
 
-			log(LogLevel.Information, LogSender.SleepMode, "Bot woke up!");
+				log(LogLevel.Information, LogSender.SleepMode, "Bot woke up!");
 
-			if (userData.isSleeping) {
-				userData.isSleeping = false;
-				/* remove?
-				if (
-					SettingsService.IsSettingSet(InstanceSettings, "SleepMode") &&
-					SettingsService.IsSettingSet(InstanceSettings.SleepMode, "LogoutOnSleep") &&
-					(bool) InstanceSettings.SleepMode.LogoutOnSleep
-				) {
-					await _ogameService.Login();
-					loggedIn = true;
-					log(LogLevel.Information, LogSender.SleepMode, "Ogamed logged in again!");
+				if (userData.isSleeping) {
+					userData.isSleeping = false;
+					/* remove?
+					if (
+						SettingsService.IsSettingSet(InstanceSettings, "SleepMode") &&
+						SettingsService.IsSettingSet(InstanceSettings.SleepMode, "LogoutOnSleep") &&
+						(bool) InstanceSettings.SleepMode.LogoutOnSleep
+					) {
+						await _ogameService.Login();
+						loggedIn = true;
+						log(LogLevel.Information, LogSender.SleepMode, "Ogamed logged in again!");
+					}
+					*/
 				}
-				*/
+				InitializeFeatures();
+			} catch (Exception asyncVoidEx) {
+				log(LogLevel.Error, LogSender.SleepMode, $"WakeUpNow failed: {asyncVoidEx.Message}");
 			}
-			InitializeFeatures();
 		}
 
 		private async void WakeUp(object state) {
-			await WakeUpAsync(state);
+			// async void: an exception escaping here would be unobserved and can crash the process.
+			try {
+				await WakeUpAsync(state);
+			} catch (Exception asyncVoidEx) {
+				log(LogLevel.Error, LogSender.SleepMode, $"WakeUp failed: {asyncVoidEx.Message}");
+			}
 		}
 
 		private async Task WakeUpAsync(object state) {

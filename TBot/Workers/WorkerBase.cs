@@ -113,12 +113,17 @@ namespace Tbot.Workers {
 				_timer.ChangeDueTime(TimeSpan.FromMilliseconds(dueTimeMs));
 		}
 		public async void RestartWorker(CancellationToken ct, TimeSpan period, TimeSpan dueTime) {
-			if (ShouldLogAdminLines())
-				DoLog(LogLevel.Information, $"Restarting Worker \"{GetWorkerName()}\"...");
-			foreach (var worker in _celestialWorkers.Values) {
-				await worker.StopWorker();
+			// async void: an exception escaping here would be unobserved and can crash the process.
+			try {
+				if (ShouldLogAdminLines())
+					DoLog(LogLevel.Information, $"Restarting Worker \"{GetWorkerName()}\"...");
+				foreach (var worker in _celestialWorkers.Values) {
+					await worker.StopWorker();
+				}
+				await StartWorker(ct, period, dueTime);
+			} catch (Exception asyncVoidEx) {
+				DoLog(LogLevel.Error, $"Failed to restart worker \"{GetWorkerName()}\": {asyncVoidEx.Message}");
 			}
-			await StartWorker(ct, period, dueTime);
 		}
 		public bool IsWorkerRunning() {
 			return (_timer != null) && (_timer.IsRunning);
