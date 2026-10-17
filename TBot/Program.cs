@@ -41,9 +41,15 @@ namespace Tbot {
 		}
 		static async Task MainAsync(string[] args) {
 
-			Serilog.Debugging.SelfLog.Enable(msg => {
-				try { System.IO.File.AppendAllText("serilog-selflog.txt", DateTime.UtcNow + " " + msg + Environment.NewLine); } catch { }
-			});
+			// Serilog's internal diagnostics log is off by default: the Telegram sink writes every single
+			// "Trying to send message" / "Message sent" line to it, so serilog-selflog.txt grew by MBs per day
+			// next to TBot.exe for no benefit. Set TBOT_SERILOG_SELFLOG=1 only when debugging a sink that
+			// silently drops log events.
+			if (Environment.GetEnvironmentVariable("TBOT_SERILOG_SELFLOG") == "1") {
+				Serilog.Debugging.SelfLog.Enable(msg => {
+					try { System.IO.File.AppendAllText("serilog-selflog.txt", DateTime.UtcNow + " " + msg + Environment.NewLine); } catch { }
+				});
+			}
 
 			var serviceCollection = WebApp.GetServiceCollection()
 				.AddSingleton(typeof(ILoggerService<>), typeof(LoggerService<>))

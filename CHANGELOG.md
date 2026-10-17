@@ -6,6 +6,7 @@ Log of changes in our fork. History below v3.5.0-beta4 is inherited from `ronnie
 
 - **fix** (2026-10-17): `SettingsSemaphoreManager.GetSemaphore` read its `Dictionary` (ContainsKey + indexer) outside the lock while another thread could add to it; now a `ConcurrentDictionary` with `GetOrAdd`. `InstanceManager` staggered instance logins with `Thread.Sleep(30-60 s)` inside an async method, blocking a thread; now `await Task.Delay`, skipped after the last instance. Reported by Whatsupp.
 - **fix** (2026-10-17): `ogame` submodule updated - ogamed TLS flags (could never be enabled, env vars swapped, `~` not expanded).
+- **fix** (2026-10-17): `serilog-selflog.txt` was always written next to `TBot.exe` (1.5 MB in 4 days, almost all Telegram sink "Trying to send message" / "Message sent" lines). Serilog's self-log is now off unless `TBOT_SERILOG_SELFLOG=1` is set.
 
 ## v3.5.0-beta11 — 2026-10-16 (Outgrow1827 fork)
 
