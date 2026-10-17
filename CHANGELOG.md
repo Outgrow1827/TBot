@@ -4,6 +4,9 @@ Log of changes in our fork. History below v3.5.0-beta4 is inherited from `ronnie
 
 ## [Unreleased]
 
+- **fix** (2026-10-17): `SettingsSemaphoreManager.GetSemaphore` read its `Dictionary` (ContainsKey + indexer) outside the lock while another thread could add to it; now a `ConcurrentDictionary` with `GetOrAdd`. `InstanceManager` staggered instance logins with `Thread.Sleep(30-60 s)` inside an async method, blocking a thread; now `await Task.Delay`, skipped after the last instance. Reported by Whatsupp.
+- **fix** (2026-10-17): `ogame` submodule updated - ogamed TLS flags (could never be enabled, env vars swapped, `~` not expanded).
+
 ## v3.5.0-beta11 — 2026-10-16 (Outgrow1827 fork)
 
 - **fix** (2026-10-10): `AutoFarmSystemPolicy.IsEmptySystem` treated any system with no *eligible* farm target as "empty" - including a system whose only known planet was a real active player (just not currently farmable). That wrongly applied the long 30-day empty-system skip cooldown to systems that were actually visited and populated, instead of the normal 7-day rescan interval. Found via `TBot.Tests` (`AutoFarmDistinguishesARealEmptySystemFromAVisitedSystemWithoutTargets`) failing in CI. Now "empty" only when nothing was seen, or every known planet is specifically vacation-mode inactive.

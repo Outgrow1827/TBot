@@ -148,16 +148,16 @@ namespace Tbot.Services {
 			await Task.WhenAll(deinitingInstances);
 
 			// Now Async initialize "validated" instances
-			foreach (var instanceToBeInited in instancesToBeInited) {
+			for (int i = 0; i < instancesToBeInited.Count; i++) {
+				var instanceToBeInited = instancesToBeInited[i];
 				string cInstanceSettingPath = instanceToBeInited.SettingsPath;
 				string alias = instanceToBeInited.Alias;
 				_logger.WriteLog(LogLevel.Information, LogSender.Main, $"Asynchronously initializing instance \"{alias}\" \"{Path.GetFileName(cInstanceSettingPath)}\"");
 				awaitingInstances.Add(StartTBotMain(cInstanceSettingPath, alias));
-				//Generate random sleeptime
-				Random waitTime = new Random();
-				int millisecondsTimeout	 = waitTime.Next(30, 60) * 1000;
-				//Put the thread to sleep
-				System.Threading.Thread.Sleep(millisecondsTimeout);
+				// Stagger logins 30-60 s apart; await instead of Thread.Sleep so no thread is blocked,
+				// and no wait after the last instance (nothing left to stagger)
+				if (i < instancesToBeInited.Count - 1)
+					await Task.Delay(Random.Shared.Next(30, 60) * 1000);
 			}
 
 			// Await initialization and add initialized instances

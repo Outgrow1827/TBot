@@ -94,24 +94,13 @@ namespace Tbot.Common.Settings {
 		}
 
 		private class SettingsSemaphoreManager {
-			private readonly SemaphoreSlim _dictSemaphore;
-			private readonly Dictionary<string, AsyncReaderWriterLock> _settingsSemaphores;
-
-			public SettingsSemaphoreManager() {
-				_settingsSemaphores = new Dictionary<string, AsyncReaderWriterLock>();
-				_dictSemaphore = new SemaphoreSlim(1, 1);
-			}
+			// ConcurrentDictionary: the old Dictionary was read (ContainsKey + indexer) outside the lock
+			// while another thread could be adding to it, which is undefined for Dictionary
+			private readonly System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<AsyncReaderWriterLock>> _settingsSemaphores = new();
 
 			public AsyncReaderWriterLock GetSemaphore(string settingsPath) {
-				if (!_settingsSemaphores.ContainsKey(settingsPath)) {
-
-					_dictSemaphore.Wait();
-					if (!_settingsSemaphores.ContainsKey(settingsPath)) {
-						_settingsSemaphores.Add(settingsPath, new AsyncReaderWriterLock());
-					}
-					_dictSemaphore.Release();
-				}
-				return _settingsSemaphores[settingsPath];
+				// Lazy so two racing callers can never end up holding two different locks for the same file
+				return _settingsSemaphores.GetOrAdd(settingsPath, _ => new Lazy<AsyncReaderWriterLock>(() => new AsyncReaderWriterLock())).Value;
 			}
 		}
 
