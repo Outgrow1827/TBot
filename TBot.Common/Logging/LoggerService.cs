@@ -103,7 +103,13 @@ namespace TBot.Common.Logging {
 			// logs/screenshots don't reveal exact activity times (hour/minute/second).
 			string timestampToken = LoggerServiceSharedState.HideTimestampPrecision ? "{Timestamp:yyyy-MM-dd}" : "{Timestamp:HH:mm:ss.fff zzz}";
 			string outTemplate = $"[{timestampToken} {{ThreadId}} {{Level:u3}} {{LogSender}}] {{Message:lj}}{{NewLine}}{{Exception}}";
-			string fileTemplate = $"{timestampToken} [{{Level:u3}}] {{Message:lj}}{{NewLine}}{{Exception}}";
+			// Log file: same format as upstream (Serilog's default file template, date + time:
+			// "2026-10-18 19:00:43.479 -03:00 [INF] ..."). Ours used to drop the date for no reason,
+			// which made TBot*.log differ from every other TBot build. Only the HideTimestampPrecision
+			// privacy option changes it, to date-only.
+			string fileTemplate = LoggerServiceSharedState.HideTimestampPrecision
+				? "{Timestamp:yyyy-MM-dd} [{Level:u3}] {Message:lj}{NewLine}{Exception}"
+				: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}";
 			long maxFileSize = 1 * 1024 * 1024 * 10;
 
 			var logConfig = new LoggerConfiguration()
