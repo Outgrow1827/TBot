@@ -8,6 +8,7 @@ Log of changes in our fork. History below v3.5.0-beta4 is inherited from `ronnie
 - **fix** (2026-10-17): `ogame` submodule updated - ogamed TLS flags (could never be enabled, env vars swapped, `~` not expanded).
 - **fix** (2026-10-17): `serilog-selflog.txt` was always written next to `TBot.exe` (1.5 MB in 4 days, almost all Telegram sink "Trying to send message" / "Message sent" lines). Serilog's self-log is now off unless `TBOT_SERILOG_SELFLOG=1` is set.
 - **fix** (2026-10-18): Ctrl+C could make TBot start itself again (reported on Linux by Rosaroter Panther). The handler didn't set `e.Cancel`, so the runtime tore the process down mid-shutdown and any exception there triggered the crash self-relaunch; a second Ctrl+C also threw from `tcs.SetResult`. Now Ctrl+C / SIGTERM mark the shutdown as intentional (no relaunch) and repeated Ctrl+C is ignored. README: how to stop TBot on Linux + example systemd unit.
+- **fix** (2026-10-18): Brain transports never left an origin holding more deuterium than its cargo could carry (real case: 616 LargeCargo, billions of each resource, every cycle "Not enough resources transportable ... within the 2 slot(s)"). The planner got the origin pre-shaped by `CalcMaxTransportableResources`, which fills the hold deuterium-first, so it looked like it offered only deuterium. Now the planner gets the real stock and the fleet capacity separately and picks the mix itself. Regression test `MultipleOriginTransportTests`.
 
 ## v3.5.0-beta11 — 2026-10-16 (Outgrow1827 fork)
 

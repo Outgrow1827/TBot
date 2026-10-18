@@ -5262,10 +5262,19 @@ namespace Tbot.Includes {
 					// session) silently ships less than promised once it shrinks to cover its own fuel.
 					var fuelPrediction = CalcFleetPrediction(celestial.Coordinate, destination.Coordinate, ships, Missions.Transport, Speeds.HundredPercent, userData.researches, userData.serverData, celestial.LFBonuses, userData.userInfo.Class, userData.allianceClass);
 					available.Deuterium = Math.Max(0, available.Deuterium - fuelPrediction.Fuel);
-					var transportable = CalcMaxTransportableResources(ships, available, userData.researches.HyperspaceTechnology, userData.serverData, celestial.LFBonuses, userData.userInfo.Class, 0, userData.serverData.ProbeCargo);
+					// The planner gets the origin's real stock plus the fleet capacity as two separate
+					// numbers, and picks the metal/crystal/deut mix itself (CalculateTake caps it by
+					// capacity). It used to get CalcMaxTransportableResources' result instead, which fills
+					// the hold deuterium-first: an origin holding more deut than its cargo can carry
+					// looked like it offered ONLY deuterium, so a demand for metal/crystal could never be
+					// met - real case 2026-10-18, 616 LargeCargo + 4.9 billion metal on the homeworld and
+					// every cycle "Not enough resources transportable ... within the 2 slot(s)".
+					var capacity = Math.Min(
+						CalcFleetCapacity(ships, userData.serverData, userData.researches.HyperspaceTechnology, celestial.LFBonuses, userData.userInfo.Class, userData.serverData.ProbeCargo),
+						available.TotalResources);
 					var distance = CalcDistance(celestial.Coordinate, destination.Coordinate, userData.serverData);
-					var selectionScore = transportSettings.MultipleOrigin.PriorityToProximityOverQuantity ? distance : -transportable.TotalResources;
-					return new ResourceSource(celestial.ID, transportable, transportable.TotalResources, distance, selectionScore);
+					var selectionScore = transportSettings.MultipleOrigin.PriorityToProximityOverQuantity ? distance : -capacity;
+					return new ResourceSource(celestial.ID, available, capacity, distance, selectionScore);
 				})
 				.Where(source => source.Available.TotalResources > 0)
 				.ToList();
