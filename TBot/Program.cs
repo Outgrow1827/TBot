@@ -99,7 +99,7 @@ namespace Tbot {
 			AppDomain.CurrentDomain.UnhandledException += (sender, e) => {
 				var ex = e.ExceptionObject as Exception;
 				_logger.WriteLog(LogLevel.Critical, LogSender.Main, $"FATAL UNHANDLED EXCEPTION (IsTerminating={e.IsTerminating}): {ex?.Message}\n{ex?.StackTrace}");
-				if (e.IsTerminating && !CmdLineArgsService.noCrashRestart) {
+				if (e.IsTerminating && !CmdLineArgsService.noCrashRestart && !_shutdownRequested) {
 					// A hard crash skips all normal cleanup, so ogamed.exe (this process' child) can still
 					// be alive holding its HTTP port - kill it now so the fresh instance we're about to spawn
 					// doesn't immediately fail to bind that same port.
@@ -135,11 +135,21 @@ namespace Tbot {
 
 			
 
+			// Ctrl+C used to make TBot start itself again (reported on Linux): without e.Cancel the runtime
+			// began killing the process while workers were still running, any exception thrown during that
+			// teardown counted as a "crash" and TryRelaunchSelfAfterCrash spawned a new TBot; a second Ctrl+C
+			// also threw from tcs.SetResult (already completed), same outcome. Now Ctrl+C keeps the process
+			// alive for the normal shutdown below, marks it as intentional so no relaunch happens, and a
+			// second Ctrl+C is ignored instead of throwing.
 			Console.CancelKeyPress += (sender, e) => {
+				e.Cancel = true;
+				_shutdownRequested = true;
 				_logger.WriteLog(LogLevel.Information, LogSender.Main, "CTRL+C pressed!");
 				cts.Cancel();
-				tcs.SetResult();
+				tcs.TrySetResult();
 			};
+			// systemctl stop / kill (SIGTERM) goes through ProcessExit, not CancelKeyPress
+			AppDomain.CurrentDomain.ProcessExit += (sender, e) => _shutdownRequested = true;
 
 			// Manage WebUI
 			var settings = await SettingsService.GetSettings(settingsPath);
@@ -163,6 +173,9 @@ namespace Tbot {
 		// process and restarts just that worker - no second executable needed for that either.
 		// Re-ported 2026-08-06 after being lost in the 3.4.6 rebase along with the rest of this file's
 		// crash-handling.
+		// set by Ctrl+C / SIGTERM: an exception while shutting down on purpose is not a crash to recover from
+		private static volatile bool _shutdownRequested;
+
 		private const int MaxCrashRestartsPerWindow = 5;
 		private static readonly TimeSpan CrashRestartWindow = TimeSpan.FromMinutes(10);
 

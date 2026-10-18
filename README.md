@@ -239,6 +239,32 @@ You can change settings from WebUI or editing the files directly.
 * Run TBot
   * `./TBot`
 
+### Stopping TBot on Linux
+* Started from a terminal: press `Ctrl+C` **once** and wait for `Goodbye!` - TBot closes ogamed itself.
+* Running as a systemd service: `sudo systemctl stop tbot`. With `Restart=on-failure` this does not bring it back; `Restart=always` would.
+* Last resort (frozen process): find both processes and kill them, ogamed included, or it keeps holding its port:
+  * `pgrep -a TBot; pgrep -a ogamed`
+  * `kill <PID>` (or `kill -9 <PID>` if it still does not exit)
+
+Example systemd service (`/etc/systemd/system/tbot.service`, adjust user and paths):
+```ini
+[Unit]
+Description=TBot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=tbot
+WorkingDirectory=/home/tbot/tbot
+ExecStart=/home/tbot/tbot/TBot
+Restart=on-failure
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target
+```
+Enable with `sudo systemctl daemon-reload && sudo systemctl enable --now tbot`; live console with `journalctl -u tbot -f`.
+
 ## Running on Amazon Web Services
 **WARNING: Ogame is positively blocking IPs from datacenters. You probably need a residential proxy to run on AWS, or any other VPS.**
 
