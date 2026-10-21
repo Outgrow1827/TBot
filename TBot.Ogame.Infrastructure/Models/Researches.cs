@@ -34,6 +34,11 @@ namespace TBot.Ogame.Infrastructure.Models {
 			}
 			return output;
 		}
+
+		public Researches SetLevel(Buildables research, int level) {
+			GetType().GetProperty(research.ToString())?.SetValue(this, level);
+			return this;
+		}
 	}
 
 }

@@ -76,6 +76,22 @@ namespace Tbot.Workers.Brain {
 			}
 		}
 
+		// Lifeform research this worker would pick next (same cheapest-first rule), simulated on a copy.
+		private IEnumerable<(Resources, long)> StockpilePlan(Celestial celestial, LFTechno buildable, int level, LFTechs maxLFTechs) {
+			var temp = BrainTransportCoordinator.Clone(celestial);
+			while (buildable != LFTechno.None) {
+				yield return (_calculationService.CalcPrice(buildable, level), _calculationService.CalcProductionTime(buildable, level, _tbotInstance.UserData.serverData, 0));
+				temp.LFTechs.SetLevel(buildable, level);
+				buildable = _calculationService.GetNextLFTechToBuild(temp, maxLFTechs);
+				if (buildable == LFTechno.None)
+					break;
+				var cheaper = _calculationService.GetLessExpensiveLFTechToBuild(temp, _calculationService.CalcPrice(buildable, _calculationService.GetNextLevel(temp, buildable)), maxLFTechs);
+				if (cheaper != LFTechno.None)
+					buildable = cheaper;
+				level = _calculationService.GetNextLevel(temp, buildable);
+			}
+		}
+
 		private async Task LifeformAutoResearchCelestial(Celestial celestial) {
 			int fleetId = (int) SendFleetCode.GenericError;
 			LFTechno buildable = LFTechno.None;
@@ -200,7 +216,7 @@ namespace Tbot.Workers.Brain {
 									new RankSlotsPriority(Feature.BrainLifeformAutoResearch,
 										(int) _tbotInstance.InstanceSettings.General.SlotPriorityLevel.Brain,
 										((bool) _tbotInstance.InstanceSettings.Brain.Active && (bool) _tbotInstance.InstanceSettings.Brain.Transports.Active && ((bool) _tbotInstance.InstanceSettings.Brain.AutoMine.Active || (bool) _tbotInstance.InstanceSettings.Brain.AutoResearch.Active || (bool) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.Active || (bool) _tbotInstance.InstanceSettings.Brain.LifeformAutoResearch.Active)),
-										BrainTransportCoordinator.GetMaxSlotsForActiveItem(_tbotInstance.InstanceSettings, (int) _tbotInstance.InstanceSettings.Brain.Transports.MaxSlots),
+										(int) _tbotInstance.InstanceSettings.Brain.Transports.MaxSlots,
 										(int) _tbotInstance.UserData.fleets.Count(f => f.Mission == Missions.Transport)),
 									new RankSlotsPriority(Feature.Expeditions,
 										(int) _tbotInstance.InstanceSettings.General.SlotPriorityLevel.Expeditions,
@@ -268,8 +284,9 @@ namespace Tbot.Workers.Brain {
 														(int) _tbotInstance.InstanceSettings.Brain.Transports.Origin.System,
 														(int) _tbotInstance.InstanceSettings.Brain.Transports.Origin.Position,
 														Enum.Parse<Celestials>((string) _tbotInstance.InstanceSettings.Brain.Transports.Origin.Type)),
-													preferredShip, buildable, level, _tbotInstance.UserData.researches, _tbotInstance.UserData.serverData,
-													0, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.allianceClass,
+													preferredShip, _tbotInstance.UserData.researches, _tbotInstance.UserData.serverData,
+													_tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.allianceClass,
+													StockpilePlan(celestial, buildable, level, maxLFTechs),
 													widenStockpileWindow: SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.Transports, "WidenStockpileWindow") && (bool) _tbotInstance.InstanceSettings.Brain.Transports.WidenStockpileWindow);
 										}
 										Resources missingResources = costToCover.Difference(celestial.Resources);
@@ -354,7 +371,7 @@ namespace Tbot.Workers.Brain {
 													(int) (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.Transports, "RoundTo") ? _tbotInstance.InstanceSettings.Brain.Transports.RoundTo : 1000),
 													(bool) _tbotInstance.InstanceSettings.Brain.Transports.SendToTheMoonIfPossible,
 													origin,
-													BrainTransportCoordinator.GetMaxSlotsForActiveItem(_tbotInstance.InstanceSettings, (int) _tbotInstance.InstanceSettings.Brain.Transports.MaxSlots),
+													(int) _tbotInstance.InstanceSettings.Brain.Transports.MaxSlots,
 													(bool) _tbotInstance.InstanceSettings.Brain.Transports.CheckMoonOrPlanetFirst,
 													(bool) _tbotInstance.InstanceSettings.Brain.Transports.DoMultipleTransportIsNotEnoughShipButSamePosition,
 													new MultipleOrigins((bool) _tbotInstance.InstanceSettings.Brain.Transports.MultipleOrigins.Active,

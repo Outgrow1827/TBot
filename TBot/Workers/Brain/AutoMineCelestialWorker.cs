@@ -111,6 +111,33 @@ namespace Tbot.Workers.Brain {
 				}
 			}
 		}
+		// What this worker would queue next, level after level, simulated on a copy of the celestial.
+		private IEnumerable<(Resources, long)> StockpilePlan(Celestial celestial, Buildables buildable, int level, Buildings maxBuildings, Facilities maxFacilities, Facilities maxLunarFacilities, AutoMinerSettings settings) {
+			var ud = _tbotInstance.UserData;
+			// SolarSatellite/Crawler level is a quantity queued at once, not a sequence of levels
+			if (buildable == Buildables.SolarSatellite || buildable == Buildables.Crawler) {
+				yield return (_calculationService.CalcPrice(buildable, level, celestial.LFBonuses), _calculationService.CalcProductionTime(buildable, 1, ud.serverData, celestial.Facilities) * level);
+				yield break;
+			}
+			var temp = BrainTransportCoordinator.Clone(celestial);
+			while (buildable != Buildables.Null && buildable != Buildables.SolarSatellite && buildable != Buildables.Crawler) {
+				yield return (_calculationService.CalcPrice(buildable, level, temp.LFBonuses), _calculationService.CalcProductionTime(buildable, level, ud.serverData, temp.Facilities));
+				temp.SetLevel(buildable, level);
+				if (temp.Fields != null)
+					temp.Fields.Built++;
+				if (temp is Planet planet) {
+					long energy = _calculationService.GetProductionEnergyDelta(buildable, level, ud.researches.EnergyTechnology, 1, ud.userInfo.Class, ud.staff.Engineer, ud.staff.IsFull) - _calculationService.GetRequiredEnergyDelta(buildable, level);
+					planet.Resources.Energy += energy;
+					if (planet.ResourcesProduction?.Energy != null)
+						planet.ResourcesProduction.Energy.Available += energy;
+					buildable = _calculationService.GetNextBuildingToBuild(planet, ud.researches, maxBuildings, maxFacilities, ud.userInfo.Class, ud.staff, ud.serverData, settings);
+				} else {
+					buildable = _calculationService.GetNextLunarFacilityToBuild(temp as Moon, ud.researches, maxLunarFacilities);
+				}
+				level = _calculationService.GetNextLevel(temp, buildable);
+			}
+		}
+
 		private async Task AutoMineCelestial(Celestial celestial, Buildings maxBuildings, Facilities maxFacilities, Facilities maxLunarFacilities, AutoMinerSettings autoMinerSettings, Fields fieldsSettings, Temperature temperaturesSettings) {
 			int fleetId = (int) SendFleetCode.GenericError;
 			Buildables buildable = Buildables.Null;
@@ -355,7 +382,7 @@ namespace Tbot.Workers.Brain {
 								new RankSlotsPriority(Feature.BrainAutoMine,
 									(int) _tbotInstance.InstanceSettings.General.SlotPriorityLevel.Brain,
 									((bool) _tbotInstance.InstanceSettings.Brain.Active && (bool) _tbotInstance.InstanceSettings.Brain.Transports.Active && ((bool) _tbotInstance.InstanceSettings.Brain.AutoMine.Active || (bool) _tbotInstance.InstanceSettings.Brain.AutoResearch.Active || (bool) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.Active || (bool) _tbotInstance.InstanceSettings.Brain.LifeformAutoResearch.Active)),
-									BrainTransportCoordinator.GetMaxSlotsForActiveItem(_tbotInstance.InstanceSettings, (int) _tbotInstance.InstanceSettings.Brain.Transports.MaxSlots),
+									(int) _tbotInstance.InstanceSettings.Brain.Transports.MaxSlots,
 									(int) _tbotInstance.UserData.fleets.Count(f => f.Mission == Missions.Transport)),
 								new RankSlotsPriority(Feature.Expeditions,
 									(int) _tbotInstance.InstanceSettings.General.SlotPriorityLevel.Expeditions,
@@ -426,8 +453,9 @@ namespace Tbot.Workers.Brain {
 												(int) _tbotInstance.InstanceSettings.Brain.Transports.Origin.System,
 												(int) _tbotInstance.InstanceSettings.Brain.Transports.Origin.Position,
 												Enum.Parse<Celestials>((string) _tbotInstance.InstanceSettings.Brain.Transports.Origin.Type)),
-											preferredShip, buildable, level, _tbotInstance.UserData.researches, _tbotInstance.UserData.serverData,
-											celestial.Facilities, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.allianceClass,
+											preferredShip, _tbotInstance.UserData.researches, _tbotInstance.UserData.serverData,
+											_tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.allianceClass,
+											StockpilePlan(celestial, buildable, level, maxBuildings, maxFacilities, maxLunarFacilities, autoMinerSettings),
 												widenStockpileWindow: SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.Transports, "WidenStockpileWindow") && (bool) _tbotInstance.InstanceSettings.Brain.Transports.WidenStockpileWindow);
 									}
 									Resources missingResources = costToCover.Difference(celestial.Resources);
@@ -449,12 +477,7 @@ namespace Tbot.Workers.Brain {
 												.SingleOrDefault() ?? new() { ID = 0 };
 										}
 										if (origin.ID != 0) {
-										// StockpileForRoundTrip inflates missingResources to cover every level that
-										// would finish within the round-trip window (up to 50 levels ahead), which
-										// can easily exceed what the account can realistically gather. Rather than
-										// send nothing when the full stockpile isn't affordable, fall back to
-										// whatever is available, as long as it still covers at least the one level
-										// about to be queued (xCostBuildable) - real progress beats none.
+										// stockpile not affordable from here: still send what covers the level about to be queued
 										if (!origin.Resources.IsEnoughFor(missingResources) && origin.Resources.IsEnoughFor(xCostBuildable)) {
 											missingResources = new Resources(
 												Math.Min(missingResources.Metal, origin.Resources.Metal),
@@ -525,7 +548,7 @@ namespace Tbot.Workers.Brain {
 									(int) (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.Transports, "RoundTo") ? _tbotInstance.InstanceSettings.Brain.Transports.RoundTo : 1000),
 									(bool) _tbotInstance.InstanceSettings.Brain.Transports.SendToTheMoonIfPossible,
 									origin,
-									BrainTransportCoordinator.GetMaxSlotsForActiveItem(_tbotInstance.InstanceSettings, (int) _tbotInstance.InstanceSettings.Brain.Transports.MaxSlots),
+									(int) _tbotInstance.InstanceSettings.Brain.Transports.MaxSlots,
 									(bool) _tbotInstance.InstanceSettings.Brain.Transports.CheckMoonOrPlanetFirst,
 									(bool) _tbotInstance.InstanceSettings.Brain.Transports.DoMultipleTransportIsNotEnoughShipButSamePosition,
 									new MultipleOrigins((bool) _tbotInstance.InstanceSettings.Brain.Transports.MultipleOrigins.Active,

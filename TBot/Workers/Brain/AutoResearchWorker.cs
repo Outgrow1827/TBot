@@ -33,6 +33,20 @@ namespace Tbot.Workers.Brain {
 			_fleetScheduler = fleetScheduler;
 			_tbotOgameBridge = tbotOgameBridge;
 		}
+		// Research queue the worker would follow next, simulated on a copy of the researches.
+		private IEnumerable<(Resources, long)> StockpilePlan(Planet celestial, Buildables research, int level, int cumulativeLabLevel) {
+			var researches = BrainTransportCoordinator.Clone(_tbotInstance.UserData.researches);
+			while (research != Buildables.Null) {
+				yield return (_calculationService.CalcPrice(research, level, celestial.LFBonuses), _calculationService.CalcProductionTime(research, level, _tbotInstance.UserData.serverData, celestial.Facilities, cumulativeLabLevel));
+				researches.SetLevel(research, level);
+				research = NextResearch(celestial, researches);
+				level = _calculationService.GetNextLevel(researches, research);
+			}
+		}
+
+		private Buildables NextResearch(Planet celestial, Researches researches) =>
+			_calculationService.GetNextResearchToBuild(celestial, researches, (bool) _tbotInstance.InstanceSettings.Brain.AutoMine.PrioritizeRobotsAndNanites, _tbotInstance.UserData.slots, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxEnergyTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxLaserTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxIonTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxHyperspaceTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxPlasmaTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxCombustionDrive, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxImpulseDrive, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxHyperspaceDrive, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxEspionageTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxComputerTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxAstrophysics, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxIntergalacticResearchNetwork, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxWeaponsTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxShieldingTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxArmourTechnology, (bool) _tbotInstance.InstanceSettings.Brain.AutoResearch.OptimizeForStart, (bool) _tbotInstance.InstanceSettings.Brain.AutoResearch.EnsureExpoSlots, (bool) _tbotInstance.InstanceSettings.Brain.AutoResearch.ForceResearchWhateverTheLabLevel, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.staff.Geologist, _tbotInstance.UserData.staff.Admiral);
+
 		protected override async Task Execute() {
 			// Serializes this worker's whole run against the other 3 Brain item types (AutoMine,
 			// LifeformAutoMine, LifeformAutoResearch) - see BrainTransportCoordinator and project
@@ -153,10 +167,10 @@ namespace Tbot.Workers.Brain {
 					) {
 						research = Buildables.Astrophysics;
 					} else {
-						research = _calculationService.GetNextResearchToBuild(celestial as Planet, _tbotInstance.UserData.researches, (bool) _tbotInstance.InstanceSettings.Brain.AutoMine.PrioritizeRobotsAndNanites, _tbotInstance.UserData.slots, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxEnergyTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxLaserTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxIonTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxHyperspaceTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxPlasmaTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxCombustionDrive, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxImpulseDrive, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxHyperspaceDrive, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxEspionageTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxComputerTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxAstrophysics, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxIntergalacticResearchNetwork, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxWeaponsTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxShieldingTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxArmourTechnology, (bool) _tbotInstance.InstanceSettings.Brain.AutoResearch.OptimizeForStart, (bool) _tbotInstance.InstanceSettings.Brain.AutoResearch.EnsureExpoSlots, (bool) _tbotInstance.InstanceSettings.Brain.AutoResearch.ForceResearchWhateverTheLabLevel, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.staff.Geologist, _tbotInstance.UserData.staff.Admiral);
+						research = NextResearch(celestial as Planet, _tbotInstance.UserData.researches);
 					}
 				} else {
-					research = _calculationService.GetNextResearchToBuild(celestial as Planet, _tbotInstance.UserData.researches, (bool) _tbotInstance.InstanceSettings.Brain.AutoMine.PrioritizeRobotsAndNanites, _tbotInstance.UserData.slots, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxEnergyTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxLaserTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxIonTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxHyperspaceTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxPlasmaTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxCombustionDrive, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxImpulseDrive, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxHyperspaceDrive, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxEspionageTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxComputerTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxAstrophysics, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxIntergalacticResearchNetwork, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxWeaponsTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxShieldingTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxArmourTechnology, (bool) _tbotInstance.InstanceSettings.Brain.AutoResearch.OptimizeForStart, (bool) _tbotInstance.InstanceSettings.Brain.AutoResearch.EnsureExpoSlots, (bool) _tbotInstance.InstanceSettings.Brain.AutoResearch.ForceResearchWhateverTheLabLevel, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.staff.Geologist, _tbotInstance.UserData.staff.Admiral);
+					research = NextResearch(celestial as Planet, _tbotInstance.UserData.researches);
 				}
 
 				if (
@@ -199,7 +213,7 @@ namespace Tbot.Workers.Brain {
 								new RankSlotsPriority(Feature.BrainAutoResearch,
 									(int) _tbotInstance.InstanceSettings.General.SlotPriorityLevel.Brain,
 									((bool) _tbotInstance.InstanceSettings.Brain.Active && (bool) _tbotInstance.InstanceSettings.Brain.Transports.Active && ((bool) _tbotInstance.InstanceSettings.Brain.AutoMine.Active || (bool) _tbotInstance.InstanceSettings.Brain.AutoResearch.Active || (bool) _tbotInstance.InstanceSettings.Brain.LifeformAutoMine.Active || (bool) _tbotInstance.InstanceSettings.Brain.LifeformAutoResearch.Active)),
-									BrainTransportCoordinator.GetMaxSlotsForActiveItem(_tbotInstance.InstanceSettings, (int) _tbotInstance.InstanceSettings.Brain.Transports.MaxSlots),
+									(int) _tbotInstance.InstanceSettings.Brain.Transports.MaxSlots,
 									(int) _tbotInstance.UserData.fleets.Count(f => f.Mission == Missions.Transport)),
 								new RankSlotsPriority(Feature.Expeditions,
 									(int) _tbotInstance.InstanceSettings.General.SlotPriorityLevel.Expeditions,
@@ -269,9 +283,9 @@ namespace Tbot.Workers.Brain {
 												(int) _tbotInstance.InstanceSettings.Brain.Transports.Origin.System,
 												(int) _tbotInstance.InstanceSettings.Brain.Transports.Origin.Position,
 												Enum.Parse<Celestials>((string) _tbotInstance.InstanceSettings.Brain.Transports.Origin.Type)),
-											preferredShip, research, level, _tbotInstance.UserData.researches, _tbotInstance.UserData.serverData,
-											celestial.Facilities, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.allianceClass,
-											cumulativeLabLevel,
+											preferredShip, _tbotInstance.UserData.researches, _tbotInstance.UserData.serverData,
+											_tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.allianceClass,
+											StockpilePlan(celestial, research, level, cumulativeLabLevel),
 											widenStockpileWindow: SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.Transports, "WidenStockpileWindow") && (bool) _tbotInstance.InstanceSettings.Brain.Transports.WidenStockpileWindow);
 									}
 									Resources missingResources = costToCover.Difference(celestial.Resources);
@@ -364,7 +378,7 @@ namespace Tbot.Workers.Brain {
 												(int) (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.Transports, "RoundTo") ? _tbotInstance.InstanceSettings.Brain.Transports.RoundTo : 1000),
 												(bool) _tbotInstance.InstanceSettings.Brain.Transports.SendToTheMoonIfPossible,
 												origin,
-												BrainTransportCoordinator.GetMaxSlotsForActiveItem(_tbotInstance.InstanceSettings, (int) _tbotInstance.InstanceSettings.Brain.Transports.MaxSlots),
+												(int) _tbotInstance.InstanceSettings.Brain.Transports.MaxSlots,
 												(bool) _tbotInstance.InstanceSettings.Brain.Transports.CheckMoonOrPlanetFirst,
 												(bool) _tbotInstance.InstanceSettings.Brain.Transports.DoMultipleTransportIsNotEnoughShipButSamePosition,
 												new MultipleOrigins((bool) _tbotInstance.InstanceSettings.Brain.Transports.MultipleOrigins.Active,
