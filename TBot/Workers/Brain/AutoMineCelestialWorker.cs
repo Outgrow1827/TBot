@@ -74,7 +74,8 @@ namespace Tbot.Workers.Brain {
 					MissileSilo = (int) _tbotInstance.InstanceSettings.Brain.AutoMine.MaxMissileSilo,
 					NaniteFactory = (int) _tbotInstance.InstanceSettings.Brain.AutoMine.MaxNaniteFactory,
 					Terraformer = (int) _tbotInstance.InstanceSettings.Brain.AutoMine.MaxTerraformer,
-					SpaceDock = (int) _tbotInstance.InstanceSettings.Brain.AutoMine.MaxSpaceDock
+					SpaceDock = (int) _tbotInstance.InstanceSettings.Brain.AutoMine.MaxSpaceDock,
+					InterstellarAnomalyScanner = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.AutoMine, "MaxInterstellarAnomalyScanner") ? (int) _tbotInstance.InstanceSettings.Brain.AutoMine.MaxInterstellarAnomalyScanner : 0
 				};
 				Facilities maxLunarFacilities = new() {
 					LunarBase = (int) _tbotInstance.InstanceSettings.Brain.AutoMine.MaxLunarBase,

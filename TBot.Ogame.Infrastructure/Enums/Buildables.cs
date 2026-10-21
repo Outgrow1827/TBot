@@ -29,6 +29,7 @@ namespace TBot.Ogame.Infrastructure.Enums {
 		LunarBase = 41,
 		SensorPhalanx = 42,
 		JumpGate = 43,
+		InterstellarAnomalyScanner = 45,
 		RocketLauncher = 401,
 		LightLaser = 402,
 		HeavyLaser = 403,

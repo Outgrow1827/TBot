@@ -1131,6 +1131,11 @@ namespace Tbot.Includes {
 					output.Deuterium = (long) (50 * Math.Pow(5, level - 1));
 					output.Energy = (long) Math.Round(50 * Math.Pow(2.5, level - 1), 0, MidpointRounding.ToPositiveInfinity);
 					break;
+				case Buildables.InterstellarAnomalyScanner:
+					output.Metal = (long) (90 * Math.Pow(1.5, level - 1));
+					output.Crystal = (long) (45 * Math.Pow(1.5, level - 1));
+					output.Deuterium = (long) (15 * Math.Pow(1.5, level - 1));
+					break;
 				case Buildables.LunarBase:
 					output.Metal = (long) (20000 * Math.Pow(2, level - 1));
 					output.Crystal = (long) (40000 * Math.Pow(2, level - 1));
@@ -2503,6 +2508,7 @@ namespace Tbot.Includes {
 				case Buildables.NaniteFactory:
 				case Buildables.Terraformer:
 				case Buildables.SpaceDock:
+				case Buildables.InterstellarAnomalyScanner:
 				case Buildables.LunarBase:
 				case Buildables.SensorPhalanx:
 				case Buildables.JumpGate:
@@ -4369,6 +4375,17 @@ namespace Tbot.Includes {
 				facilityToBuild = Buildables.ResearchLab;
 			if (facilityToBuild == Buildables.Null && ShouldBuildMissileSilo(planet, maxFacilities.MissileSilo, researches, serverData.Speed, maxBuildings.MetalMine, maxBuildings.CrystalMine, maxBuildings.DeuteriumSynthesizer, 1, playerClass, staff.Geologist, staff.IsFull, settings.OptimizeForStart, settings.MaxDaysOfInvestmentReturn, force))
 				facilityToBuild = Buildables.MissileSilo;
+			// last: only once every other planet facility hit its max (Terraformer/Alliance Depot don't count)
+			if (facilityToBuild == Buildables.Null && planet.Productions.Count == 0 &&
+				planet.Facilities.InterstellarAnomalyScanner < maxFacilities.InterstellarAnomalyScanner &&
+				planet.Facilities.RoboticsFactory >= maxFacilities.RoboticsFactory &&
+				planet.Facilities.Shipyard >= maxFacilities.Shipyard &&
+				planet.Facilities.ResearchLab >= maxFacilities.ResearchLab &&
+				planet.Facilities.NaniteFactory >= maxFacilities.NaniteFactory &&
+				planet.Facilities.SpaceDock >= maxFacilities.SpaceDock &&
+				planet.Facilities.MissileSilo >= maxFacilities.MissileSilo &&
+				researches.Astrophysics >= 5 && researches.CombustionDrive >= 1 && planet.Facilities.Shipyard >= 5)
+				facilityToBuild = Buildables.InterstellarAnomalyScanner;
 
 			return facilityToBuild;
 		}

@@ -46,6 +46,7 @@
 			"AutoFarm": 3,
 			"AutoColonize": 4,
 			"AutoDiscovery": 10,
+			"AutoAnomaly": 10,
 			"AutoHarvest": 99
 		}
 	},
@@ -221,6 +222,7 @@
 			"MaxLunarRoboticsFactory": 8,
 			"MaxSensorPhalanx": 6,
 			"MaxJumpGate": 1,
+			"MaxInterstellarAnomalyScanner": 0,
 			"RandomOrder": true,
 			"Exclude": [
 				{
@@ -659,6 +661,28 @@
 		"RandomPosition": false,
 		"CheckIntervalMin": 900,
 		"CheckIntervalMax": 1200
+	},
+	"AutoAnomaly": {
+		"Active": false,
+		"DryRun": true,
+		"LithiumConversion": {
+			"Active": false,
+			"Planet": { "Galaxy": 1, "System": 1, "Position": 1, "Type": "Planet" },
+			"Resource": "deuterium",
+			"Workload": 100
+		},
+		"Scan": {
+			"AnomalyLevel": 1,
+			"Range": 10,
+			"MinLithiumToKeep": 0
+		},
+		"Missions": {
+			"PvE": true,
+			"PvP": false,
+			"Delivery": true
+		},
+		"CheckIntervalMin": 30,
+		"CheckIntervalMax": 60
 	},
 	"AutoDiscovery": {
 		"Active": false,

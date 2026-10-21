@@ -17,6 +17,7 @@ namespace TBot.Ogame.Infrastructure.Models {
 		public int LunarBase { get; set; }
 		public int SensorPhalanx { get; set; }
 		public int JumpGate { get; set; }
+		public int InterstellarAnomalyScanner { get; set; }
 
 		public override string ToString() {
 			return $"R: {RoboticsFactory.ToString()} S: {Shipyard.ToString()} L: {ResearchLab.ToString()} M: {MissileSilo.ToString("")} N: {NaniteFactory.ToString("")}";
