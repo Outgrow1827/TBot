@@ -457,7 +457,6 @@ namespace Tbot.Workers.Brain {
 											preferredShip, _tbotInstance.UserData.researches, _tbotInstance.UserData.serverData,
 											_tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.allianceClass,
 											StockpilePlan(celestial, buildable, level, maxBuildings, maxFacilities, maxLunarFacilities, autoMinerSettings),
-												widenStockpileWindow: SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.Transports, "WidenStockpileWindow") && (bool) _tbotInstance.InstanceSettings.Brain.Transports.WidenStockpileWindow,
 											secondsUntilSleep: BrainTransportCoordinator.SecondsUntilSleep(_tbotInstance.InstanceSettings, await _tbotOgameBridge.GetDateTime()));
 									}
 									Resources missingResources = costToCover.Difference(celestial.Resources);

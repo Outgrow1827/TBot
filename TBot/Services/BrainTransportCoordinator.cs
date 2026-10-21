@@ -30,7 +30,7 @@ namespace Tbot.Services {
 		public const int MaxStockpileSteps = 50;
 
 		// Resources for every construction the worker would queue while the fleet flies:
-		// window = 2x one-way (there and back) or 3x with widenStockpileWindow (there, back, there),
+		// window = 2x the one-way flight (there and back),
 		// never past the next sleep. `plan` is the worker's own simulated sequence.
 		public static Resources CalcResourcesForRoundTrip(
 			ICalculationService calculationService,
@@ -42,7 +42,6 @@ namespace Tbot.Services {
 			CharacterClass playerClass,
 			AllianceClass allianceClass,
 			IEnumerable<(Resources Cost, long Seconds)> plan,
-			bool widenStockpileWindow = false,
 			long secondsUntilSleep = long.MaxValue) {
 
 			var timeShips = new Ships();
@@ -50,7 +49,7 @@ namespace Tbot.Services {
 			long flightWindowSeconds = Math.Min(secondsUntilSleep, calculationService.CalcFleetPrediction(
 				origin, celestial.Coordinate, timeShips, Missions.Transport,
 				Speeds.HundredPercent, researches, serverData, celestial.LFBonuses, playerClass, allianceClass
-			).Time * (widenStockpileWindow ? 3 : 2));
+			).Time * 2);
 
 			Resources total = new();
 			long elapsed = 0;
