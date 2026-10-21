@@ -206,11 +206,7 @@ namespace Tbot.Services {
 			try {
 				hideAccountNameInLogs = SettingsService.IsSettingSet(InstanceSettings.General, "HideSensitiveDataInLogs") && (bool) InstanceSettings.General.HideSensitiveDataInLogs;
 			} catch { }
-			// LogPrivacy/LoggerServiceSharedState are process-wide statics (read inside Coordinate.ToString()
-			// and the log sinks, which have no instance context), but HideSensitiveDataInLogs is a per-instance
-			// setting. Plain assignment meant whichever instance initialized last won for every account - an
-			// account that asked for hiding could end up logging coordinates/names because another one didn't.
-			// Track each instance's wish and hide if ANY instance asks for it.
+			// The privacy flags are process-wide but the setting is per instance, so hiding is applied when ANY instance asks for it.
 			_privacyByInstance[InstanceAlias ?? ""] = hideAccountNameInLogs;
 			bool anyHide = _privacyByInstance.Values.Any(v => v);
 			TBot.Ogame.Infrastructure.Models.LogPrivacy.HideCoordinates = anyHide;
@@ -223,24 +219,14 @@ namespace Tbot.Services {
 					manualModeTimeout = (int) InstanceSettings.General.ManualModeTimeout;
 			} catch { }
 
-			// Was hardcoded to 60s in OgameService with no way to configure it at all - a setting
-			// with this exact purpose never existed, even though ManualModeTimeout (a completely
-			// different thing: how long manual mode stays idle-locked before releasing) sat right
-			// next to it in General and looked like it should cover this. Reported live 2026-09-18
-			// ("mas nunca aparece o valor configurado no json") after repeated 60s HttpClient.Timeout
-			// exceptions during network hiccups to Gameforge - user assumed some existing json value
-			// governed it and kept not seeing it take effect, because none did.
+			// HttpClientTimeoutSeconds is a separate setting from ManualModeTimeout (which is how long manual mode stays idle-locked).
 			int httpClientTimeoutSeconds = 60;
 			try {
 				if (SettingsService.IsSettingSet(InstanceSettings.General, "HttpClientTimeoutSeconds"))
 					httpClientTimeoutSeconds = (int) InstanceSettings.General.HttpClientTimeoutSeconds;
 			} catch { }
 
-			// Neither value was ever logged, so there was no way to confirm from the log alone
-			// whether a json edit to ManualModeTimeout actually took effect on this run, or whether
-			// the running process was still using a stale value from before a pending restart.
-			// Requested live 2026-09-18 ("deveria aparecer no log o valor que está configurado em
-			// General.ManualModeTimeout").
+			// Both values are logged so a json edit can be confirmed from the log alone.
 			log(LogLevel.Information, LogSender.Tbot, $"General.ManualModeTimeout: {manualModeTimeout}s. General.HttpClientTimeoutSeconds: {httpClientTimeoutSeconds}s.");
 
 			_ogameService.Initialize(GetCredentialsFromSettings(), GetDeviceFromSettings(), proxy, (string) host, int.Parse(port), (string) captchaKey, hideAccountNameInLogs, _telegramSolverBotToken, _telegramSolverChatId, manualModeTimeout, httpClientTimeoutSeconds);
@@ -339,9 +325,7 @@ namespace Tbot.Services {
 
 			if (isVacationMode) {
 				log(LogLevel.Warning, LogSender.Tbot, "Account in vacation mode");
-				// Buying the daily offer is confirmed to still work in-game during vacation mode,
-				// unlike fleet/building actions which the game itself blocks - worth one attempt
-				// before giving up on this instance entirely.
+				// The daily offer still works during vacation mode, unlike fleet/building actions, so it's worth one attempt.
 				if ((bool) InstanceSettings.Brain.Active && (bool) InstanceSettings.Brain.BuyOfferOfTheDay.Active) {
 					try {
 						var offerStatus = await _ogameService.BuyOfferOfTheDay();
@@ -635,9 +619,7 @@ namespace Tbot.Services {
 				_lastReloadFinished = DateTime.Now;
 			}
 			catch (Exception e) {
-				// This is async void (required by the SettingsFileWatcher callback signature) - any
-				// exception that escapes here has no caller to observe it and crashes the whole
-				// process instead of just failing this one reload. Absorb and log instead.
+				// async void callback: an escaping exception has no caller to observe it and would crash the process, so it's absorbed and logged.
 				log(LogLevel.Error, LogSender.Tbot, $"OnSettingsChanged exception: {e.Message}");
 				log(LogLevel.Warning, LogSender.Tbot, $"Stacktrace: {e.StackTrace}");
 			}

@@ -6,11 +6,7 @@ using System.Xml.Linq;
 using TBot.Ogame.Infrastructure;
 
 namespace Tbot.Workers {
-	// In-memory cache of OGame's public /api/highscore.xml (category=1 Player, type=0 Total), keyed
-	// by player name since that's the only identifier reliably available on farm targets that lack
-	// their own scanned Player object (e.g. moons - see AutoFarmWorker.IsTargetInMinimumRank). Refetched
-	// at most once per RefreshInterval so MinimumPlayerRank filtering doesn't cost an extra HTTP call
-	// per target.
+	// In-memory cache of the public highscore list, keyed by player name (the only identifier for targets without their own Player object) and refetched at most once per refresh interval.
 	public class HighscorePlayerRankCache {
 		private static readonly TimeSpan RefreshInterval = TimeSpan.FromMinutes(60);
 

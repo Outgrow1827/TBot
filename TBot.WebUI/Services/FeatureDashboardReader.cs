@@ -14,29 +14,17 @@ using TBot.Ogame.Infrastructure.Enums;
 using TBot.WebUI.Models;
 
 namespace TBot.WebUI.Services {
-	// A lighter counterpart to AutoFarmDashboardReader for workers that don't persist a rich
-	// SQLite schema (Expeditions has no store at all; AutoHarvest/AutoDiscovery only cache
-	// scan/cursor state, not a decision history) - status + recent logs is what's actually
-	// available for these three, read straight from the same CSV log AutoFarm's reader uses.
+	// Lighter counterpart to AutoFarmDashboardReader: workers without a rich SQLite store expose only status + recent logs.
 	public sealed class FeatureDashboardConfig {
 		public string Sender { get; init; } = string.Empty;
 		public string[] NextCheckMarkers { get; init; } = Array.Empty<string>();
 		public string DispatchMarker { get; init; } = string.Empty;
 		public string? MaxSlotsSettingSection { get; init; }
-		// Key read inside MaxSlotsSettingSection - defaults to "MaxSlots", but Expeditions has no
-		// such field (it draws on the account's whole expedition slot pool instead); its real
-		// configured cap is "MaxExpeditionsPerOrigin".
+		// Defaults to "MaxSlots"; Expeditions has no such field and uses the live expedition pool instead.
 		public string MaxSlotsSettingKey { get; init; } = "MaxSlots";
-		// Mission to pull live from ogamed's own /bot/fleets, independent of the worker/Active
-		// flag and of whether TBot itself sent the fleet. ogamed serializes Fleet.Mission as a
-		// plain number (Go's MissionID has no JSON marshaler), matching
-		// TBot.Ogame.Infrastructure.Enums.Missions' own numeric values - not a string. Null skips
-		// the live-fleet section entirely.
+		// ogamed serializes Fleet.Mission as a plain number (Go's MissionID has no JSON marshaler), matching the Missions enum values; null skips the live-fleet section.
 		public Missions? LiveFleetsMission { get; init; }
-		// Expeditions has no configured "MaxSlots" - its real cap is the account's live expedition
-		// slot pool (ExpTotal from ogamed's /bot/fleets/slots, driven by Astrophysics research
-		// level), not a static instance_settings.json value. When true, MaxSlots is read from
-		// there instead of MaxSlotsSettingSection/Key.
+		// Expeditions' cap is the account's live expedition slot pool (ExpTotal), not a static setting; when true, MaxSlots is read from there.
 		public bool LiveMaxSlotsFromExpeditionPool { get; init; }
 		// File name (in the instance's data/ folder) written by TBot's own FeatureResultsStore -
 		// structured results instead of scraping them back out of the log.
@@ -50,11 +38,7 @@ namespace TBot.WebUI.Services {
 
 		public async Task<FeatureDashboardModel> Read(FeatureDashboardConfig config, string instanceAlias, string title, string intro) {
 			var logs = ReadLogs();
-			// senderLogs (unfiltered) drives state detection - featureLogs (admin-lifecycle-line
-			// filtered) drives the visible Logs/Errors panels. These used to be the same list, which
-			// meant "not enabled by settings" was stripped out before the Disabled-state check ever
-			// saw it: dead code that could never trigger (confirmed live 2026-08-29, AutoHarvest
-			// state stuck on "Unknown"/"Stale" instead of "Disabled" while Active was false).
+			// State detection uses the unfiltered senderLogs; the filtered featureLogs only feed the visible panels (the filter would strip the Disabled marker).
 			var senderLogs = logs.Where(log => log.Sender.Equals(config.Sender, StringComparison.OrdinalIgnoreCase)).ToList();
 			var featureLogs = senderLogs.Where(log => !IsAdminLifecycleLine(log.Message)).ToList();
 
@@ -114,11 +98,7 @@ namespace TBot.WebUI.Services {
 			};
 		}
 
-		// Permanent (unbounded) totals from the .db counterpart of ResultsFileName (same base name,
-		// ".db" instead of ".json" - written by FeatureResultsSqliteStore) - requested live
-		// 2026-09-02, the JSON store's own sum only reflects the most recent 200 entries. Returns
-		// null (not zero) when the .db file doesn't exist yet, so the caller falls back to summing
-		// the JSON list instead of showing an incorrect zero.
+		// Permanent totals from the .db counterpart of ResultsFileName (the JSON store's own sum covers only its last 200 entries); null when the .db is missing so the caller can fall back.
 		private static FeatureResultsTotal? ReadLifetimeTotal(string? fileName) {
 			if (string.IsNullOrWhiteSpace(fileName))
 				return null;
@@ -194,10 +174,7 @@ FROM results;";
 			}
 		}
 
-		// Reads live in-flight fleets straight from ogamed's own /bot/fleets - this bypasses TBot
-		// entirely (no worker, no Active check, no log file), so it reflects the account's real
-		// state whether the fleet was sent by the bot or by hand. Host/port come from the same
-		// instance_settings.json used everywhere else, not from any TBot process state.
+		// Live fleets come straight from ogamed's /bot/fleets, so they reflect the account whether or not TBot sent them.
 		private static async Task<int?> ReadLiveExpeditionSlotTotal(string instanceAlias) {
 			var instance = ReadInstanceSettingsJObject(instanceAlias);
 			var general = instance?["General"] as JObject;
@@ -295,14 +272,9 @@ FROM results;";
 
 		private static bool IsError(LogRecord log) => log.Level.Equals("Error", StringComparison.OrdinalIgnoreCase) || log.Level.Equals("Warning", StringComparison.OrdinalIgnoreCase) || log.Message.Contains("Exception", StringComparison.OrdinalIgnoreCase);
 
-		// Same rationale as AutoFarmDashboardReader's filter of the same name: WorkerBase's own
-		// Starting/Restarting/Closing/"not enabled by settings" lines are worker plumbing already
-		// summarized by the Worker status panel, not feature-specific activity.
+		// Worker lifecycle lines are plumbing already summarized by the Worker status panel, not feature-specific activity.
 		private static bool IsAdminLifecycleLine(string message) {
-			// Contains, not StartsWith/EndsWith: the stored message already carries the
-			// "[Player@Server] " account prefix ahead of it (confirmed live 2026-08-29 - the
-			// StartsWith checks never matched anything because of that prefix, so this filter
-			// was silently a no-op), and DoLog appends a trailing "." after some of these too.
+			// Contains, not StartsWith: the stored message carries a "[Player@Server] " account prefix and sometimes a trailing ".".
 			return message.Contains("Starting Worker \"", StringComparison.OrdinalIgnoreCase)
 				|| message.Contains("Restarting Worker \"", StringComparison.OrdinalIgnoreCase)
 				|| message.Contains("Closing Worker \"", StringComparison.OrdinalIgnoreCase)

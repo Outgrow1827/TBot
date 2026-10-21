@@ -26,9 +26,7 @@ namespace Tbot.Workers {
 		private SemaphoreSlim _sem = new SemaphoreSlim(1, 1);
 		private AsyncTimer _timer = null;
 
-		// True once ExecutionWrapper has already logged "not enabled by settings" for the CURRENT
-		// disabled streak - lets Start/Restart/Stop below skip their own admin-log lines too instead
-		// of announcing a restart cycle that's just going to immediately no-op again.
+		// True once the current disabled streak was already logged, so a restart cycle that no-ops again doesn't announce itself twice.
 		private bool _disabledStreakLogged = false;
 		private bool ShouldLogAdminLines() => IsWorkerEnabledBySettings() || !_disabledStreakLogged;
 
@@ -162,17 +160,10 @@ namespace Tbot.Workers {
 		// intentionally pauses then, but a hang can happen at any time and sleep periods can last hours.
 		protected virtual bool RunsDuringSleep => false;
 
-		// Workers that check very frequently (e.g. Watchdog, every 1-2 min) can set this to false
-		// so the "Next X execution in..." line doesn't dominate the log - most workers check every
-		// 10-60+ min and the line is genuinely useful there. Not a log-level knob because every
-		// sink here is configured at Verbose, so a lower level wouldn't actually get filtered out.
+		// Workers that check very often can turn off the "Next X execution in..." line, which would otherwise dominate their log.
 		protected virtual bool LogNextExecution => true;
 
-	// Hook for workers that need to keep running in the background even when their
-	// Active setting is false - the key use case is persisting expedition/discovery/farm
-	// results to the database so the WebUI dashboards stay populated with lifetime totals
-	// regardless of whether the worker itself is enabled. Called from ExecutionWrapper on
-	// every tick while disabled, before the EndExecution/return path.
+	// Hook for workers that must keep running while their Active setting is false, e.g. to keep persisting results for the dashboards; called on every tick while disabled.
 	protected virtual Task OnDisabledTick() => Task.CompletedTask;
 
 
@@ -193,11 +184,7 @@ namespace Tbot.Workers {
 				await EndExecution();
 				return;
 			} else if (IsWorkerEnabledBySettings() == false) {
-				// Only announce "not enabled" once per disabled streak, not every restart cycle - a
-				// disabled worker still gets Start/Restart cycled periodically (eg. by settings file
-				// watches), and logging level can't filter this (every sink here is Verbose, see
-				// LogNextExecution's comment above), so repeating it every cycle was pure log spam for
-				// a feature the user has no intention of running.
+				// "not enabled" is announced once per disabled streak, since a disabled worker is still cycled and the message cannot be filtered out by log level.
 				if (!_disabledStreakLogged) {
 					DoLog(LogLevel.Information, $"{GetWorkerName()} not enabled by settings. Ending...");
 					_disabledStreakLogged = true;

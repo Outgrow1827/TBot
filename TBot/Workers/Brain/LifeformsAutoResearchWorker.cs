@@ -54,9 +54,7 @@ namespace Tbot.Workers.Brain {
 		}
 
 		protected override async Task Execute() {
-			// Serializes this worker's whole run against the other 3 Brain item types (AutoMine,
-			// AutoResearch, LifeformAutoMine) - see BrainTransportCoordinator and project memory
-			// 2026-08-03.
+			// Takes the same per-account resource-decision lock as the other Brain item types so they cannot spend the same resources.
 			if (!await BrainTransportCoordinator.GetResourceDecisionLock(_tbotInstance.InstanceAlias).WaitAsync(BrainTransportCoordinator.ResourceDecisionLockTimeout)) {
 				DoLog(LogLevel.Warning, "Skipping this cycle: resource-decision lock still held by another Brain item after 10 minutes (likely stuck) - not waiting further.");
 				return;

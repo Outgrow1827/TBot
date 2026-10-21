@@ -12,16 +12,12 @@ namespace TBot.WebUI.Controllers {
 	public sealed class ExpeditionsController : Controller {
 		private static readonly FeatureDashboardReader Reader = new();
 
-		// ResultsFileName depends on the instance alias (matches FeatureResultsStore's file name on
-		// the TBot side, "expedition_results_{InstanceAlias}.json"), so the config is built per
-		// request instead of being a single static instance.
+		// The results file name is per instance alias, so the config is built per request.
 		private static FeatureDashboardConfig BuildConfig(string instanceAlias) => new() {
 			Sender = "Expeditions",
 			NextCheckMarkers = new[] { "Next expedition check at " },
 			DispatchMarker = "Sending expedition from",
-			// Expeditions has no configured MaxSlots field - MaxExpeditionsPerOrigin is a
-			// different, per-origin concept the user explicitly said not to show here. The real
-			// cap is the account's live expedition slot pool (ExpTotal), read fresh from ogamed.
+			// No MaxSlots setting for Expeditions: the cap is the account's live expedition pool (ExpTotal).
 			LiveMaxSlotsFromExpeditionPool = true,
 			LiveFleetsMission = Missions.Expedition,
 			ResultsFileName = $"expedition_results_{instanceAlias}.json"

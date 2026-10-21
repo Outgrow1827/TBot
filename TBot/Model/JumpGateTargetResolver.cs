@@ -4,13 +4,7 @@ using System.Collections.Generic;
 namespace TBot.Model {
 	public readonly record struct JumpGateTarget(int Galaxy, int System, int Position);
 
-	/// <summary>
-	/// Reads the AutoFleetJumpGate.Target setting, which accepts either a single target object
-	/// (kept for backwards compatibility) or an array of targets. The array lets the worker fall
-	/// back to the next moon in the list when the current one has no JumpGate facility (built,
-	/// destroyed, or never had one) - resolving to a single JumpGateTarget would silently drop
-	/// every entry but the first.
-	/// </summary>
+	/// <summary>Reads AutoFleetJumpGate.Target, either a single target or an array so the worker can fall back to the next moon without a JumpGate.</summary>
 	public static class JumpGateTargetResolver {
 		public static List<JumpGateTarget> ResolveAll(IDictionary<string, object> settings) {
 			if (settings == null || !settings.TryGetValue("Target", out var rawTarget) || rawTarget == null)

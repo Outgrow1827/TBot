@@ -88,10 +88,7 @@ namespace Tbot.Workers {
 	/// forever on the last position of a system.
 	/// </summary>
 	public sealed class DiscoveryCursorState {
-		// OriginSystem anchors the alternating right/left walk (origin, origin+1,
-		// origin-1, origin+2, origin-2, ...); Step counts how many hops from the
-		// origin the cursor currently sits at, wrapping every maxSystem steps so
-		// the whole galaxy is eventually covered symmetrically on both sides.
+		// OriginSystem anchors the alternating right/left walk, and Step counts the hops from it, wrapping every maxSystem steps so the whole galaxy is covered.
 		public int OriginSystem { get; private set; }
 		public int Step { get; private set; }
 		public int System { get; private set; }

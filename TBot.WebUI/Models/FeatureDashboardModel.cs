@@ -19,13 +19,9 @@ namespace TBot.WebUI.Models {
 		// Structured results (data/*.json, written by FeatureResultsStore on the TBot side) -
 		// replaces dumping each result's full narrative text into the worker log/CSV.
 		public IReadOnlyList<FeatureResultRow> Results { get; init; } = Array.Empty<FeatureResultRow>();
-		// Grand total across every stored result entry (not per-day) - requested live 2026-08-29
-		// after the user noticed resources gained from expeditions/discoveries were never summed
-		// anywhere, only shown per-message in the Results table above.
+		// Sum of every stored result entry, not per day.
 		public FeatureResultsTotal ResultsTotal { get; init; } = new();
-		// AutoDiscovery results never carry Resources/Ships (see FeatureResultEntry.ArtifactsOrLifeform) -
-		// when true, the Results table shows an "Artifacts/Lifeform" column instead of those two
-		// always-empty ones.
+		// AutoDiscovery results carry no Resources/Ships, so the table shows Artifacts/Lifeform instead.
 		public bool ResultsShowArtifactsColumn { get; init; }
 	}
 

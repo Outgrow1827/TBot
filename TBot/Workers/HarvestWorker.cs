@@ -20,14 +20,7 @@ namespace Tbot.Workers {
 		private readonly ICalculationService _calculationService;
 		private readonly ITBotOgamedBridge _tbotOgameBridge;
 
-		// In-process cache for AutoHarvest.ScanRange galaxy lookups, same pattern as ColonizeWorker's
-		// _galaxyScanCache - avoids re-fetching the same system's full page more than once per
-		// staleness window within a single run. The debris sighting HISTORY itself (which positions
-		// keep producing debris) lives in _harvestCache (SQLite, see TBotDataCache.cs) so it
-		// survives a bot restart instead of resetting every time. Restored 2026-08-24 - this whole
-		// block (TBotDataCache wiring, ScanRange, retry/pacing) existed as uncommitted work before
-		// and was lost in an earlier reset; recovered from C:\github\TBot.backup\TBot\Workers\HarvestWorker.cs
-		// and re-merged onto the newer HarvestPlanner-based Execute()/DiscoverTargets() below.
+		// In-process cache for the ScanRange galaxy lookups; the debris sighting history itself lives in the SQLite cache so it survives a restart.
 		private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (GalaxyInfo Info, DateTime FetchedAt)> _galaxyScanCache = new();
 		private const int MaxGalaxyScanCacheEntries = 1000;
 		private TBotDataCache _harvestCache;
@@ -132,12 +125,7 @@ namespace Tbot.Workers {
 						continue;
 
 					sentCount++;
-					// Permanent record for the AutoHarvest dashboard's "Gained (total)" panel -
-					// requested live 2026-09-02, there was no results store wired for Harvest at all
-					// before this. Recorded at dispatch time from the debris field's reported amount
-					// (same convention AutoFarm's "attacks" table uses for loot), not a post-hoc
-					// verified collection - OGame doesn't send a distinct "harvest complete" report
-					// the way combat does.
+					// Recorded at dispatch time from the debris field's reported amount, like AutoFarm's loot table; OGame sends no distinct harvest-complete report.
 					_harvestCache?.RecordHarvest(
 						assignment.Target.Destination.Galaxy,
 						assignment.Target.Destination.System,
@@ -226,11 +214,7 @@ namespace Tbot.Workers {
 				_galaxyScanCache.TryRemove(key, out _);
 			}
 			GalaxyInfo info = await GetGalaxyInfoWithRetry(coordinate);
-			// Deliberately paced, not just a perf afterthought - scanning too fast previously triggered
-			// real errors from the game server (confirmed by the user 2026-08-19). Default 1.5-2.5s is a
-			// cautious step down from the shared IntervalType.LessThanFiveSeconds (1-5s) used elsewhere,
-			// isolated to this scan via its own settings so tuning it doesn't affect other features'
-			// pacing. Watch the log for 503/rate limit errors before lowering further.
+			// The scan is paced deliberately: scanning too fast triggered server errors, so this uses its own 1.5-2.5s delay instead of the shared 1-5s one.
 			int delayMinMs = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoHarvest, "ScanDelayMinMs")
 				? (int) _tbotInstance.InstanceSettings.AutoHarvest.ScanDelayMinMs
 				: 1500;
@@ -248,11 +232,7 @@ namespace Tbot.Workers {
 			return info;
 		}
 
-		// AutoHarvest.ScanRange: [{Galaxy, StartSystem, EndSystem}] - a wide network sweep for debris
-		// fields beyond the player's own planets (gated by HarvestOthers, defaults to on if unset for
-		// backward compat with instance files that only set ScanRange). Unlike own-DF/deep-space
-		// above, treated with IsOwnDebris=true in HarvestPlanner terms (Recycler, not Pathfinder) -
-		// these are real planet-position Debris fields, just not the player's own planet.
+		// ScanRange sweeps debris fields beyond the player's own planets, but they are planet-position fields, so they are treated as own debris (Recycler, not Pathfinder).
 		private async Task<List<HarvestTarget>> DiscoverScanRangeTargets(List<Fleet> fleets) {
 			var targets = new List<HarvestTarget>();
 			if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoHarvest, "HarvestOthers") && !(bool) _tbotInstance.InstanceSettings.AutoHarvest.HarvestOthers)
@@ -272,11 +252,7 @@ namespace Tbot.Workers {
 				? (long) _tbotInstance.InstanceSettings.AutoHarvest.MinimumResourcesOthers
 				: (long) _tbotInstance.InstanceSettings.AutoHarvest.MinimumResourcesOwnDF;
 
-			// The full network sweep (up to hundreds of systems, one request each) can exceed
-			// Watchdog.MaxStuckMinutes and freeze the worker (confirmed 2026-08-19). Only re-run it
-			// every ScanIntervalHours; every other cycle, pull candidates straight from
-			// harvest_debris_history instead (cheap DB read) and only spend one live request per
-			// candidate actually about to be sent to, to confirm the field is still there.
+			// The full sweep can exceed the watchdog's stuck window, so it only runs every ScanIntervalHours; other cycles use the cached debris positions.
 			double scanIntervalHours = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoHarvest, "ScanIntervalHours")
 				? (double) _tbotInstance.InstanceSettings.AutoHarvest.ScanIntervalHours
 				: 4.0;
@@ -285,9 +261,7 @@ namespace Tbot.Workers {
 
 			if (!fullScanDue) {
 				DoLog(LogLevel.Information, $"Skipping full ScanRange sweep (last one was {(DateTime.UtcNow - lastFullScan.Value):hh\\:mm\\:ss} ago, interval is {scanIntervalHours}h) - using cached debris positions instead.");
-				// Cache retention: a sighting older than 3 full-scan intervals is stale enough that a
-				// live check is basically free anyway (the field is as likely gone as not), so let the
-				// next full scan rediscover it instead of trusting it here.
+				// Sightings older than 3 full-scan intervals are dropped, so the next full scan can rediscover the field.
 				var candidates = _harvestCache?.GetCachedDebrisCandidates(minResources, TimeSpan.FromHours(scanIntervalHours * 3)) ?? new();
 				foreach (var (galaxy, system, position, metal, crystal) in candidates) {
 					if (_ct.IsCancellationRequested)
@@ -319,10 +293,7 @@ namespace Tbot.Workers {
 				int endSystem = (int) range.EndSystem;
 
 				for (int system = startSystem; system <= endSystem; system++) {
-					// A wide ScanRange can take longer than Watchdog.MaxStuckMinutes to finish one pass
-					// (confirmed 2026-08-19 via a real "[FTL] Worker Harvest looks stuck" log entry) -
-					// bail out cleanly on cancellation instead of letting Watchdog's restart just reset
-					// the tracked start time while this loop keeps running in the background.
+					// A wide ScanRange can outlast the watchdog's stuck window, so the loop bails out cleanly on cancellation instead of running on in the background.
 					if (_ct.IsCancellationRequested)
 						return targets;
 					GalaxyInfo info;
@@ -446,10 +417,7 @@ namespace Tbot.Workers {
 			if (origins.Count == 0)
 				return origins;
 
-			// LFBonuses (including the ship cargo bonus CalculateRequiredShips reads) are per-celestial,
-			// driven by that specific planet's own lifeform building levels - fetching it once from
-			// origins[0] and stamping it onto every other origin undercounts/overcounts required
-			// Recyclers/Pathfinders for any origin with different lifeform levels than origins[0].
+			// LFBonuses are per-celestial, so each origin is updated with its own bonuses; stamping origins[0]'s onto the rest would miscount the required ships.
 			foreach (var origin in origins) {
 				var updated = await _tbotOgameBridge.UpdatePlanet(origin.Celestial, UpdateTypes.LFBonuses);
 				origin.Celestial.LFBonuses = updated?.LFBonuses ?? new LFBonuses();

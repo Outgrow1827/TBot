@@ -12,29 +12,18 @@ namespace TBot.Model {
 		public string Resources { get; set; }
 		public string Ships { get; set; }
 		public DateTime TimestampUtc { get; set; }
-		// Raw numeric resource totals, kept alongside the display-formatted Resources string above
-		// (e.g. "1.23M/456K/78D") so consumers - the dashboard's grand-total sum - don't need to
-		// re-parse the formatted string back into numbers.
+		// Raw totals kept next to the formatted string so the dashboard's grand total doesn't re-parse it.
 		public long Metal { get; set; }
 		public long Crystal { get; set; }
 		public long Deuterium { get; set; }
 		public long Darkmatter { get; set; }
-		// Only populated for AutoDiscovery results, which never carry Resources/Ships - the WebUI
-		// dashboard uses this to show a dedicated "Artifacts/Lifeform" column instead of the two
-		// always-empty ones (confirmed live 2026-08-29: user pointed out Resources/Ships are dead
-		// weight on the AutoDiscovery page since discoveries can't produce either).
+		// Only AutoDiscovery results fill this; the dashboard shows it instead of the always-empty Resources/Ships columns.
 		public string ArtifactsOrLifeform { get; set; }
-		// Raw artifact count, kept alongside the display string above so the grand-total panel can
-		// sum it - artifacts aren't Metal/Crystal/Deuterium/Darkmatter, so the resource total alone
-		// is always zero for AutoDiscovery (confirmed live 2026-08-29, user pointed out artifacts
-		// "não colocados no somatório").
+		// Raw artifact count kept next to the display string, since artifacts never appear in the resource total.
 		public long ArtifactsFound { get; set; }
 	}
 
-	// Structured, WebUI-facing counterpart to logging each result line - the log/CSV is meant for
-	// worker diagnostics, not a dump of every expedition/discovery narrative text (confirmed live
-	// 2026-08-29: dozens of near-duplicate flavor-text lines per cycle made the log file itself
-	// hard to read). Same JSON-file-in-data/ pattern as AutoDiscoveryCursorStore.
+	// Structured, WebUI-facing counterpart to the result log lines; same JSON-file-in-data/ pattern as AutoDiscoveryCursorStore.
 	public sealed class FeatureResultsStore {
 		private const int MaxEntries = 200;
 		private readonly object _lock = new();
@@ -48,11 +37,7 @@ namespace TBot.Model {
 			Load();
 		}
 
-		// Snapshot of everything currently held (up to MaxEntries) - used to backfill the permanent
-		// SQLite store (FeatureResultsSqliteStore) with whatever this capped JSON file still has on
-		// hand, requested live 2026-09-02 after the user lost history to a bug that predates the
-		// permanent store existing at all. Doesn't reach further back than the 200-entry cap already
-		// allowed - there's no way to recover what had already been evicted before today.
+		// Snapshot of the capped entries, used to backfill the permanent SQLite store; it can't reach further back than the 200-entry cap.
 		public IReadOnlyList<FeatureResultEntry> GetAll() {
 			lock (_lock) {
 				return _entries.ToList();
@@ -64,11 +49,7 @@ namespace TBot.Model {
 				return;
 
 			lock (_lock) {
-				// Id-based dedup: the worker's own in-memory "already logged" set resets on every
-				// restart (settings reload, crash recovery, etc.), which happens far more often than
-				// expected in practice - confirmed live 2026-08-29 that a single discovery_results
-				// store had 200 entries covering only 57 distinct message IDs, each duplicated ~3x,
-				// silently evicting genuinely distinct older results out of the MaxEntries cap.
+				// Id-based dedup, because the worker's in-memory "already logged" set resets on every restart and duplicates evicted distinct results.
 				if (_entries.Any(e => e.Id == entry.Id))
 					return;
 				_entries.Add(entry);

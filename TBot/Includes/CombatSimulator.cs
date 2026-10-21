@@ -17,10 +17,7 @@ namespace Tbot.Includes {
 		public int Rounds { get; set; }
 	}
 
-	// Approximate simulator for OGame combat, used by AutoFarm to estimate fleet losses against a
-	// (partially known) defender composition. Works on stacks (one entry per ship/defense type) instead
-	// of resolving individual shots, distributing each round's damage proportionally across the
-	// defender's stacks. Explosion chance isn't modeled; rapid fire uses its expected-value multiplier.
+	// Approximate combat simulator: works on stacks, not individual shots, and models rapid fire by its expected-value multiplier (no explosion chance).
 	public static class CombatSimulator {
 		private class UnitStats {
 			public long BaseAttack;
@@ -203,9 +200,7 @@ namespace Tbot.Includes {
 			if (totalDefenderUnits == 0)
 				return;
 
-			// Accumulate damage-to-apply per defender stack, then apply once at the end of the round so all
-			// shots this round are resolved against the round's starting state (matches the game resolving a
-			// round "at once" rather than shooters reacting mid-round).
+			// Damage is accumulated per defender stack and applied at the end, so a round resolves against its starting state.
 			Dictionary<Buildables, double> damageByStack = defenders.ToDictionary(s => s.Type, s => 0.0);
 
 			foreach (var attacker in attackers) {

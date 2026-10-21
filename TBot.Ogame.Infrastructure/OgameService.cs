@@ -398,10 +398,7 @@ namespace TBot.Ogame.Infrastructure {
 			return await GetAsync<string>("/bot/server-url");
 		}
 
-		// Raw XML passthrough of OGame's public /api/highscore.xml, proxied by ogamed (category: 1=Player,
-		// 2=Alliance; type: 0=Total, 1=Economy, 2=Research, 3=Military, 4=Military Lost, 5=Military Built,
-		// 6=Military Destroyed, 7=Honor). Bypasses GetAsync/ManageResponse since this endpoint returns raw
-		// XML, not ogamed's usual {status, message, result} JSON envelope.
+		// Raw XML endpoint (category 1=Player/2=Alliance, type 0=Total..7=Honor), so it skips the JSON envelope handling.
 		public async Task<string> GetHighscoreXml(int category, int type) {
 			var response = await GetRetryPolicy()
 				.ExecuteAsync(async () => await _client.GetAsync($"api/highscore.xml?category={category}&type={type}"));
@@ -409,10 +406,7 @@ namespace TBot.Ogame.Infrastructure {
 			return await response.Content.ReadAsStringAsync();
 		}
 
-		// Raw XML passthrough of OGame's public /api/players.xml, proxied by ogamed. Gives each
-		// player's status string (a: admin, v: vacation, i: inactive, I: long inactive, b: banned,
-		// o: outlaw/strong player, combinable eg. "vI") - finer-grained than what a galaxy scan alone
-		// exposes (Planet.Inactive collapses i/I into a single flag).
+		// Raw XML endpoint giving per-player status flags (a/v/i/I/b/o), finer-grained than Planet.Inactive.
 		public async Task<string> GetPlayersXml() {
 			var response = await GetRetryPolicy()
 				.ExecuteAsync(async () => await _client.GetAsync("api/players.xml"));

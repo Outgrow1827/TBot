@@ -8,11 +8,7 @@ using TBot.Ogame.Infrastructure.Enums;
 
 namespace TBot.Ogame.Infrastructure.Models {
 	public static class LogPrivacy {
-		// Process-wide, shared by every TBotMain instance running in this TBot.exe (InstanceManager
-		// starts one per "Instances" entry in the same process). A per-instance value here would need
-		// threading through every Coordinate/Celestial ToString() call, so instead this is fail-safe:
-		// once any instance requests hiding, it stays on for the whole process - a laxer instance
-		// initializing afterwards can no longer flip it back to expose another instance's data.
+		// Process-wide and one-way: once any instance hides coordinates, no later instance can un-hide them.
 		private static bool _hideCoordinates;
 		private static bool _hideAccountInfo;
 
@@ -66,10 +62,7 @@ namespace TBot.Ogame.Infrastructure.Models {
 			return output;
 		}
 
-		// Not the same format as ToString() (which can be privacy-masked to "[X:hidden]" when
-		// LogPrivacy.HideCoordinates is on) - callers that need to persist/round-trip a coordinate
-		// (e.g. PlayersDatabase known-coordinates) should serialize with this raw format instead of
-		// ToString(), so storage never depends on a display-only privacy setting.
+		// Unmasked counterpart of ToString(), for persisting coordinates.
 		public string ToRawString() {
 			return $"{Galaxy}:{System}:{Position}:{Type}";
 		}

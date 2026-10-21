@@ -87,9 +87,7 @@ namespace Tbot.Workers.Brain {
 					}
 					if (capacity <= tempCelestial.Resources.TotalResources && (bool) _tbotInstance.InstanceSettings.Brain.AutoCargo.LimitToCapacity) {
 						long difference = tempCelestial.Resources.TotalResources - capacity;
-						// Matches the LFBonuses?.GetShipCargoBonus() ?? 0 guard already applied to
-						// AutoFarmWorker (NullReferenceException fix) - this same unguarded call existed
-						// here too, just never patched when that fix went in.
+						// Same null-safe cargo bonus guard as AutoFarmWorker, which would throw NullReferenceException without it.
 						float cargoBonus = tempCelestial.LFBonuses?.GetShipCargoBonus(preferredCargoShip) ?? 0;
 						int oneShipCapacity = _calculationService.CalcShipCapacity(preferredCargoShip, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, cargoBonus, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo);
 						neededCargos = (long) Math.Round((float) difference / (float) oneShipCapacity, MidpointRounding.ToPositiveInfinity);

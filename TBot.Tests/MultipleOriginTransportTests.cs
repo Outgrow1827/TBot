@@ -11,11 +11,7 @@ using TBot.Ogame.Infrastructure.Models;
 using Xunit;
 
 namespace TBot.Tests {
-	// Real case 2026-10-18 (Singularity): homeworld with 616 LargeCargo and billions of each resource,
-	// colony short ~620k metal + ~620k crystal for NaniteFactory, yet every cycle logged "Not enough
-	// resources transportable ... within the 2 slot(s)". The origin was handed to the planner already
-	// shaped by CalcMaxTransportableResources, which fills the hold deuterium-first: with more deut than
-	// cargo capacity the origin looked like it offered only deuterium, so metal/crystal demand never fit.
+	// CalcMaxTransportableResources fills the hold deuterium-first, so a deut-rich origin hid its metal/crystal.
 	public class MultipleOriginTransportTests {
 		private class NoOpLogger : ILoggerService<CalculationService> {
 			public void WriteLog(LogLevel level, LogSender source, string message) { }

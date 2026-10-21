@@ -49,9 +49,7 @@ namespace Tbot.Workers.Brain {
 			return JumpGateTargetResolver.ResolveAll(settings);
 		}
 
-		// Tries each configured target in order, falling back to the next one when the current
-		// moon doesn't exist or has no JumpGate facility (destroyed, never built, or the coordinate
-		// is simply wrong) - lets Target be a prioritized list instead of a single point of failure.
+		// Tries each configured target in order, falling back to the next when the moon is missing or has no JumpGate.
 		private async Task<Moon> ResolveTargetMoon(List<JumpGateTarget> targets) {
 			foreach (var targetCoordinates in targets) {
 				Celestial candidate = _tbotInstance.UserData.celestials.Unique()
@@ -207,10 +205,7 @@ namespace Tbot.Workers.Brain {
 						return;
 					}
 
-					// Build actions: best -> target, then pairwise i=1 -> i+1, consolidating the rest
-					// towards the target over subsequent cycles. When the source-moon count is even,
-					// one moon would otherwise be left out of every pair - send it straight to the
-					// target too instead of stranding it (2026-08-03 fix).
+					// Pairs the moons and sends the leftover one (even count) straight to the target instead of stranding it.
 					var teleportsPairs = new List<(Moon origin, Celestial destination)>();
 					teleportsPairs.Add((orderedMoons[0], moondest));
 

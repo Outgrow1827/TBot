@@ -7,13 +7,7 @@ using Microsoft.Data.Sqlite;
 using TBot.Ogame.Infrastructure.Models;
 
 namespace Tbot.Workers {
-	/// <summary>
-	/// Persistent storage for AutoHarvest.ScanRange's galaxy scan cache and debris field history,
-	/// backed by SQLite (same pattern as FarmTargetCache) instead of an in-memory dictionary that
-	/// resets on every bot restart. Also tracks how many times debris was seen at each position -
-	/// some players/positions produce debris frequently (repeated combats, moon mining), so this
-	/// builds a history instead of throwing it away after each scan.
-	/// </summary>
+	/// <summary>SQLite-backed cache for AutoHarvest's galaxy scan results and debris field history, so it survives a restart instead of resetting.</summary>
 	public class TBotDataCache : IDisposable {
 		private readonly SqliteConnection _db;
 
@@ -25,9 +19,7 @@ namespace Tbot.Workers {
 			return $"{galaxy}:{system}:{position}";
 		}
 
-		// Shared with FarmTargetCache (AutoFarm/FastFarm) and AutoDiscovery's cursor persistence -
-		// one physical file per instance instead of one per feature, each keeping its own
-		// prefixed tables (harvest_*, farm_*, autodiscovery_*) so there's no schema collision.
+		// Shares the per-instance data_{alias}.db file with the other caches, each with its own prefixed tables.
 		public static string GetDatabaseFilePath(string instanceSettingsPath, string instanceAlias) {
 			var directory = Path.GetDirectoryName(Path.GetFullPath(instanceSettingsPath));
 			var dataDir = Path.Combine(directory ?? ".", "data");
@@ -98,9 +90,7 @@ namespace Tbot.Workers {
 			return new TBotDataCache(db);
 		}
 
-		// --- AutoDiscovery cursor (which system/position each origin last got to) - survives a
-		// bot restart instead of resetting to system/position 1 every time, which previously
-		// meant re-discovering already-attempted positions after every deploy/restart cycle. ---
+		// The AutoDiscovery cursor survives a restart instead of restarting at system/position 1 on every deploy cycle.
 
 		public void SaveDiscoveryCursor(Celestial origin, int system, int nextPosition) {
 			using var cmd = _db.CreateCommand();
@@ -228,10 +218,7 @@ namespace Tbot.Workers {
 			return result;
 		}
 
-		// --- Full-scan throttling (AutoHarvest.ScanRange's expensive network sweep across hundreds of
-		// systems, gated to run every few hours instead of every Execute() cycle - see project memory
-		// 2026-08-19: this scan alone was exceeding Watchdog.MaxStuckMinutes and freezing the whole
-		// worker). Between full scans, candidates come straight from harvest_debris_history instead. ---
+		// Full-scan throttling: the expensive ScanRange sweep runs every few hours instead of every cycle, since it alone could exceed the watchdog's stuck window.
 
 		public DateTime? GetLastFullScanTime() {
 			using var cmd = _db.CreateCommand();
@@ -252,10 +239,8 @@ namespace Tbot.Workers {
 			cmd.ExecuteNonQuery();
 		}
 
-		/// <summary>Debris positions seen recently enough to still be trustworthy without a live
-		/// re-scan, above the resource threshold. Caller is still expected to live-check each
-		/// candidate it actually intends to send a fleet to before committing (debris fields do
-		/// deplete/refresh), this just avoids sweeping the whole ScanRange to find candidates.</summary>
+		/// <summary>Debris positions seen recently enough to be worth checking, above the resource threshold.</summary>
+		/// <remarks>The caller must still live-check each candidate it sends a fleet to, since debris fields deplete.</remarks>
 		public List<(int Galaxy, int System, int Position, long Metal, long Crystal)> GetCachedDebrisCandidates(long minResources, TimeSpan maxAge) {
 			var result = new List<(int, int, int, long, long)>();
 			using var cmd = _db.CreateCommand();

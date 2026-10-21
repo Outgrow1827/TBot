@@ -11,10 +11,7 @@ namespace TBot.WebUI.Controllers {
 	public sealed class AutoDiscoveryController : Controller {
 		private static readonly FeatureDashboardReader Reader = new();
 
-		// ResultsFileName depends on the instance alias (matches ExpeditionsWorker's
-		// FeatureResultsStore file name, "discovery_results_{InstanceAlias}.json" - discovery
-		// results are written by ExpeditionsWorker, since they share the same in-game message tab
-		// as expeditions), so the config is built per request.
+		// Discovery results are written by ExpeditionsWorker (same message tab), so the file name is per alias.
 		private static FeatureDashboardConfig BuildConfig(string instanceAlias) => new() {
 			Sender = "AutoDiscovery",
 			NextCheckMarkers = new[] { "Next AutoDiscovery check at " },

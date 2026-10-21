@@ -249,11 +249,7 @@ namespace Tbot.Workers {
 			}
 
 			var payload = celestial.Resources;
-			// Also passed as SendFleet's deutToLeave below - its low-fuel fallback shrinks the
-			// deuterium cargo to fit fuel+reserve together, and without the real reserve value it
-			// defaults to 0, letting that fallback eat into the deuterium this subtraction was meant
-			// to protect (the exact "fleet save doesn't work right" regression, just reintroduced at
-			// this call site since the deutToLeave parameter was never wired through here).
+			// The same reserve is passed to SendFleet as deutToLeave, so its low-fuel fallback cannot eat into the deuterium this subtraction protects.
 			long autoFleetSaveDeutToLeave = (long) _tbotInstance.InstanceSettings.SleepMode.AutoFleetSave.DeutToLeave;
 			if (autoFleetSaveDeutToLeave > 0)
 				payload.Deuterium -= autoFleetSaveDeutToLeave;
@@ -525,19 +521,7 @@ long fuelCapacity = _calcService.CalcFleetFuelCapacity(
     _tbotInstance.UserData.serverData.ProbeCargo
 );
 
-// A long-haul trip (e.g. a probe crossing several galaxies in a non-circular universe) is just
-// as often blocked by the sending ship's own fuel TANK capacity as by deuterium stock at the
-// origin - a probe's tank is tiny, and consumption at 100% speed can exceed it even when the
-// planet itself has plenty of deuterium. Both constraints shrink at lower speed, so they need to
-// be solved together: keep dropping speed until a level satisfies both, instead of only retrying
-// on the deuterium-stock check and failing outright on the tank-capacity one.
-//
-// deutToLeave also has to come out of this same stock. Deuterium already queued as part of
-// `payload` was only ever checked against the configured reserve BEFORE this call, never against
-// the reserve PLUS this flight's own fuel together - a transport could be sized to leave exactly
-// deutToLeave behind, then the fuel draw on top of that still left the origin below the reserve
-// (real report, 2026-10-14: 500k on hand, 400k reserve, 100k payload leaves exactly 100k spare,
-// fine on its own, but a 20k fuel cost on top drops the origin to 380k - under reserve).
+// Long trips are blocked by the ship's fuel tank as often as by deuterium stock, and the reserve has to survive the flight's own fuel on top of the payload, so speed is reduced until both constraints hold.
 long deuteriumInPayload = payload?.Deuterium ?? 0;
 bool notEnoughDeuterium = (origin.Resources.Deuterium - deuteriumInPayload - deutToLeave) < fleetPrediction.Fuel;
 bool notEnoughFuelCapacity = fuelCapacity != 0 && fuelCapacity < fleetPrediction.Fuel;
@@ -572,13 +556,7 @@ if (notEnoughDeuterium || notEnoughFuelCapacity) {
                 "Unable to send fleet: ships don't have enough fuel capacity, even at the lowest speed!");
             return (int)SendFleetCode.GenericError;
         }
-        // Rather than aborting outright, shrink the deuterium portion of the payload to whatever
-        // actually fits once the reserve and this flight's fuel are set aside - callers that size
-        // deuterium cargo as "everything above the reserve" (e.g. AutoFleetSave evacuating a
-        // celestial) never budgeted for fuel on top of that, so without this the fleet simply never
-        // leaves (real regression, 2026-10-14, reported as "fleet save doesn't work right" right
-        // after the deutToLeave+fuel check above was added). The game itself would just carry less
-        // deuterium in this situation, not refuse the flight outright.
+        // The deuterium payload is shrunk to what fits once the reserve and this flight's fuel are set aside, instead of aborting; the game would carry less, not refuse the flight.
         long availableForDeuteriumCargo = Math.Max(0, origin.Resources.Deuterium - deutToLeave - fleetPrediction.Fuel);
         if (payload != null && deuteriumInPayload > availableForDeuteriumCargo) {
             _tbotInstance.log(LogLevel.Information, LogSender.FleetScheduler,
@@ -739,12 +717,7 @@ if (
 			} catch (Exception e) {
 				_tbotInstance.log(LogLevel.Debug, LogSender.Tbot, $"UpdateFleets() Exception: {e.Message}");
 				_tbotInstance.log(LogLevel.Warning, LogSender.Tbot, $"Stacktrace: {e.StackTrace}");
-				// Same reasoning as TBotOgamedBridge.UpdateSlots(): every caller unconditionally
-				// overwrites UserData.fleets with this return value, so an empty list here on a
-				// transient network failure previously made every worker believe NO fleet was in
-				// flight at all (missions, incoming attacks, returning transports) until the next
-				// successful poll - worse than the slots case, since it can cause wrong decisions
-				// about what's already in transit. Keep the last known-good value instead.
+				// On a transient failure the last known fleets are returned, so no worker believes nothing is in flight until the next successful poll.
 				return _tbotInstance.UserData.fleets ?? new();
 			}
 		}
@@ -1107,12 +1080,7 @@ if (
 								ships.Add(preferredShip, idealShips);
 							}
 
-							// DeutToLeaveOnMoons needs to survive this flight's own fuel cost too, not just
-							// the shipped payload - now enforced by SendFleet itself via its deutToLeave
-							// parameter (shrinks the deuterium cargo to fit instead of aborting the whole
-							// transport the way this used to). Reported live 2026-09-29 (user's own words
-							// to a community member): "if it is set to a million and a transport costs a
-							// million and one, it leaves you high and dry with zero deuterium."
+							// The moon reserve has to survive this flight's own fuel too, which SendFleet now enforces by shrinking the deuterium cargo instead of aborting the transport.
 							if (destination.Coordinate.Type == Celestials.Planet) {
 								destination = await _tbotOgameBridge.UpdatePlanet(destination, UpdateTypes.ResourceSettings);
 								destination = await _tbotOgameBridge.UpdatePlanet(destination, UpdateTypes.Buildings);
@@ -1428,11 +1396,7 @@ if (
 					return RepatriateCode.Failure;
 				}
 				if (tempCelestials.Count() > 0) {
-					// Brain's AutoMine/AutoResearch/LifeformAutoMine/LifeformAutoResearch workers already
-					// serialize their own resource-spend decisions against each other via this lock (see
-					// BrainTransportCoordinator), but AutoRepatriate/Collect ran outside it entirely and
-					// could sweep a celestial's resources mid-cycle while a Brain worker was still deciding
-					// how much of that same stock to spend on a build it had already committed to.
+					// AutoRepatriate/Collect take the same lock as the Brain workers, so they can't sweep a celestial's resources while a Brain worker is still deciding what to spend on it.
 					if (!await BrainTransportCoordinator.GetResourceDecisionLock(_tbotInstance.InstanceAlias).WaitAsync(BrainTransportCoordinator.ResourceDecisionLockTimeout)) {
 						_tbotInstance.log(LogLevel.Warning, LogSender.FleetScheduler, "Skipping repatriate: resource-decision lock still held by a Brain worker after 10 minutes (likely stuck) - not waiting further.");
 						return RepatriateCode.Delay;

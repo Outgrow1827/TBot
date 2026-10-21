@@ -601,9 +601,7 @@ namespace Tbot.Includes {
 		}
 
 		public long CalcShipNumberForPayload(Resources payload, Buildables buildable, int hyperspaceTech, ServerData serverData, float cargoBonus = 0, CharacterClass playerClass = CharacterClass.NoClass, int probeCapacity = 0) {
-			// CalcShipCapacity returns 0 for any non-cargo buildable (its switch default). Dividing by it
-			// gives Infinity, and casting that to long is undefined in C# - a garbage ship count that can
-			// slip past every later sanity check. No capacity means this ship can't carry the payload.
+			// CalcShipCapacity returns 0 for non-cargo buildables, and dividing by it would cast Infinity to a garbage ship count.
 			int capacity = CalcShipCapacity(buildable, hyperspaceTech, serverData, cargoBonus, playerClass, probeCapacity);
 			if (capacity <= 0)
 				return 0;
@@ -613,12 +611,7 @@ namespace Tbot.Includes {
 		// Same 3 cargo-capable types AutoFarm combines (GetAllowedFarmCargoShips), biggest capacity first.
 		public static readonly Buildables[] CargoCapableShipTypes = { Buildables.LargeCargo, Buildables.SmallCargo, Buildables.Pathfinder };
 
-		// Mirrors AutoFarm's "use whatever cargo ships are actually at the origin" behavior for
-		// Brain.Transports, which previously only ever counted the single configured CargoType -
-		// an origin with plenty of resources but the "wrong" ship type sitting on it looked like it
-		// had almost no capacity, forcing MultipleOrigins to split across far more planets/moons
-		// than actually necessary. Greedily fills from the biggest ship type down, capped to what's
-		// physically present at the origin, until the payload is covered (or the fleet runs out).
+		// Counts every cargo type actually present at the origin, not just the configured CargoType, so an origin with the "wrong" ship still gets capacity.
 		public Ships CalcCargoShipsForPayload(Ships availableAtOrigin, Resources payload, int hyperspaceTech, ServerData serverData, LFBonuses lfBonuses = null, CharacterClass playerClass = CharacterClass.NoClass, int probeCargo = 0) {
 			var result = new Ships();
 			long remainingCapacityNeeded = payload.TotalResources;
@@ -986,11 +979,7 @@ namespace Tbot.Includes {
 			return hourlyProduction;
 		}
 
-		// Port of Vesselin Bontchev's "Optimal Defense" calculator. Only covers
-		// RocketLauncher/LightLaser/HeavyLaser/GaussCannon/PlasmaTurret - AntiBallisticMissiles and
-		// the shield domes always come from the manual DefenceToReach setting regardless of this,
-		// same as the original. See project memory/HISTORICO for the full derivation; re-ported
-		// 2026-08-05 after being lost in the 3.4.6 rebase.
+		// Port of Bontchev's "Optimal Defense": only RocketLauncher/LightLaser/HeavyLaser/GaussCannon/PlasmaTurret; the rest comes from DefenceToReach.
 		public Defences CalcNeededDefenceFromProduction(Planet celestial, Researches researches, ServerData serverData, int coverageHours, CharacterClass playerClass = CharacterClass.NoClass, bool hasGeologist = false, bool hasStaff = false) {
 			Resources hourlyProduction = CalcPlanetHourlyProduction(celestial, serverData.Speed, 1, researches, playerClass, hasGeologist, hasStaff);
 
@@ -1017,11 +1006,7 @@ namespace Tbot.Includes {
 			long fleetDebrisValue = (long) (fleetCost * serverData.DebrisFactor);
 
 			const float lootPercent = 75f;
-			// Clamped below 100: a server reporting DebrisFactorDef == 1.0 (100%) would otherwise make
-			// every "(100.0 - debrisPct)" denominator below exactly 0, turning the needed* calculations
-			// into Infinity/NaN - casting that to long is undefined in C# (same class of bug already
-			// fixed in CalcNeededSolarSatellites). The caller already caps the result against affordable
-			// resources, but there's no reason to compute garbage in the first place.
+			// debrisPct is capped below 100 so the (100.0 - debrisPct) denominators can't become 0 and turn the needed* values into Infinity/NaN.
 			double debrisPct = Math.Min(99.0, serverData.DebrisFactorDef * 100);
 			double totalLoot = fleetDebrisValue + (productionOverPeriod + currentStock) * (lootPercent / 100.0);
 

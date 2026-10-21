@@ -54,9 +54,7 @@ namespace Tbot.Services {
 
 		public async void OnSettingsChanged() {
 			await instancesSem.WaitAsync();
-			// try/finally: an exception anywhere below (bad settings, an instance failing to init or
-			// dispose) used to skip the Release() at the end, leaving instancesSem held forever - every
-			// later settings change then blocked on it and the bot never reloaded settings again.
+			// try/finally: without it an exception below would skip Release() and leave instancesSem held, blocking every later settings reload.
 			try {
 
 			_logger.WriteLog(LogLevel.Information, LogSender.Main, $"Reading settings \"{Path.GetFileName(SettingsAbsoluteFilepath)}\"");
@@ -71,9 +69,6 @@ namespace Tbot.Services {
 			SettingsVersion settingVersion = SettingsVersion.Invalid;
 
 			List<TbotInstanceData> newInstances = new();				// Instances which settings were already present
-			// We are going to gather valid Instances to be inited. The execution will be like this:
-			//	Await deinit of any removed instances
-			//	Async init of good instances
 			List<Task<TbotInstanceData>> awaitingInstances = new();		// Instances to be awaited
 			List<Task> deinitingInstances = new();
 			List<InitInstanceData> instancesToBeInited = new();     // Key -> Alias, Value -> settings
@@ -92,13 +87,6 @@ namespace Tbot.Services {
 					instancesToBeInited.Add(new InitInstanceData("MAIN", SettingsAbsoluteFilepath));
 				}
 			} else {
-				// In this case we need a json formatted like follows:
-				//	"Instances": [
-				//		{
-				//			"Settings": "<relative to main settings path>",
-				//			"Alias": "<Custom name for this instance>"
-				//		}
-				// ]
 				_logger.WriteLog(LogLevel.Information, LogSender.Main, "Multiples instances settings detected");
 				settingVersion = SettingsVersion.MultipleInstances;
 

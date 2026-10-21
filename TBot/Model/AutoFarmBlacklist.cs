@@ -60,9 +60,7 @@ namespace TBot.Model {
 	}
 
 	public class AutoFarmBlacklist {
-		// Player names can change in OGame; the ID cannot. Match by ID whenever both sides know it, so a
-		// renamed player stays blacklisted and a new player reusing an old name does not inherit the entry.
-		// Falls back to the name when either side has no ID.
+		// Match by ID when both sides know it (names can change); fall back to the name otherwise.
 		private static bool PlayerMatches(BlacklistedPlayer p, string playerName, int playerId) {
 			if (playerId > 0 && p.PlayerId > 0)
 				return p.PlayerId == playerId;

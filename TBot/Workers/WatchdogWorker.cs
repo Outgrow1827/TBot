@@ -97,11 +97,7 @@ namespace Tbot.Workers {
 				await _tbotInstance.SendTelegramMessage($"🚨 Watchdog: worker \"{worker.GetWorkerName()}\" travado há {stuckFor:hh\\:mm\\:ss} (limite {maxStuck:hh\\:mm\\:ss}). Reiniciando automaticamente.");
 
 				try {
-					// Restarting the timer alone isn't enough: if Execute() is truly hung (not just
-					// slow), it's still out there holding the worker's semaphore forever, and the new
-					// timer tick would just queue up behind it via WaitWorker() and never run either.
-					// Handing the worker a fresh semaphore unblocks it immediately; the abandoned task
-					// (if it ever completes) releases the old, now-unused one harmlessly.
+					// A fresh semaphore unblocks a truly hung Execute() immediately, which restarting the timer alone would not, since the new tick would queue behind the stuck one.
 					worker.SetSemaphore(new SemaphoreSlim(1, 1));
 					var period = worker.Period != System.Threading.Timeout.InfiniteTimeSpan ? worker.Period : TimeSpan.FromMinutes(1);
 					worker.RestartWorker(_ct, period, TimeSpan.FromSeconds(5));

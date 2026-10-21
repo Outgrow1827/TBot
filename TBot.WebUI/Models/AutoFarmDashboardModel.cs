@@ -14,10 +14,7 @@ namespace TBot.WebUI.Models {
 		public AutoFarmSlotStatus Slots { get; init; } = new();
 		public AutoFarmScanStatus Scan { get; init; } = new();
 		public IReadOnlyList<AutoFarmSystemRow> Systems { get; init; } = Array.Empty<AutoFarmSystemRow>();
-		// Full scan coverage map (every scanned system, not just the most recent 1000 like
-		// Systems above) plus the configured ScanRange bounds - together enough to draw a
-		// per-galaxy grid of which coordinates have been checked. Requested live 2026-09-02:
-		// "queria saber quais galaxias, sistemas... foram escaneados... como um mapa".
+		// Every scanned system (not just the latest 1000) plus the ScanRange bounds, for the per-galaxy coverage map.
 		public IReadOnlyList<AutoFarmScanMapCell> ScanMap { get; init; } = Array.Empty<AutoFarmScanMapCell>();
 		public IReadOnlyList<AutoFarmScanRangeInfo> ScanRanges { get; init; } = Array.Empty<AutoFarmScanRangeInfo>();
 		public IReadOnlyList<AutoFarmLogRow> Logs { get; init; } = Array.Empty<AutoFarmLogRow>();

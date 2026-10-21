@@ -92,15 +92,7 @@ namespace TBot.Model {
 			var originStates = origins.Where(origin => origin?.Celestial?.Coordinate != null).ToList();
 			var assignments = new List<HarvestAssignment>(Math.Min(maxSlots, uniqueTargets.Count));
 
-			// Distance to the closest viable origin, per target - used below to process nearby debris
-			// fields before far ones. Previously this method only ordered by IsOwnDebris/resource size/
-			// coordinate, never by distance at all, so with a limited slot budget a closer, smaller
-			// field could sit unharvested for cycles while a farther, bigger one (equally reachable
-			// from the same origins) went out first - the fleet spends longer in transit than
-			// necessary and the closer field's debris has more time to be sniped by another player's
-			// recyclers. Requested live 2026-09-18 ("priorizar destroços do mais proximo ao mais
-			// longe... no momento ele faz varredura e manda independentemente da distancia"), same
-			// bug class as AutoFarm's OrderBy/distance fix from 2026-09-17.
+			// Distance to the closest viable origin, so nearby debris goes out before far ones and is less likely to be sniped in transit.
 			var minDistanceByTarget = uniqueTargets.ToDictionary(
 				target => target,
 				target => originStates.Count == 0

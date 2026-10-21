@@ -139,11 +139,7 @@ namespace Tbot.Services {
 					instances.Add(instanceWithBridge);
 
 					int instanceIndex = instances.IndexOf(instanceWithBridge);
-					// Best-effort notification - a Telegram API failure here (network timeout, rate
-					// limit) must never leave the semaphore held forever and freeze every future
-					// AddTbotInstance/RemoveTBotInstance/TelegramBot* call for the rest of the process
-					// lifetime (confirmed live: TBot restart got stuck right after "Adding instance....."
-					// with no further log line, every time, right as Telegram/network was unstable).
+					// Best-effort notification: a Telegram failure must not leave the semaphore held and freeze every later Telegram call.
 					try {
 						await SendMessage($"<code>[{instance.userData.userInfo.PlayerName}@{instance.userData.serverData.Name}]</code> Instance added! (Index:{instanceIndex})");
 					} catch (Exception e) {
@@ -184,13 +180,7 @@ namespace Tbot.Services {
 					text: message,
 					parseMode: parseMode,
 					cancellationToken: cancellationToken);
-				// TelegramBotClient's own HttpClient has no timeout short enough to matter here - a
-				// stuck connection (proxy issue, DNS hang, dead socket) can leave this await pending
-				// forever with no exception ever thrown, which the catch below can't help with. This
-				// call is used inside AddTbotInstance while holding instanceSem (confirmed live: TBot
-				// restart got stuck indefinitely right after "Adding instance....." with 0% CPU, no
-				// further log line, no exception - every worker depending on that instance never
-				// started). A hard 15s deadline turns that into "notification lost", never "bot frozen".
+				// TelegramBotClient's HttpClient has no usable timeout, so a stuck connection could hang the await forever inside instanceSem; the 15s deadline turns that into a lost notification instead of a frozen bot.
 				var completed = await Task.WhenAny(sendTask, Task.Delay(TimeSpan.FromSeconds(15), cancellationToken));
 				if (completed != sendTask)
 					_logger.WriteLog(LogLevel.Warning, LogSender.Tbot, "Telegram SendMessage timed out after 15s; continuing without waiting for it.");

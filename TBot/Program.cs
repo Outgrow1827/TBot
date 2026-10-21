@@ -83,16 +83,12 @@ namespace Tbot {
 			_logger.ConfigureLogging(logPath);
 			_instanceManager.SettingsAbsoluteFilepath = settingsPath;
 
-			// Last line of defense: log a crash (with stack trace) to file before the process dies,
-			// instead of losing the reason entirely - re-ported 2026-08-06 after being lost in the
-			// 3.4.6 rebase, same regression pattern as AsyncTimer.StopAsync/OnSettingsChanged.
+			// Last line of defense: log the crash with its stack trace before the process dies.
 			AppDomain.CurrentDomain.UnhandledException += (sender, e) => {
 				var ex = e.ExceptionObject as Exception;
 				_logger.WriteLog(LogLevel.Critical, LogSender.Main, $"FATAL UNHANDLED EXCEPTION (IsTerminating={e.IsTerminating}): {ex?.Message}\n{ex?.StackTrace}");
 				if (e.IsTerminating && !CmdLineArgsService.noCrashRestart && !_shutdownRequested) {
-					// A hard crash skips all normal cleanup, so ogamed.exe (this process' child) can still
-					// be alive holding its HTTP port - kill it now so the fresh instance we're about to spawn
-					// doesn't immediately fail to bind that same port.
+					// A hard crash skips cleanup, so ogamed.exe can still hold the HTTP port the relaunched instance needs.
 					try {
 						ogameService.KillOgamedExecutable();
 					} catch { /* best-effort - the process may already be gone or never started */ }
@@ -125,12 +121,7 @@ namespace Tbot {
 
 			
 
-			// Ctrl+C used to make TBot start itself again (reported on Linux): without e.Cancel the runtime
-			// began killing the process while workers were still running, any exception thrown during that
-			// teardown counted as a "crash" and TryRelaunchSelfAfterCrash spawned a new TBot; a second Ctrl+C
-			// also threw from tcs.SetResult (already completed), same outcome. Now Ctrl+C keeps the process
-			// alive for the normal shutdown below, marks it as intentional so no relaunch happens, and a
-			// second Ctrl+C is ignored instead of throwing.
+			// Ctrl+C must cancel the runtime shutdown, otherwise teardown exceptions look like a crash and the process relaunches itself; a second Ctrl+C is ignored.
 			Console.CancelKeyPress += (sender, e) => {
 				e.Cancel = true;
 				_shutdownRequested = true;
@@ -154,16 +145,7 @@ namespace Tbot {
 			_logger.WriteLog(LogLevel.Information, LogSender.Main, "Goodbye!");
 		}
 
-		// Self-relaunch on crash: replaces the old separate TBot.Watchdog.exe companion process (removed
-		// so no second executable ships alongside TBot.exe). This only catches actual unhandled
-		// exceptions - a true hang (frozen but no exception thrown) can only ever be detected by a
-		// process other than the one that's frozen, which is exactly what we're choosing not to have.
-		// Per-worker hangs (a single worker's HttpClient call stuck forever, the common case seen in
-		// production logs) are still caught by the internal WatchdogWorker, which runs inside this same
-		// process and restarts just that worker - no second executable needed for that either.
-		// Re-ported 2026-08-06 after being lost in the 3.4.6 rebase along with the rest of this file's
-		// crash-handling.
-		// set by Ctrl+C / SIGTERM: an exception while shutting down on purpose is not a crash to recover from
+		// Self-relaunch on crash replaces the removed watchdog executable: it only catches unhandled exceptions, while per-worker hangs are handled by the in-process WatchdogWorker.
 		private static volatile bool _shutdownRequested;
 
 		private const int MaxCrashRestartsPerWindow = 5;

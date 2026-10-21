@@ -22,17 +22,11 @@ namespace Tbot.Workers {
 		private readonly ITBotOgamedBridge _tbotOgameBridge;
 		private int _nextOriginIndex;
 
-		// Expedition messages (find/danger/loss) are only ever available from the game's own
-		// message list, not from anything the send-fleet call itself returns - GetExpeditionMessages
-		// was already exposed by ogamed but never consumed here, so results never made it into logs
-		// or the dashboard. Tracks IDs already logged this process lifetime so a message isn't
-		// re-logged every cycle just because it's still within the message list's retention window.
+		// Expedition results only exist in the game's own message list, so the message IDs already logged are tracked to avoid re-logging them every cycle.
 		private readonly HashSet<int> _loggedExpeditionMessageIds = new();
 		private readonly FeatureResultsStore _expeditionResultsStore;
 		private readonly FeatureResultsStore _discoveryResultsStore;
-		// Permanent (unbounded) counterparts - requested live 2026-09-02, the capped JSON stores
-		// above only keep the most recent 200 entries each, which the user explicitly does not want
-		// for this data.
+		// Permanent counterparts of the capped JSON stores, which the user does not want limited to 200 entries.
 		private readonly FeatureResultsSqliteStore _expeditionResultsPermanentStore;
 		private readonly FeatureResultsSqliteStore _discoveryResultsPermanentStore;
 
@@ -51,11 +45,7 @@ namespace Tbot.Workers {
 			_expeditionResultsPermanentStore = new FeatureResultsSqliteStore($"expedition_results_{parentInstance.InstanceAlias}.db");
 			_discoveryResultsPermanentStore = new FeatureResultsSqliteStore($"discovery_results_{parentInstance.InstanceAlias}.db");
 
-			// One-time backfill: recover whatever the capped 200-entry JSON stores still have on
-			// hand into the new permanent SQLite stores - requested live 2026-09-02, after the user
-			// lost history to the MaxEntries eviction bug that predates the permanent store's
-			// existence. Idempotent (Add() dedups by Id via INSERT OR IGNORE), so safe to run on
-			// every startup rather than needing a one-shot flag.
+			// One-time backfill of the capped JSON stores into the permanent SQLite ones; idempotent, so it can run on every startup.
 			foreach (var entry in _expeditionResultsStore.GetAll())
 				_expeditionResultsPermanentStore.Add(entry);
 			foreach (var entry in _discoveryResultsStore.GetAll())
@@ -74,9 +64,7 @@ namespace Tbot.Workers {
 		public override LogSender GetLogSender() => LogSender.Expeditions;
 
 		protected override async Task OnDisabledTick() {
-			// Even when disabled, keep collecting expedition/discovery results so the WebUI
-			// dashboards retain lifetime totals. Logging is suppressed to avoid log spam on every
-			// tick cycle while the worker itself is off.
+			// Results are still collected while disabled so the dashboards keep their lifetime totals; logging is suppressed to avoid spam.
 			await LogNewExpeditionResults(suppressLogging: true);
 		}
 
@@ -183,12 +171,7 @@ namespace Tbot.Workers {
 					availableShips.GetAmount(primaryShip) - (long)_tbotInstance.InstanceSettings.Expeditions.PrimaryToKeep));
 			}
 
-			// CalcExpeditionShips only splits the available fleet when it falls short of
-			// ideal*expeditionsNumber - passing a hardcoded 1 here (as this used to) tells it
-			// only one expedition is drawing on this origin's fleet, so a scarce fleet gets
-			// handed to the first expedition whole, leaving near-nothing for the rest of this
-			// origin's remaining sends this cycle. Passing how many are actually still queued
-			// for this origin makes a scarce fleet split evenly between them instead.
+			// The number of expeditions still queued for this origin is passed in, so a scarce fleet is split between them instead of given whole to the first one.
 			int expeditionsNumber = Math.Max(1, expeditionsRemainingFromOrigin);
 
 			return _calculationService.CalcFullExpeditionShips(
@@ -253,10 +236,7 @@ namespace Tbot.Workers {
 			};
 		}
 
-		// GetExpeditionMessages() returns the message's Content as raw game HTML (origin link,
-		// icon <img>, <br/> line breaks, HTML-escaped text) - confirmed live 2026-08-29 that
-		// logging it verbatim dumps that markup straight into the log file. Strips tags/entities
-		// down to the plain narrative text before it ever reaches DoLog.
+		// The message content is raw game HTML, so tags and entities are stripped down to plain narrative text before it reaches the log.
 		private static string PlainTextFromMessageContent(string content) {
 			if (string.IsNullOrEmpty(content))
 				return "";
@@ -280,20 +260,11 @@ namespace Tbot.Workers {
 					if (!_loggedExpeditionMessageIds.Add(message.ID))
 						continue;
 
-					// Expeditions and AutoDiscovery results share the same in-game message tab
-					// (ExpeditionsMessagesTabID=22 on the ogamed side) - route each message to the
-					// results store it actually belongs to. These go to a structured per-feature
-					// JSON store (data/*.json), not the worker log - confirmed live 2026-08-29 that
-					// dumping the full narrative text of every result (often near-duplicate flavor
-					// text) into the log/CSV made the log itself unreadable. The WebUI dashboard
-					// reads this store directly instead of scraping it back out of log lines.
+					// Expeditions and AutoDiscovery share the same in-game message tab, so each message is routed to its own structured results store instead of the worker log.
 					bool isDiscovery = message.GlobalTypeID == DiscoveryGlobalTypeID;
 					var store = isDiscovery ? _discoveryResultsStore : _expeditionResultsStore;
 					string summary = PlainTextFromMessageContent(message.Content);
-					// AutoDiscovery artifact finds don't carry Resources/Ships, so without this the
-					// entry's Resources/Ships columns were both empty and the only trace of the find
-					// was buried inside the free-text Summary - surface it explicitly instead (confirmed
-					// live 2026-08-29, user reported "TBot não detecta artefatos").
+					// Artifact finds carry no Resources/Ships, so they are surfaced explicitly instead of being buried in the free-text summary.
 					string artifactsOrLifeform = "";
 					if (isDiscovery && message.ArtifactsFound > 0) {
 						artifactsOrLifeform = $"{message.ArtifactsFound} artifacts ({message.ArtifactsSize})";

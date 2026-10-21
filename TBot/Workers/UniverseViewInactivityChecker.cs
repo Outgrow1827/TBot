@@ -10,25 +10,7 @@ using Tbot.Common.Settings;
 using Tbot.Services;
 
 namespace Tbot.Workers {
-	/// <summary>
-	/// Inactivity detection via Universe View (galaxy scans) instead of /api/players.xml.
-	/// 
-	/// The /api/players.xml endpoint is unreliable for inactivity detection because:
-	/// - Players can remain marked as inactive (status="I") long after reactivating
-	/// - The XML may not reflect real-time status changes
-	/// - Some universes don't expose accurate player status via this endpoint
-	/// 
-	/// Universe View approach: A player is considered inactive if their planet appears
-	/// in a galaxy scan with the "Inactive" flag (i/I) AND has no signs of activity
-	/// (no fleet movement, no building changes, no resource changes beyond production).
-	/// 
-	/// This mirrors how AutoFarm already works - it scans galaxies and filters for
-	/// Planet.Inactive == true. We now formalize this as the authoritative inactivity
-	/// source for BOTH AutoFarm and FastFarm.
-	/// 
-	/// Enhanced with showMinutes parsing: Galaxy view returns activity in minutes (showMinutes).
-	/// We convert to days and compare against InactivityThresholdDays setting.
-	/// </summary>
+	/// <summary>Inactivity detection from galaxy scans (universe view) instead of /api/players.xml, whose status flags can lag reality: a player counts as inactive when their planet carries the Inactive flag in the scan.</summary>
 	public class UniverseViewInactivityChecker {
 		private readonly IOgameService _ogameService;
 		private readonly FarmTargetCache _farmTargetCache;
@@ -54,13 +36,8 @@ namespace Tbot.Workers {
 			return 7; // default 7 days
 		}
 
-		/// <summary>
-		/// Checks if a player is inactive by examining their planet in the universe view (galaxy scan).
-		/// This is the new authoritative method replacing /api/players.xml.
-		/// </summary>
-		/// <param name="coordinate">The coordinate to check</param>
-		/// <param name="playerId">Optional player ID for cross-reference</param>
-		/// <returns>True if inactive per universe view, false if active, null if unknown/unable to determine</returns>
+		/// <summary>Checks inactivity from the universe view: true if inactive, false if active, null if unknown.</summary>
+		/// <param name="coordinate">The coordinate to check</param> <param name="playerId">Optional player ID for cross-reference</param>
 		public async Task<bool?> IsInactiveViaUniverseView(Coordinate coordinate, int? playerId = null) {
 			try {
 				// First check the persistent cache (FastFarm database) - this is the "eternal" record
@@ -121,22 +98,8 @@ namespace Tbot.Workers {
 			}
 		}
 
-		/// <summary>
-		/// Final safety check immediately before committing real ships to an attack - unlike
-		/// IsInactiveViaUniverseView, this NEVER trusts the "eternal" InactiveStatusLocked shortcut or
-		/// the 30-minute _recentScans cache; it always issues a fresh GetGalaxyInfo call for this exact
-		/// coordinate right now. The eternal lock exists so AutoFarm doesn't have to re-scan every
-		/// system every cycle, but that same shortcut made the pre-attack check a no-op for any target
-		/// already locked inactive (the common case) - reintroducing exactly the failure mode that cost
-		/// ~948 LargeCargo on 2026-09-11 (attacking a target whose report had gone stale), just hidden
-		/// behind a call that looked like a live recheck. Reported live 2026-09-17
-		/// ("consegue confirmar se o fastfarm foi corrigido?" - it wasn't).
-		///
-		/// Returns true if still inactive per the fresh scan, false if the player is active now (abort
-		/// the attack), or null if the fresh scan failed or the coordinate wasn't found in it (also
-		/// treated as "abort" by the caller - unlike the cached check, an unknown result here should
-		/// never wave a real fleet through, since a lost fleet cannot be undone).
-		/// </summary>
+		/// <summary>Pre-attack check that always issues a fresh galaxy scan, never trusting the eternal InactiveStatusLocked shortcut or the recent-scan cache.</summary>
+		/// <returns>True if still inactive, false if the player is active now, null if the scan failed; the caller aborts on anything but true.</returns>
 		public async Task<bool?> IsStillInactiveLive(Coordinate coordinate, int? playerId = null) {
 			try {
 				var galaxyInfo = await _ogameService.GetGalaxyInfo(coordinate.Galaxy, coordinate.System);
@@ -147,9 +110,7 @@ namespace Tbot.Workers {
 					return null;
 				}
 
-				// planet.Inactive is the game's own classification - trust it, not the raw Activity/
-				// showMinutes number (ambiguous at the boundaries, see RefreshSystemScan's comment for
-				// the full explanation; same false-positive bug fixed there applied here too).
+				// planet.Inactive is the game's own classification; the raw activity/showMinutes number is ambiguous at the boundaries.
 				bool stillInactive = planet.Inactive;
 				int? activityDays = planet.Activity > 0 ? (planet.Activity + 1439) / 1440 : (int?) null;
 
@@ -180,10 +141,7 @@ namespace Tbot.Workers {
 			}
 		}
 
-		/// <summary>
-		/// Performs a galaxy scan for a system and updates the FarmTargetCache with universe view data.
-		/// This is the primary way inactivity is detected and persisted.
-		/// </summary>
+		/// <summary>Scans a system and stores the universe view data in the FarmTargetCache, which is how inactivity is detected and persisted.</summary>
 		public async Task RefreshSystemScan(int galaxy, int system) {
 			try {
 				var galaxyInfo = await _ogameService.GetGalaxyInfo(galaxy, system);
@@ -201,19 +159,7 @@ namespace Tbot.Workers {
 						entry.IsVacation = planet.Vacation;
 						entry.LastSeenDate = DateTime.UtcNow;
 
-						// planet.Inactive is the game's OWN classification (the "I"/"vI" badge shown on the
-						// galaxy page) - the authoritative signal, same one CacheUpsertFromScan already
-						// uses correctly. planet.Activity (showMinutes) is a raw, ambiguous proxy: ogamed
-						// documents it as "no activity: 0, active: 15, inactive: [16, 59]" (see
-						// pkg/ogame/planetInfos.go) - 0 does NOT mean "abandoned", it means the game showed
-						// no activity badge at all (typically a currently-online player), and 15 means
-						// "shown as active" without a precise elapsed time. Deriving inactivity purely from
-						// a days-threshold over this number (as this method used to) let currently-active
-						// players get locked "eternally inactive" the moment their planet was first
-						// scanned - reported live 2026-09-17 ("falso positivo para jogadores inativos,
-						// muitos falsos inativos"). Activity now only refines HOW LONG a planet the game
-						// already confirmed inactive has been that way; it never promotes an active planet
-						// to inactive on its own.
+						// planet.Inactive is the authoritative signal; planet.Activity (showMinutes) is ambiguous (0 means no badge shown, not abandoned), so it only refines how long a game-confirmed inactive planet has been idle and never promotes an active planet to inactive.
 						int? activityDays = planet.Activity > 0 ? (planet.Activity + 1439) / 1440 : (int?) null;
 						if (activityDays.HasValue) entry.LastActivityDays = activityDays.Value;
 
@@ -230,9 +176,7 @@ namespace Tbot.Workers {
 								_farmTargetCache.SetPlayerActivity(entry.PlayerId, entry.PlayerName, false, activityDays);
 							}
 						} else {
-							// Game explicitly shows this player as active - mark PLAYER as ACTIVE
-							// immediately regardless of what the Activity number happens to be, and
-							// correct the coordinate itself even if it was previously (wrongly) locked.
+							// The game shows this player as active, so the player is marked active and the coordinate is corrected even if it was locked before.
 							if (entry.PlayerId > 0 && !string.IsNullOrEmpty(entry.PlayerName)) {
 								_farmTargetCache.SetPlayerActivity(entry.PlayerId, entry.PlayerName, true, activityDays);
 								_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm,
@@ -258,10 +202,7 @@ namespace Tbot.Workers {
 			}
 		}
 
-		/// <summary>
-		/// Marks a target's inactive status as confirmed by espionage report.
-		/// This reinforces the eternal lock from universe view.
-		/// </summary>
+		/// <summary>Marks a target's inactive status as confirmed by an espionage report, reinforcing the eternal lock.</summary>
 		public async Task ConfirmInactivityFromEspionage(Coordinate coordinate) {
 			var entry = _farmTargetCache.Get(coordinate);
 			if (entry != null && entry.IsInactive) {
@@ -271,10 +212,7 @@ namespace Tbot.Workers {
 			}
 		}
 
-		/// <summary>
-		/// Gets all known inactive targets in a galaxy range from the persistent cache.
-		/// Used by FastFarmMode to attack without live scans.
-		/// </summary>
+		/// <summary>Gets the known inactive targets in a galaxy range from the persistent cache, for FastFarmMode attacks without live scans.</summary>
 		public List<FarmTargetCacheEntry> GetInactiveTargetsInRange(int galaxy, int startSystem, int endSystem) {
 			var candidates = _farmTargetCache?.GetInRange(galaxy, startSystem, endSystem)
 				.Where(e => e.IsInactive && e.InactiveStatusLocked && !e.IsAdministrator && !e.IsBanned && !e.IsVacation)

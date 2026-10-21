@@ -2,10 +2,7 @@ using System;
 using TBot.Ogame.Infrastructure.Enums;
 
 namespace TBot.Ogame.Infrastructure.Models {
-	/// <summary>
-	/// A previously-discovered farm target, persisted across bot restarts so that
-	/// FastFarmMode can attack known inactive players without a live galaxy re-scan.
-	/// </summary>
+	/// <summary>A farm target persisted across restarts, so FastFarmMode can skip the live re-scan.</summary>
 	public class FarmTargetCacheEntry {
 		public Coordinate Coordinate { get; set; }
 		public int PlayerId { get; set; }

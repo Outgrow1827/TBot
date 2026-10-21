@@ -205,12 +205,7 @@ namespace Tbot.Workers
 			} catch (Exception e) {
 				_tbotInstance.log(LogLevel.Debug, LogSender.Tbot, $"UpdateSlots() Exception: {e.Message}");
 				_tbotInstance.log(LogLevel.Warning, LogSender.Tbot, $"Stacktrace: {e.StackTrace}");
-				// A transient network failure (eg. the frequent 60s HTTP timeout) must not be mistaken
-				// for "zero slots available" - every caller unconditionally overwrites UserData.slots
-				// with this return value, so a fresh empty Slots() here previously made every worker
-				// (AutoFarm confirmed live: 136 profitable targets abandoned in one cycle right after a
-				// timeout burst, despite 18 real slots free) believe the account had no slots at all
-				// until the next successful poll. Keep the last known-good value instead.
+				// A transient network failure must not be read as "no slots free", so the last known-good value is kept instead of a fresh empty Slots().
 				return _tbotInstance.UserData.slots ?? new();
 			}
 		}
@@ -299,10 +294,7 @@ namespace Tbot.Workers
 			} catch (Exception e) {
 				_tbotInstance.log(LogLevel.Debug, LogSender.Tbot, $"UpdateResearches() Exception: {e.Message}");
 				_tbotInstance.log(LogLevel.Warning, LogSender.Tbot, $"Stacktrace: {e.StackTrace}");
-				// Same class of bug as UpdateCelestials/UpdateSlots/UpdateFleets (fixed 2026-09-11): a
-				// transient 60s HttpClient timeout used to return a zeroed Researches, making every
-				// caller (fleet speed calc, tech-gated build decisions) briefly think every research was
-				// level 0 instead of just skipping the update. Preserve the last known value instead.
+				// A transient timeout must not zero the researches, so the last known value is preserved instead of making every research look level 0.
 				return _tbotInstance.UserData.researches ?? new();
 			}
 		}

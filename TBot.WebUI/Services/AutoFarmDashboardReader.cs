@@ -44,10 +44,7 @@ namespace TBot.WebUI.Services {
 		storage.Slots = BuildSlotStatus(logs, settings.MaxSlots);
 		storage.CombatResults.AddRange(ReadCombatResults(instanceAlias));
 
-			// The log-line regex above only has data once AutoFarm has actually run a cycle and
-			// logged its own slot-budget line - with Active off, or between cycles, usedSlots/
-			// availableSlots stayed permanently null. Read the account's real fleet-slot usage
-			// straight from ogamed instead, independent of TBot's own worker/Active state.
+			// Slot usage comes from ogamed, not from AutoFarm's own log line (empty whenever AutoFarm is off or idle).
 			var liveSlots = await ReadLiveSlots(settings.Host, settings.Port);
 			if (liveSlots != null) {
 				storage.Slots = new AutoFarmSlotStatus {
@@ -79,15 +76,7 @@ namespace TBot.WebUI.Services {
 				if (HasTable(connection, "targets"))
 					ReadTargets(connection, storage, instanceAlias, logs);
 				ReadAttacks(connection, storage);
-				// Was summing storage.Reports - the CURRENT snapshot of the "targets" table (whatever
-				// espionage reports happen to be cached right now, for targets in any state), not
-				// actual attack results. Every cycle replaces/evicts rows there, so the "Gained (total)"
-				// panel looked like it was constantly losing history even though nothing was actually
-				// lost - it was never a total of gains to begin with. "attacks" (unlike "targets") is
-				// insert-only, never pruned/deleted, so a real lifetime sum over ALL its rows (not just
-				// the 100 read by ReadAttacks for the table view) is the genuinely eternal total.
-				// Reported live 2026-09-18 ("Gained (total) deveria ser eterno, mas muito está sendo
-				// perdido").
+				// "attacks" is insert-only, so summing all its rows is the real lifetime total; "targets" is a replaceable snapshot.
 				storage.ResultsTotal = ReadAttacksLifetimeTotal(connection);
 				var cursor = HasTable(connection, "scan_cursor") ? ReadCursor(connection) : null;
 
@@ -100,9 +89,7 @@ namespace TBot.WebUI.Services {
 			return storage;
 		}
 
-		// Reads farm_results_{alias}.json, written by AutoFarmWorker's FeatureResultsStore -
-		// same file/entry shape (Id/Coordinate/Summary/Resources/Ships/TimestampUtc) as the
-		// expedition/discovery results stores, just mapped to the AutoFarm-specific row type.
+		// Reads farm_results_{alias}.json, same entry shape as the expedition/discovery result stores.
 		private static List<AutoFarmCombatResultRow> ReadCombatResults(string instanceAlias) {
 			try {
 				var path = Path.Combine(AppContext.BaseDirectory, "data", $"farm_results_{Path.GetFileName(instanceAlias)}.json");
@@ -167,14 +154,7 @@ LIMIT 1000;";
 			storage.LastSystemObservedAtUtc = observedTimes.Count == 0 ? null : observedTimes.Max();
 		}
 
-		// Unlike ReadSystems above (LIMIT 1000, for the detailed table), this pulls every scanned
-		// coordinate - light enough to cover the full ScanRange (up to ~2000 systems) in one query.
-		// Also the authoritative source for CachedSystemCount/LastSystemObservedAtUtc/scan progress
-		// below - ReadSystems' capped 1000-row list was silently pinning "Scan progress" at 50%
-		// (1000/1996) forever once a ScanRange grew past 1000 systems, even after the real scan
-		// reached 1995/1996 and completed (confirmed live 2026-09-04 by reading the database
-		// directly: scan_cursor.full_scan_completed was already 1, but the dashboard still showed
-		// stale 50% progress and "Not available" for cursor/last-observed).
+		// Uncapped scan of every scanned system, and the authoritative source for scan progress (ReadSystems' LIMIT 1000 pinned it at 50%).
 		private static void ReadScanMap(SqliteConnection connection, AutoFarmDashboardStorage storage) {
 			using var command = connection.CreateCommand();
 			command.CommandText = "SELECT galaxy, system, is_empty, observed_at_utc FROM systems;";
@@ -595,15 +575,9 @@ WHERE id = 1;";
 
 		private static bool IsAutoFarmLog(LogRecord log) => log.Sender.Equals("AutoFarm", StringComparison.OrdinalIgnoreCase) && !IsAdminLifecycleLine(log.Message);
 
-		// WorkerBase's own Starting/Restarting/Closing/"not enabled by settings" lines (see
-		// WorkerBase.cs's ShouldLogAdminLines) are worker plumbing, not AutoFarm decisions - the
-		// Worker status panel already summarizes that state, so repeating it in the log/error feed
-		// just buries the handful of substantive lines a disabled or idle instance actually has.
+		// WorkerBase's own Starting/Restarting/Closing lines are plumbing already summarized by the status panel.
 		private static bool IsAdminLifecycleLine(string message) {
-			// Contains, not StartsWith/EndsWith: the stored message already carries the
-			// "[Player@Server] " account prefix ahead of it (confirmed live 2026-08-29 - the
-			// StartsWith checks never matched anything because of that prefix, so this filter
-			// was silently a no-op).
+			// Contains, not StartsWith: the stored message carries a "[Player@Server] " account prefix.
 			return message.Contains("Starting Worker \"", StringComparison.OrdinalIgnoreCase)
 				|| message.Contains("Restarting Worker \"", StringComparison.OrdinalIgnoreCase)
 				|| message.Contains("Closing Worker \"", StringComparison.OrdinalIgnoreCase)

@@ -35,10 +35,7 @@ namespace TBot.Ogame.Infrastructure.Models {
         public bool CheckMoonOrPlanetFirst { get; set; }
         public bool DoMultipleTransportIsNotEnoughShipButSamePosition { get; set; }
         public MultipleOrigins MultipleOrigin { get; set; }
-        // When true, a transport sends enough resources to cover every construction that would
-        // sequentially run on the destination while the fleet is away, not just the next one -
-        // sized against the round-trip flight time. See BrainTransportCoordinator and project
-        // memory 2026-08-03.
+        // Sizes the payload for every construction the destination runs during the round trip, not just the next one.
         public bool StockpileForRoundTrip { get; set; }
 	}
 

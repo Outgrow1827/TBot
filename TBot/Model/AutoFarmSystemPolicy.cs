@@ -25,11 +25,7 @@ namespace TBot.Model {
 				.Where(planet => planet != null)
 				.ToList();
 
-			// "Empty" means the long 30-day cooldown is safe: nothing was seen, or everything seen
-			// was a vacation-mode inactive planet (truly abandoned signal). A real active player,
-			// or an inactive-but-ineligible one (admin/banned), means the system was genuinely
-			// visited and isn't empty - it just has no farm target right now, which gets the
-			// normal 7-day cooldown instead (see AutoFarmDoesNotUseTheLongCooldownForARegularInactivePlanet).
+			// "Empty" means nothing was seen or only vacation-inactive planets; a real or ineligible inactive player means a visited system and the normal cooldown.
 			return knownPlanets.Count == 0 || knownPlanets.All(IsVacationInactive);
 		}
 

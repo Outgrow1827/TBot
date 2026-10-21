@@ -25,22 +25,14 @@ using Microsoft.AspNetCore.Routing.Template;
 
 namespace TBot.Common.Logging {
 
-	// LoggerService<T> is registered as an open-generic singleton, so each closed type (LoggerService<Program>,
-	// LoggerService<TelegramMessenger>, etc) gets its OWN copy of any ` static` field declared inside it - a classic
-	// generic-static-per-closed-type gotcha. All the state below is meant to describe ONE global logging pipeline
-	// (mirroring Serilog.Log.Logger, which really is process-global), so it lives in this non-generic holder instead.
+	// Non-generic holder: statics inside LoggerService<T> would be duplicated per closed type.
+	// The state below describes one global logging pipeline, like Serilog.Log.Logger.
 	public static class LoggerServiceSharedState {
 		public static readonly object SyncObject = new object();
 		public static string LogPath = "";
 		public static readonly LoggingLevelSwitch TelegramLevelSwitch = new LoggingLevelSwitch(LogEventLevel.Verbose);
 		public static bool TelegramAdded = false;
-		// Mirrors TBot.Ogame.Infrastructure.Models.LogPrivacy.HideAccountInfo (can't reference it
-		// directly here - TBot.Common doesn't depend on TBot.Ogame.Infrastructure). Set from
-		// TBotMain alongside the other LogPrivacy flags. When true, log timestamps drop to
-		// date-only instead of full HH:mm:ss.fff, so exact activity times aren't exposed in
-		// shared logs/screenshots.
-		// Same fail-safe monotonic pattern as LogPrivacy: process-wide, so once any instance
-		// requests it, a laxer instance initializing afterwards can't turn it back off.
+		// Mirrors LogPrivacy.HideAccountInfo (TBot.Common can't reference it); date-only timestamps once set, and it can only be turned on.
 		private static bool _hideTimestampPrecision;
 		public static bool HideTimestampPrecision {
 			get => _hideTimestampPrecision;
@@ -103,10 +95,7 @@ namespace TBot.Common.Logging {
 			// logs/screenshots don't reveal exact activity times (hour/minute/second).
 			string timestampToken = LoggerServiceSharedState.HideTimestampPrecision ? "{Timestamp:yyyy-MM-dd}" : "{Timestamp:HH:mm:ss.fff zzz}";
 			string outTemplate = $"[{timestampToken} {{ThreadId}} {{Level:u3}} {{LogSender}}] {{Message:lj}}{{NewLine}}{{Exception}}";
-			// Log file: same format as upstream (Serilog's default file template, date + time:
-			// "2026-10-18 19:00:43.479 -03:00 [INF] ..."). Ours used to drop the date for no reason,
-			// which made TBot*.log differ from every other TBot build. Only the HideTimestampPrecision
-			// privacy option changes it, to date-only.
+			// Upstream Serilog file format; only HideTimestampPrecision drops it to date-only.
 			string fileTemplate = LoggerServiceSharedState.HideTimestampPrecision
 				? "{Timestamp:yyyy-MM-dd} [{Level:u3}] {Message:lj}{NewLine}{Exception}"
 				: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}";
@@ -174,10 +163,7 @@ namespace TBot.Common.Logging {
 				if (LoggerServiceSharedState.TelegramAdded == false) {
 					var previousLogger = Log.Logger;
 
-					// Building the Telegram sink can block on a synchronous network call to the
-					// Telegram API (bot/chat validation). If that call hangs due to network
-					// flakiness, it must not be allowed to freeze the whole instance startup -
-					// bound it with a timeout and fall back to logging without Telegram.
+					// Telegram sink build can hang on a network call, so it runs under a timeout and falls back to no Telegram.
 				var buildTask = Task.Run(() => {
 					var logConfig = GetDefaultConfiguration();
 					return logConfig.WriteTo.Logger(

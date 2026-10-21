@@ -7,11 +7,7 @@ using TBot.Ogame.Infrastructure.Models;
 using Xunit;
 
 namespace TBot.Tests {
-	// Real incident 2026-10-15: CalcNeededSolarSatellites computed a need of 2,303,257 satellites
-	// from a single bad/extreme energy reading and had no sanity check before that number was
-	// turned into a real construction order (the game itself only stopped it at its own 99999 cap,
-	// which still wiped the account's resources). These tests pin the fix: the computed order must
-	// never exceed the planet's existing SolarSatellite count plus a small safety margin.
+	// The computed satellite order must stay within the planet's existing count plus a small margin.
 	public class SolarSatelliteOverbuildTests {
 		private class NoOpLogger : ILoggerService<CalculationService> {
 			public void WriteLog(LogLevel level, LogSender source, string message) { }

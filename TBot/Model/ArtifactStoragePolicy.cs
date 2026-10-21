@@ -8,11 +8,7 @@ namespace TBot.Model {
 		Paused
 	}
 
-	/// <summary>
-	/// Decides whether AutoDiscovery should pause due to artifact storage filling up.
-	/// Uses two thresholds (stopAt/resumeBelow) rather than one so the state doesn't
-	/// flap on/off every cycle while artifacts hover right at the pause point.
-	/// </summary>
+	/// <summary>Decides whether AutoDiscovery pauses on artifact storage; two thresholds (stopAt/resumeBelow) keep the state from flapping.</summary>
 	public static class ArtifactStoragePolicy {
 		public static ArtifactStorageState NextState(
 			ArtifactStorageState current,

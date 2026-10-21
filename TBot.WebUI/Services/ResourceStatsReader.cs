@@ -79,11 +79,7 @@ ORDER BY s.galaxy, s.system, s.position;";
 			};
 		}
 
-		// Per-cycle totals across all celestials, most recent 200 cycles - feeds the history chart.
-		// Grouped by recorded_at_utc (all celestials in one AutoMine pass share the same timestamp
-		// closely enough in practice that grouping by exact value still gives one point per cycle;
-		// a cycle spanning multiple seconds just yields a couple of extra nearby points, which the
-		// chart already tolerates).
+		// One point per AutoMine pass: all celestials in a pass share recorded_at_utc closely enough to group by exact value.
 		private static void ReadHistory(SqliteConnection connection, ResourceStatsStorage storage) {
 			using var command = connection.CreateCommand();
 			command.CommandText = @"
@@ -133,9 +129,7 @@ LIMIT 200;";
 			return $"[{code}:{galaxy}:{system}:{position}]";
 		}
 
-		// Same shared file as FarmTargetCache/TBotDataCache/ResourceStatsStore on the bot side
-		// (data_{alias}.db) - the WebUI and the bot process run from the same deploy directory,
-		// so AppContext.BaseDirectory here resolves to the same physical "data" folder.
+		// Same data_{alias}.db the bot side uses; both run from the same deploy directory.
 		private static string GetDatabasePath(string instanceAlias) {
 			return Path.Combine(AppContext.BaseDirectory, "data", Path.GetFileName($"data_{instanceAlias}.db"));
 		}

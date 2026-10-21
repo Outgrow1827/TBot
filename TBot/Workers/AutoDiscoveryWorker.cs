@@ -49,10 +49,7 @@ namespace Tbot.Workers {
 				$"autodiscovery_cursors_{_tbotInstance.InstanceAlias}.json");
 		}
 
-		// Artifact storage (Collected/Max) is per-celestial in-game, but AutoDiscovery.Origin can
-		// configure several origins - a single shared store used to let one origin filling up
-		// incorrectly pause/resume discovery for every other configured origin too. Scoped by the
-		// same OriginKey the cursor store already uses per origin.
+		// Artifact storage is per-celestial in-game, so the store is scoped per origin like the cursor store.
 		private ArtifactStorageStateStore GetArtifactStorageStore(Celestial origin) {
 			var key = OriginKey(origin);
 			if (!_artifactStorageStores.TryGetValue(key, out var store)) {
@@ -190,12 +187,7 @@ namespace Tbot.Workers {
 			if (discoveries <= 0 || ctx.FleetsToSend <= 0 || ctx.Stop) return discoveries;
 
 			if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoDiscovery, "PauseWhenArtifactsAbove") && (bool) _tbotInstance.InstanceSettings.AutoDiscovery.PauseWhenArtifactsAbove) {
-				// Used to compare against a hardcoded 3600 regardless of the account's real storage
-				// cap (which varies by lifeform building level) - the API call right below already
-				// returns that real cap (artifacts.Max) but it was being ignored. Now pauses/resumes
-				// against configurable percentages of the REAL cap, with separate stop/resume
-				// thresholds (hysteresis) so the state doesn't flap on/off every cycle while
-				// artifacts hover right at the pause point.
+				// Pause/resume thresholds are percentages of the account's real artifact cap (artifacts.Max), with hysteresis so the state doesn't flap at the pause point.
 				long stopAtPercent = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoDiscovery, "ArtifactsStorageStopAtPercent") ?
 					(long) _tbotInstance.InstanceSettings.AutoDiscovery.ArtifactsStorageStopAtPercent : 100;
 				long resumeBelowPercent = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoDiscovery, "ArtifactsStorageResumeBelowPercent") ?
@@ -214,20 +206,12 @@ namespace Tbot.Workers {
 						return discoveries;
 					}
 				} catch (Exception e) {
-					// Best-effort safety check, not core to AutoDiscovery - a failure here (eg. the
-					// account hasn't unlocked the Artifacts feature yet, so the game has no counter to
-					// report - confirmed real 2026-08-27, "unable to find artifacts counter" crashing
-					// the whole worker) shouldn't crash the whole worker every cycle. Proceed without
-					// pausing instead.
+					// Best-effort: a missing artifacts counter must not crash the worker, so the pause check is skipped instead.
 					DoLog(LogLevel.Warning, $"Unable to check artifacts storage, proceeding without the pause check: {e.Message}");
 				}
 			}
 
-			// The account-wide "search for life forms again in X" cooldown (separate from
-			// per-system position availability below) can leave every system reporting 0 available
-			// positions for days at a time with no way to tell why from that alone - confirmed live
-			// 2026-08-29 via a real overview page capture showing a multi-day cooldown still active.
-			// Checking it here avoids uselessly scanning systems while it's active.
+			// The account-wide discovery cooldown can make every system report 0 positions for days, so checking it avoids scanning uselessly.
 			try {
 				var cooldown = await _ogameService.GetDiscoveryCooldown(origin);
 				if (cooldown != null && !cooldown.Available) {

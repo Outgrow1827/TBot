@@ -19,9 +19,7 @@ using Tbot.Common.Settings;
 
 namespace Tbot.Workers {
 	internal class DefenderWorker : WorkerBase {
-		// Keyed by instance alias + attack ID: this dictionary is static (shared by every account in the
-		// process), and attack IDs are only unique per universe, so a bare int key let one account marking
-		// an attack "handled" suppress another account's reaction to an unrelated attack with the same ID.
+		// Keyed by instance alias + attack ID, since attack IDs are only unique per universe and a bare int key let one account suppress another's reaction.
 		private static readonly ConcurrentDictionary<string, DateTime> _handledAttackIds = new();
 		private static readonly TimeSpan _handledAttackTtl = TimeSpan.FromMinutes(60);
 
@@ -134,9 +132,7 @@ namespace Tbot.Workers {
 			return;
 		}
 
-		// Notifies (Telegram) when someone spies us, since IgnoreProbes normally makes that case
-		// return silently right after this call with no other trace. Cooldown is per attack origin so a
-		// player re-probing repeatedly doesn't flood the chat.
+		// Notifies by Telegram when someone spies us, with a per-origin cooldown so repeated probing doesn't flood the chat.
 		private async Task NotifySpyWatch(AttackerFleet attack) {
 			if (!SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Defender, "SpyWatch") ||
 				!SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Defender.SpyWatch, "Active") ||
@@ -155,13 +151,7 @@ namespace Tbot.Workers {
 			await _tbotInstance.SendTelegramMessage($"Player {attack.AttackerName} ({attack.AttackerID}) is spying your celestial {attack.Destination} from {attack.Origin}.");
 		}
 
-		// Spies back at whoever attacked/spied us: not just the origin celestial, but every coordinate
-		// we've ever recorded for that player (PlayersDatabase.KnownCoordinates - built up from every
-		// attack/spy/farm sighting), each together with its sibling celestial at the same
-		// galaxy:system:position (if they spied from a Moon, also spy the Planet there, and vice-versa).
-		// Doesn't discover the attacker's planets we've never directly observed - ogamed has no "list all
-		// of a player's planets" API. Rate-limited per (player, coordinate) so repeated probing from the
-		// same place doesn't trigger a fresh counter-spy wave every single time.
+		// Spies back at every coordinate recorded for that attacker, including the sibling celestial at the same position, rate-limited per (player, coordinate).
 		private async Task SpyBackAtOrigin(Celestial attackedCelestial, Coordinate origin, AttackerFleet attack) {
 			_tbotInstance.UserData.slots = await _tbotOgameBridge.UpdateSlots();
 			if (attackedCelestial.Ships.EspionageProbe == 0) {
@@ -378,9 +368,7 @@ namespace Tbot.Workers {
 
 						return;
 					}
-					// A misconfigured WeakAttackRatio of 0 would divide by zero and silently skip this
-					// whole check via the generic catch around this block - fall back to "not weak"
-					// (1) instead, same as treating the setting as unset.
+					// A WeakAttackRatio of 0 would divide by zero and be swallowed by the catch around this block, so it falls back to 1 (not weak).
 					int weakAttackRatio = Math.Max(1, (int) _tbotInstance.InstanceSettings.Defender.WeakAttackRatio);
 					if (
 						(bool) _tbotInstance.InstanceSettings.Defender.IgnoreWeakAttack &&

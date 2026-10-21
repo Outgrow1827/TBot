@@ -22,13 +22,7 @@ namespace Tbot.Workers {
 		private readonly ICalculationService _calculationService;
 		private readonly ITBotOgamedBridge _tbotOgameBridge;
 
-		// Scan-once-remember-after cache for galaxy occupancy lookups (buffer checks and
-		// TargetEmptySystems both re-check the same handful of systems every single Colonize
-		// cycle otherwise). Static so it survives across worker re-instantiations, not just
-		// across Execute() calls on the same instance. Keyed by "Galaxy:System".
-		// Stale entries were previously only ever overwritten, never removed, so a wide
-		// AutoColonize.Targets range (many distinct Galaxy:System keys) left this growing for
-		// the whole process lifetime. GetGalaxyInfoCached now actively evicts on every write.
+		// Scan-once-remember-after cache for galaxy occupancy lookups, static so it survives worker re-instantiations and evicted on every write so it cannot grow for the process lifetime.
 		private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (GalaxyInfo Info, DateTime FetchedAt)> _galaxyScanCache = new();
 		// Hard cap independent of CheckIntervalMax, in case a very wide scan range (many
 		// galaxies) is configured - bounds worst-case memory instead of growing unbounded.
@@ -48,9 +42,7 @@ namespace Tbot.Workers {
 			_tbotOgameBridge = tbotOgameBridge;
 		}
 
-		// Same resilience pattern AutoFarmWorker uses for its own galaxy scans
-		// (GetScannedTargetsFromGalaxy): retry with backoff on transient errors instead of
-		// bubbling up and aborting the whole check on one bad request.
+		// Retries with backoff on transient errors instead of aborting the whole check on one bad request.
 		private async Task<GalaxyInfo> GetGalaxyInfoWithRetry(Coordinate coordinate) {
 			int retryCount = 0;
 			int maxRetries = 5;
@@ -70,26 +62,16 @@ namespace Tbot.Workers {
 			}
 		}
 
-		// Cached wrapper around GetGalaxyInfoWithRetry - only hits the network (with its retry
-		// and rate-limit-friendly pacing) the first time a system is seen or once the cached
-		// result goes stale, instead of re-scanning the same buffer/target systems every cycle.
-		// Cache freshness window is tied to CheckIntervalMax instead of a separate fixed constant -
-		// systems don't need rescanning any more often than Colonize itself would otherwise re-run.
+		// Cached wrapper: the network is only hit the first time a system is seen or once the cached result goes stale, with freshness tied to CheckIntervalMax.
 		private async Task<GalaxyInfo> GetGalaxyInfoCached(Coordinate coordinate) {
-			// _galaxyScanCache is static (shared process-wide) so multiple TBot instances in the same
-			// process reuse one cache instead of each scanning independently - but without the
-			// universe in the key, two instances pointed at DIFFERENT servers would read each other's
-			// occupancy data for the same Galaxy:System, risking colonizing an already-taken position
-			// or skipping a genuinely free one.
+			// The cache is process-wide, so the key includes the universe: otherwise two instances on different servers would read each other's occupancy data.
 			string key = $"{_tbotInstance.InstanceSettings.Credentials.Universe}:{coordinate.Galaxy}:{coordinate.System}";
 			TimeSpan maxAge = TimeSpan.FromMinutes((int) _tbotInstance.InstanceSettings.AutoColonize.CheckIntervalMax);
 			if (_galaxyScanCache.TryGetValue(key, out var cached)) {
 				if (DateTime.UtcNow - cached.FetchedAt < maxAge) {
 					return cached.Info;
 				}
-				// Stale - remove instead of leaving it to be silently overwritten below, so a
-				// key that stops being scanned (eg. AutoColonize.Targets reconfigured) doesn't
-				// linger in the dictionary forever.
+				// Stale entries are removed instead of being silently overwritten, so a key that stops being scanned doesn't linger forever.
 				_galaxyScanCache.TryRemove(key, out _);
 			}
 			GalaxyInfo info = await GetGalaxyInfoWithRetry(coordinate);
@@ -105,12 +87,7 @@ namespace Tbot.Workers {
 			return info;
 		}
 
-		// Each AutoColonize.Exclude entry accepts two formats:
-		//  - single coordinate:  { Galaxy, System, Position? } (Position omitted = whole system)
-		//  - range (like Targets): { Galaxy, StartSystem, EndSystem, StartPosition?, EndPosition? }
-		//    (positions omitted = whole system range)
-		// Global filter applied on top of the per-target ExcludeSystems - an empty list means
-		// nothing is excluded, no separate Active flag needed.
+		// Each AutoColonize.Exclude entry is either a single coordinate or a range; an empty list excludes nothing.
 		private static bool HasKey(dynamic entry, string key) {
 			foreach (var value in (IEnumerable<string>) entry.Keys)
 				if (value == key)
@@ -219,9 +196,7 @@ namespace Tbot.Workers {
 								DoLog(LogLevel.Debug, $"This planet should be abandoned: {tempCelestial.ToString()} - {abandonCriteria}");
 								if (await _ogameService.AbandonCelestial(tempCelestial)) {
 									DoLog(LogLevel.Debug, $"Successful Abandon on {tempCelestial.ToString()} - {abandonCriteria}.");
-									// The now-freed system may already be cached (empty-systems/buffer
-									// checks) with pre-abandon data showing it as occupied - drop it so the
-									// next lookup re-scans live instead of returning stale "occupied" info.
+									// The freed system may still be cached as occupied, so it is dropped and re-scanned live next time.
 									_galaxyScanCache.TryRemove($"{_tbotInstance.InstanceSettings.Credentials.Universe}:{tempCelestial.Coordinate.Galaxy}:{tempCelestial.Coordinate.System}", out _);
 								} else {
 									DoLog(LogLevel.Debug, $"Failed Abandon on {tempCelestial.ToString()} - {abandonCriteria}.");
@@ -311,13 +286,7 @@ namespace Tbot.Workers {
 								var maxTemp = (int) _tbotInstance.InstanceSettings.AutoColonize.Abandon.MaxTemperatureAcceptable;
 								var minFields = (int) _tbotInstance.InstanceSettings.AutoColonize.Abandon.MinFields;
 								List <Coordinate> targets = new();
-								// Each range's own MaxPlanets is checked here to decide whether to scan it at
-								// all, but every range's candidates then get pooled into one flat `targets`
-								// list and picked globally by distance/flight-time - without tracking which
-								// range each target came from, a range configured for eg. MaxPlanets=1 could
-								// still receive 2-3 colony ships in one cycle if its candidates happen to sort
-								// closest. targetRangeIndex + rangeRemainingQuota let the final dispatch loop
-								// below enforce each range's own remaining quota too, not just the scan gate.
+								// Candidates of all ranges are pooled and picked globally by distance, so the per-range quota is enforced again in the dispatch loop below.
 								var targetRangeIndex = new Dictionary<Coordinate, int>();
 								var rangeRemainingQuota = new Dictionary<int, int>();
 								int rangeIdx = -1;
@@ -342,15 +311,7 @@ namespace Tbot.Workers {
 
 									int maxSystemNumber = (int) _tbotInstance.UserData.serverData.Systems;
 
-									// With IgnoreInactivePlayers on, a LONG-inactive player's planet no longer
-									// counts as "occupying" a system - a short inactivity still blocks, only
-									// "I" (uppercase, ~28+ days per OGame's own /api/players.xml status codes)
-									// is treated as not a real contender. A galaxy scan alone can't tell "i"
-									// (short) apart from "I" (long) - both collapse into the single
-									// Planet.Inactive flag - so this cross-references the real status string
-									// from PlayerStatusCache (/api/players.xml) by player ID. Falls back to the
-									// galaxy scan's own Inactive flag if that player isn't found there (eg.
-									// transient fetch failure) - conservative, treats unknown as blocking.
+									// With IgnoreInactivePlayers, only the "I" status (long inactive) stops blocking a system, which a galaxy scan can't tell apart, so the real status string is used and unknown counts as blocking.
 									bool ignoreInactivePlayers = SettingsService.IsSettingSet(t, "IgnoreInactivePlayers") && (bool) t.IgnoreInactivePlayers;
 									if (ignoreInactivePlayers)
 										_playerStatusCache ??= new PlayerStatusCache(_ogameService);
@@ -366,10 +327,7 @@ namespace Tbot.Workers {
 										return !status.Contains('I');
 									}
 
-									// A planet in a buffer system only counts as "occupied" if it belongs to
-									// someone else who isn't banned - the user's own planets nearby aren't a
-									// threat and shouldn't block colonization next to their own empire, and a
-									// banned player isn't a real contender for the spot either.
+									// Only planets of other, non-banned players occupy a buffer system; the user's own planets nearby don't block colonization.
 									async Task<bool> BufferSystemBlocked(GalaxyInfo bufferSystem) {
 										foreach (var p in bufferSystem.Planets) {
 											if (p != null && p.Player != null && p.Player.ID != _tbotInstance.UserData.userInfo.PlayerID && await IsBlockingPlanet(p))
@@ -378,11 +336,7 @@ namespace Tbot.Workers {
 										return false;
 									}
 
-									// Per-candidate sliding window: a system is only rejected for lack of buffer
-									// if ITS OWN surroundings are occupied, not the edges of the whole configured
-									// range. This lets the bot find empty pockets anywhere inside a big range
-									// instead of discarding the entire range because one of its extremities has
-									// a neighbor.
+									// The buffer check slides per candidate, so empty pockets anywhere inside a wide range are found instead of the whole range being discarded.
 									async Task<(bool Ok, int BlockedAt)> HasEmptyBuffer(int system) {
 										if (emptySystemsBuffer <= 0) {
 											return (true, 0);
@@ -400,14 +354,7 @@ namespace Tbot.Workers {
 									}
 
 									int targetsBeforeThisRange = targets.Count;
-									// Stop scanning this range once enough candidates are already found instead
-									// of always doing the full StartSystem-EndSystem sweep - with wide ranges
-									// (eg. 1-499) that full sweep alone can mean ~500 galaxy scans per range,
-									// which at up to 60s each (HttpClient.Timeout) on a slow/unresponsive server
-									// easily blows past the worker's stuck-detection window before ever placing
-									// a single colony. A few extra candidates beyond the strict minimum are kept
-									// as a safety margin, since some will still get discarded by the live
-									// re-check below (someone else colonized it since this scan, etc.).
+									// Scanning stops once enough candidates are found, since a full sweep of a wide range can blow past the worker's stuck-detection window; a few extra candidates are kept as margin.
 									int neededForThisRange = maxPlanetsInThisRange - planetsInThisRange;
 									int candidateSafetyMargin = Math.Max(5, neededForThisRange * 3);
 									for (int i = (int) t.StartSystem; i <= (int) t.EndSystem; i++) {
@@ -442,11 +389,7 @@ namespace Tbot.Workers {
 											var bufferResult = await HasEmptyBuffer(i);
 											if (!bufferResult.Ok) {
 												DoLog(LogLevel.Debug, $"Skipping system {t.Galaxy}:{i}: required {emptySystemsBuffer} empty system(s) buffer not satisfied, blocked at {t.Galaxy}:{bufferResult.BlockedAt} (occupied by another player).");
-												// Every candidate within emptySystemsBuffer systems of the blocking
-												// system is guaranteed to fail for the same reason - jump straight
-												// past its shadow instead of re-testing (and re-logging) each one
-												// individually. Loop's i++ lands exactly one system after the
-												// blocker's own window.
+												// Every candidate within the buffer distance of a blocking system fails for the same reason, so the loop jumps past its shadow instead of re-testing each one.
 												i = bufferResult.BlockedAt + emptySystemsBuffer;
 												continue;
 											}
@@ -516,13 +459,7 @@ namespace Tbot.Workers {
 										.OrderBy(t => _calculationService.CalcFleetPrediction(origin, t, ships, Missions.Colonize, Speeds.HundredPercent, _tbotInstance.UserData.researches, _tbotInstance.UserData.serverData, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.allianceClass).Time)
 										.ToList();
 									int indexList = 0;
-									// Tracks how many colony ships are actually still available at origin as this
-									// loop sends them out - origin.Ships.ColonyShip itself is never refreshed
-									// after the initial check above, so without this the loop kept trying to send
-									// a colony ship to every target in filteredTargets even after the only one in
-									// stock was already spent on an earlier target this same cycle, hitting the
-					        // game's real error 140035 ("Tem de enviar uma nave de colonização...") over and
-					        // over. Reported live 2026-09-17.
+									// Colony ships left at the origin are tracked as they are sent, since the ship count is never refreshed and the loop would otherwise keep trying to send a ship it no longer has.
 									long colonyShipsRemaining = origin.Ships.ColonyShip;
 									foreach (var target in filteredTargets) {
 										indexList++;
@@ -548,9 +485,7 @@ namespace Tbot.Workers {
 											continue;
 										}
 
-										// Final live check right before committing the colony ship - the earlier
-										// filteredTargets pass may be using cached/stale data by the time we get
-										// here, and someone else may have settled this exact spot in the meantime.
+										// Final live check before committing the colony ship: the earlier filtering may have used cached data and someone else may have taken the spot meanwhile.
 										GalaxyInfo freshCheck = await GetGalaxyInfoWithRetry(target);
 										if (freshCheck.Planets.Any(p => p != null && p.HasCoords(target))) {
 											DoLog(LogLevel.Information, $"Skipping colonize: {target.ToString()} was just taken by someone else, re-checked right before sending.");

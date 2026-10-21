@@ -63,9 +63,7 @@ namespace Tbot.Workers.Brain {
 				if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.AutoDefence, "MaxConstructionMinutes")) {
 					maxConstructionMinutes = (int) _tbotInstance.InstanceSettings.Brain.AutoDefence.MaxConstructionMinutes;
 				} else if (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.AutoDefence, "MaxConstructionTime")) {
-					// Pre-restore field name (lost in the 3.4.6 rebase, brought back under a
-					// different name in 8547586) - keep honoring existing instance files instead
-					// of silently falling back to the 60min default.
+					// Deprecated setting name, still honored so existing instance files don't silently fall back to the 60min default.
 					DoLog(LogLevel.Warning, "Brain.AutoDefence.MaxConstructionTime is deprecated; rename it to Brain.AutoDefence.MaxConstructionMinutes.");
 					maxConstructionMinutes = (int) _tbotInstance.InstanceSettings.Brain.AutoDefence.MaxConstructionTime;
 				} else {
@@ -100,9 +98,7 @@ namespace Tbot.Workers.Brain {
 					tempCelestial = await _tbotOgameBridge.UpdatePlanet(tempCelestial, UpdateTypes.Resources);
 					tempCelestial = await _tbotOgameBridge.UpdatePlanet(tempCelestial, UpdateTypes.LFBonuses);
 					tempCelestial = await _tbotOgameBridge.UpdatePlanet(tempCelestial, UpdateTypes.Facilities);
-					// CalcNeededDefenceFromProduction reads celestial.Buildings.FusionReactor directly -
-					// without this, Buildings is null on a celestial this worker hasn't touched yet,
-					// throwing a NullReferenceException (real crash report, 2026-10-14).
+					// CalcNeededDefenceFromProduction reads Buildings.FusionReactor, and Buildings is null on a celestial this worker hasn't updated yet.
 					tempCelestial = await _tbotOgameBridge.UpdatePlanet(tempCelestial, UpdateTypes.Buildings);
 
 					var capacity = _calculationService.CalcFleetCapacity(tempCelestial.Ships, _tbotInstance.UserData.serverData, _tbotInstance.UserData.researches.HyperspaceTechnology, tempCelestial.LFBonuses, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo);
@@ -114,17 +110,13 @@ namespace Tbot.Workers.Brain {
 					Defences neededDefences;
 					if (useProductionBasedCalculation && tempCelestial is Planet planetForCalc) {
 						neededDefences = _calculationService.CalcNeededDefenceFromProduction(planetForCalc, _tbotInstance.UserData.researches, _tbotInstance.UserData.serverData, productionCoverageHours, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.staff.Geologist, _tbotInstance.UserData.staff.IsFull);
-						// DefenceToReach doubles as a mask even with the formula active: a type only
-						// gets built if the user has it configured (>0) there. Anything left at 0 in
-						// DefenceToReach is opted out entirely, regardless of what the formula computes.
+						// DefenceToReach also acts as a mask: a type configured to 0 is opted out regardless of what the formula computes.
 						if (manualDefences.RocketLauncher <= 0) neededDefences.RocketLauncher = 0;
 						if (manualDefences.LightLaser <= 0) neededDefences.LightLaser = 0;
 						if (manualDefences.HeavyLaser <= 0) neededDefences.HeavyLaser = 0;
 						if (manualDefences.GaussCannon <= 0) neededDefences.GaussCannon = 0;
 						if (manualDefences.PlasmaTurret <= 0) neededDefences.PlasmaTurret = 0;
-						// The Bontchev formula only covers RocketLauncher/LightLaser/HeavyLaser/GaussCannon/PlasmaTurret -
-						// IonCannon, AntiBallisticMissiles and the shield domes always come from the manual
-						// DefenceToReach setting, toggle or not.
+						// The formula only covers the five turret types; the rest always come from the manual DefenceToReach setting.
 						neededDefences.IonCannon = manualDefences.IonCannon;
 						neededDefences.SmallShieldDome = manualDefences.SmallShieldDome;
 						neededDefences.LargeShieldDome = manualDefences.LargeShieldDome;

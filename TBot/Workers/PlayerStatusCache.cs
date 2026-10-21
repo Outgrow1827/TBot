@@ -6,19 +6,13 @@ using System.Xml.Linq;
 using TBot.Ogame.Infrastructure;
 
 namespace Tbot.Workers {
-	// In-memory cache of OGame's public /api/players.xml, keyed by player ID. Exposes each player's
-	// raw status string (a/v/i/I/b/o, combinable eg. "vI") - a galaxy scan only ever gives a single
-	// collapsed Inactive flag (Planet.Inactive), which can't tell a short inactivity (i, ~7+ days)
-	// apart from a long one (I, ~28+ days). Refetched at most once per RefreshInterval.
+	// In-memory cache of the public players list, keyed by player ID, exposing the raw status string, which tells a short inactivity apart from a long one where the galaxy scan's flag cannot.
 	public class PlayerStatusCache {
 		private static readonly TimeSpan RefreshInterval = TimeSpan.FromMinutes(60);
 
 		private readonly IOgameService _ogameService;
 		private Dictionary<int, string> _statusById = new();
-		// Player names change in-game; anything keying history by name alone silently splits into
-		// "two different players" for the same real account. players.xml's id is stable across a
-		// rename, so retaining id->name here lets callers reconcile a known id against its latest
-		// name instead of relying on name matching.
+		// The id->name map survives renames, so callers can reconcile a known id against its current name instead of matching on the name.
 		private Dictionary<int, string> _nameById = new();
 		private DateTime _lastRefresh = DateTime.MinValue;
 

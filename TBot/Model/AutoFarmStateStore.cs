@@ -271,9 +271,7 @@ VALUES ($report_id, $galaxy, $system, $position, $celestial_type, $target_name,
 					attack.Parameters.AddWithValue("$origin_position", origin?.Position ?? (object) DBNull.Value);
 					attack.Parameters.AddWithValue("$origin_celestial_type", origin == null ? (object) DBNull.Value : (int) origin.Type);
 					attack.Parameters.AddWithValue("$mission", string.IsNullOrWhiteSpace(mission) ? "Attack" : mission);
-					// Stable identity for the attacked player - target_name above is the CELESTIAL's
-					// name, not the player's, and either way names can change; this is what lets
-					// history be reconciled by actual player identity instead of a name that can drift.
+					// target_name is the celestial's name, not the player's; the player ID is what keeps the history stable.
 					var playerId = (target.Celestial as Planet)?.Player?.ID ?? 0;
 					attack.Parameters.AddWithValue("$player_id", playerId > 0 ? playerId : (object) DBNull.Value);
 					attack.ExecuteNonQuery();
@@ -358,9 +356,7 @@ WHERE id = 1;";
 			try {
 				using var connection = OpenConnection();
 				using var command = connection.CreateCommand();
-				// Deliberately does not touch full_scan_completed - this is called on every cursor
-				// advance (many times per cycle), and the completed flag must only ever be set by
-				// MarkFullScanCompleted below, once the whole ScanRange has been swept through.
+				// full_scan_completed is only set by MarkFullScanCompleted, not by this cursor advance.
 				command.CommandText = @"
 INSERT INTO scan_cursor (id, range_index, galaxy, system, updated_at_utc)
 VALUES (1, $range_index, $galaxy, $system, $updated_at_utc)
@@ -379,12 +375,7 @@ ON CONFLICT(id) DO UPDATE SET
 			}
 		}
 
-		// Marks that at least one full pass through every configured ScanRange has completed -
-		// requested live 2026-09-02: with TargetsProbedBeforeAttack=0 and a huge ScanRange
-		// (G1-G4), the physical fleet-slot limit (MaxSlots) forces the scan to resume across many
-		// cycles, but attacks were being dispatched every cycle from whatever partial results had
-		// accumulated so far instead of waiting for the sweep to actually finish once. Persisted
-		// (not just in-memory) so a restart doesn't silently reset back to "attack immediately".
+		// Marks a finished pass over every configured ScanRange, so attacks wait for the sweep instead of using partial results; persisted across restarts.
 		public void MarkFullScanCompleted(DateTime updatedAtUtc) {
 			if (!_enabled)
 				return;

@@ -26,19 +26,10 @@ namespace Tbot.Workers {
 		private readonly AutoFarmStateStore _stateStore;
 		private bool _stateLoaded;
 
-		// Fleet IDs of dispatched attacks still waiting on a real combat report, keyed by the
-		// destination coordinate they were sent to. AutoFarm never reads the real post-battle
-		// result back today - it only simulates the battle before sending (TryGetAcceptableCombatFleet)
-		// and marks the target AttackSent once dispatched. This resolves each pending fleet ID
-		// directly via GetCombatReportSummaryForFleet (a targeted per-fleet lookup, not scanning
-		// the account's whole message list) once the report becomes available server-side.
+		// Dispatched attacks waiting for a combat report, keyed by destination coordinate; each pending fleet ID is resolved with a targeted per-fleet lookup.
 		private readonly Dictionary<int, Coordinate> _pendingCombatReports = new();
 
-		// Structured, WebUI-facing counterpart to LogResolvedCombatReports' worker-log line -
-		// without this, a resolved combat report only ever existed as one line buried in the
-		// scrolling worker log (confirmed live 2026-08-29: user reported "não detecta log de farm",
-		// i.e. nothing surfaced on the AutoFarm dashboard itself). Same store/pattern already used
-		// by ExpeditionsWorker for expedition/discovery results.
+		// WebUI-facing counterpart of the resolved-combat-report log line, using the same store pattern as the expedition/discovery results.
 		private FeatureResultsStore _farmResultsStore;
 
 		private async Task LogResolvedCombatReports(bool suppressLogging = false) {
@@ -96,41 +87,26 @@ namespace Tbot.Workers {
 			}
 		}
 
-		// FarmTargetCache (SQLite) - THE single source of truth for FastFarm AND ScanOnly data.
-		// Stores persistent target cache, blacklist, attack history, AND system scan cache.
-		// Inactive status is ETERNAL once marked (InactiveStatusLocked = true) - never auto-cleared.
-		// Inactivity is determined by UNIVERSE VIEW (galaxy scans), NOT /api/players.xml.
+		// FarmTargetCache (SQLite) is the single source of truth for FastFarm and ScanOnly data; inactive status is locked once marked and comes from universe view, not /api/players.xml.
 		private FarmTargetCache _farmTargetCache;
 
 		// Universe View Inactivity Checker - replaces PlayerStatusCache (/api/players.xml).
 		// Authoritative inactivity detection via galaxy scans (universe view).
 		private UniverseViewInactivityChecker _universeViewChecker;
 
-		// Free byproduct of the galaxy scans AutoFarm already does for target vetting - shares
-		// sightings into AutoHarvest's ScanRange history (harvest_debris_history) instead of
-		// throwing away the per-position debris data GetGalaxyInfo returns anyway. Restored
-		// 2026-08-24, see HarvestWorker.cs's TBotDataCache restoration note for context.
+		// Shares the debris sightings from AutoFarm's galaxy scans into AutoHarvest's scan history instead of discarding them.
 		private TBotDataCache _harvestCache;
 
-		// Lazily created once and reused across Execute() cycles (unlike _farmTargetCache) since it
-		// only holds an in-memory, self-refreshing snapshot of /api/highscore.xml - no per-cycle
-		// open/dispose needed.
+		// Created once and reused across cycles: an in-memory snapshot of /api/highscore.xml with no per-cycle open/dispose.
 		private HighscorePlayerRankCache _highscoreRankCache;
 
-		// Legacy PlayerStatusCache - KEPT for backward compatibility but NO LONGER USED for inactivity detection.
-		// Inactivity is now determined exclusively via UniverseViewInactivityChecker (galaxy scans).
-		// This cache is retained only for potential future use or debugging.
+		// Legacy cache, no longer used for inactivity detection (the universe view checker replaced it).
 		private PlayerStatusCache _playerStatusCache;
 
-		// Tracks the single expendable probe-as-attack sent per target to detect defenses when a
-		// normal espionage report couldn't reveal them (see SendDefenseProbeAttacks). Static so it
-		// survives worker re-instantiation, matching the cross-cycle nature of "wait for this fleet
-		// to arrive, then wait for it to either return or not."
+		// Tracks the single expendable probe-as-attack per target, used when espionage couldn't reveal the defenses; static so it survives worker re-instantiation.
 		private record DefenseProbeInfo(int FleetId, DateTime SentAt, DateTime? ArrivalTime, bool SeenReturning);
 		private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DefenseProbeInfo> _defenseProbeFleets = new();
-		// Static (shared by every instance in the process) so it survives worker restarts - keyed by instance
-		// alias plus the raw coordinate, NOT Coordinate.ToString(): with HideSensitiveDataInLogs on, ToString()
-		// returns "[P:hidden]" for every coordinate, collapsing all targets onto one key.
+		// Keyed by instance alias plus the raw coordinate, not Coordinate.ToString(), which returns "[P:hidden]" for every coordinate when privacy mode is on.
 		private string DefenseProbeKey(Coordinate c) => $"{_tbotInstance.InstanceAlias}:{c.Galaxy}:{c.System}:{c.Position}:{c.Type}";
 
 		public AutoFarmWorker(ITBotMain parentInstance,
@@ -249,15 +225,7 @@ namespace Tbot.Workers {
 			return TimeSpan.FromDays(Math.Max(1, days));
 		}
 
-		/// <summary>
-		/// Distinction between KeepReportFor and FastFarmReportRetentionDays:
-		/// - KeepReportFor (AutoFarm-specific): How long to keep an espionage report before considering it stale
-		///   and re-probing the target. Applies only to targets in AttackPending/ProbesPending states that have
-		///   an associated EspionageReport. Controls the autofarm report lifecycle.
-		/// - FastFarmReportRetentionDays (Cache management): How long to keep FarmTargetCache entries that
-		///   were ONLY seen in galaxy scans (no espionage report). Applies to ScanOnly, FastFarm, and AutoFarm
-		///   modes equally. Controls the persistent cache cleanup for scan-only entries.
-		/// </summary>
+		/// <summary>KeepReportFor is the espionage report staleness limit for pending targets; FastFarmReportRetentionDays is the cache retention for scan-only entries.</summary>
 		private async Task PruneOldReports(List<Fleet> fleets) {
 			var newTime = await _tbotOgameBridge.GetDateTime();
 			var removeReports = _tbotInstance.UserData.farmTargets.Where(t => t.State == FarmState.AttackSent || (t.Report != null && DateTime.Compare(t.Report.Date.AddMinutes((double) _tbotInstance.InstanceSettings.AutoFarm.KeepReportFor), newTime) < 0)).ToList();
@@ -465,10 +433,7 @@ namespace Tbot.Workers {
 			return excludeSystem;
 		}
 
-		// Persists what a live scan found for this celestial into the FastFarm cache - basic identity
-		// only (coordinate, player, inactive flag), so a later FastFarmMode cycle can rebuild the
-		// system's target list without a live galaxy scan. Report-derived detail (resources,
-		// buildings, defenses) is filled in separately by CacheUpsertFromReport once actually probed.
+		// Persists only the scan's basic identity (coordinate, player, inactive flag) so a later cycle can rebuild the target list without a live scan; report detail is added by CacheUpsertFromReport.
 		private async Task CacheUpsertFromScan(Celestial celestial) {
 			var planet = celestial as Planet;
 			if (planet == null)
@@ -482,9 +447,7 @@ namespace Tbot.Workers {
 			entry.IsVacation = planet.Vacation;
 			entry.LastSeenDate = DateTime.UtcNow;
 
-			// Universe View Inactivity Detection (replaces /api/players.xml)
-			// Inactive status is ETERNAL once locked (InactiveStatusLocked = true) - never auto-cleared.
-			// Source is "universe_view" (galaxy scan).
+			// Inactive status comes from the universe view scan and is locked once set, so it is never auto-cleared.
 			if (planet.Inactive) {
 				if (!entry.IsInactive || !entry.InactiveStatusLocked) {
 					entry.IsInactive = true;
@@ -521,9 +484,7 @@ namespace Tbot.Workers {
 			await _farmTargetCache.Upsert(entry);
 		}
 
-		// Free byproduct of a galaxy scan we're already doing for target vetting - GetGalaxyInfo
-		// returns per-position debris data whether we look at it or not, so record it into
-		// AutoHarvest's shared history instead of throwing it away.
+		// GetGalaxyInfo returns per-position debris data anyway, so record it into AutoHarvest's shared history instead of discarding it.
 		private void RecordDebrisFromScan(GalaxyInfo galaxyInfo) {
 			if (_harvestCache == null || galaxyInfo?.Planets == null)
 				return;
@@ -537,12 +498,7 @@ namespace Tbot.Workers {
 		private async Task<List<Celestial>> GetScannedTargetsFromGalaxy(int galaxy, int system) {
 			DateTime nowUtc = DateTime.UtcNow;
 
-			// FastFarmMode: when explicitly enabled, a recent enough cached scan of this system
-			// replaces the live galaxy scan entirely. Renamed from FastFarmMaxCacheAge (minutes) to
-			// FastFarmMaxCacheAgeDays - requested live 2026-09-05, a 30-day cache window is far more
-			// readable as "30" days than "43200" minutes. Kept as a distinct key rather than
-			// reinterpreting the old one in place, so an existing minutes-based value in someone's
-			// settings file can't silently be misread as a (wildly different) days value.
+			// FastFarmMode replaces the live scan with a cached one; the cache age setting is in days and kept as its own key so an old minutes-based value can't be misread.
 			bool fastFarmMode = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "FastFarmMode") && (bool) _tbotInstance.InstanceSettings.AutoFarm.FastFarmMode;
 			double fastFarmMaxCacheAgeDays = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "FastFarmMaxCacheAgeDays") ? (double) _tbotInstance.InstanceSettings.AutoFarm.FastFarmMaxCacheAgeDays : 1;
 
@@ -593,12 +549,7 @@ namespace Tbot.Workers {
 				}
 			}
 
-			// Under ScanOnly, always honor the stored cache using the existing DaysToKeepOldSystemData
-			// setting (reused rather than adding a new dedicated key - requested live 2026-09-05: "vou
-			// usar DaysToKeepOldSystemData: 60, para configurar ScanOnly também") for BOTH "system has
-			// planets" and "system is empty" decisions - ScanOnly has no attack-safety reason to force
-			// a live re-scan of an already-fresh system (see the two guards below), unlike the normal
-			// attack flow, which still needs the full-sweep bypass for freshness guarantees.
+			// Under ScanOnly the stored cache is always honored with the DaysToKeepOldSystemData setting, since there is no attack to protect against stale data.
 			bool scanOnlyForCache = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "ScanOnly")
 				&& (bool) _tbotInstance.InstanceSettings.AutoFarm.ScanOnly;
 			TimeSpan effectiveDataTtl = GetSystemDataTtl();
@@ -610,26 +561,14 @@ namespace Tbot.Workers {
 				nowUtc,
 				effectiveDataTtl,
 				effectiveEmptyCooldown);
-			// The empty-system cooldown (EmptySystemCooldownDays, 30 here) means a system found
-			// empty once gets skipped for up to a month - directly contradicts "search every
-			// inactive in the configured range" during the FIRST sweep of a freshly widened
-			// ScanRange (requested live 2026-09-02: user expanded to G1-G4 and wants every system
-			// actually checked, not silently excluded because of a stale/unrelated earlier scan).
-			// Only honor the skip once that first full sweep has completed - subsequent cycles keep
-			// the cooldown as the intended performance optimization. Under ScanOnly, always honor it
-			// (using DaysToKeepOldSystemData instead of EmptySystemCooldownDays, see above) - there is
-			// no attack to protect against stale data, so forcing a live re-scan of an already-fresh
-			// system is just wasted probes.
+			// The empty-system cooldown is only honored after the first full sweep of the ScanRange, so a freshly widened range really is scanned; under ScanOnly it always applies.
 			if (cacheDecision == AutoFarmSystemCacheDecision.Skip && (scanOnlyForCache || _tbotInstance.UserData.autoFarmFullScanCompleted)) {
 				_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm,
 					$"Skipping cached empty system {galaxy}:{system} until {cachedSnapshot.ObservedAtUtc.Add(effectiveEmptyCooldown):u}.");
 				return null;
 			}
 
-			// Same reasoning as the Skip guard above: reusing up-to-30-day-old planet data
-			// (DaysToKeepOldSystemData) could hide a player who went inactive since that snapshot
-			// was taken - force a live scan for every system until the first full sweep completes.
-			// Under ScanOnly, always honor it instead (see above).
+			// Reusing old planet data could hide a player who went inactive since the snapshot, so every system is scanned live until the first full sweep completes; under ScanOnly the cache is always honored.
 			if (cacheDecision == AutoFarmSystemCacheDecision.UseSnapshot && (scanOnlyForCache || _tbotInstance.UserData.autoFarmFullScanCompleted)) {
 				_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm,
 					$"Using cached galaxy data for {galaxy}:{system} ({(nowUtc - cachedSnapshot.ObservedAtUtc).TotalDays:F1} days old).");
@@ -639,11 +578,7 @@ namespace Tbot.Workers {
 				await _fleetScheduler.UpdateFleets();
 				snapshotTargets.RemoveAll(t => _tbotInstance.UserData.fleets.Any(f => f.Destination.IsSame(t.Coordinate) && f.Mission == Missions.Attack));
 
-				// This path (reusing AutoFarmStateStore's older snapshot) was the one actually taken
-				// once a full sweep had completed - which meant FarmTargetCache (FastFarmMode's own
-				// cache, fed only from the live-scan branch below) never got populated at all for an
-				// instance that already had a mature scan history. FastFarmMode's per-system reordering
-				// by known profitability silently had nothing to work with. Feed it here too.
+				// This path bypasses the live scan, so FarmTargetCache (fed only by the live branch) stayed empty and FastFarmMode had nothing to reorder by; feed it here too.
 				if (_farmTargetCache != null) {
 					foreach (var target in snapshotTargets) {
 						await CacheUpsertFromScan(target);
@@ -651,9 +586,7 @@ namespace Tbot.Workers {
 					_farmTargetCache.MarkSystemScanned(galaxy, system);
 				}
 
-				// Same staleness concern as the FastFarmMode cache branch above: this snapshot can be up
-				// to DaysToKeepOldSystemData old, so re-verify against the universe view (FarmTargetCache)
-				// before treating anyone in it as still inactive. Inactive status is ETERNAL once locked.
+				// The snapshot can be stale, so the inactive status is re-verified against the universe view before anyone is treated as still inactive.
 				var stillInactiveSnapshot = new List<Celestial>();
 				foreach (var t in snapshotTargets) {
 					var coord = t.Coordinate;
@@ -760,10 +693,7 @@ namespace Tbot.Workers {
 				} else if (scannedTargets.Any(t => t.HasCoords(new(planet.Coordinate.Galaxy, planet.Coordinate.System, planet.Coordinate.Position, Celestials.Planet)))) {
 					rank = (scannedTargets.Single(t => t.HasCoords(new(planet.Coordinate.Galaxy, planet.Coordinate.System, planet.Coordinate.Position, Celestials.Planet))) as Planet).Player.Rank;
 				} else {
-					// Sibling planet wasn't in this scan (e.g. a moon whose planet is out of range or
-					// already filtered out). Fall back to the persistent target cache's last known
-					// player name, then resolve a fresh rank for it via highscore.xml instead of
-					// silently defaulting to rank 1 (which always passes the filter).
+					// A sibling planet missing from the scan falls back to the cached player name and a fresh rank from highscore.xml, instead of defaulting to rank 1, which always passes the filter.
 					var cachedEntry = _farmTargetCache?.Get(new(planet.Coordinate.Galaxy, planet.Coordinate.System, planet.Coordinate.Position, Celestials.Planet));
 					if (!string.IsNullOrEmpty(cachedEntry?.PlayerName)) {
 						_highscoreRankCache ??= new HighscorePlayerRankCache(_ogameService);
@@ -799,12 +729,7 @@ namespace Tbot.Workers {
 			SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "ProbeAttackForDefenseCheck")
 			&& (bool) _tbotInstance.InstanceSettings.AutoFarm.ProbeAttackForDefenseCheck;
 
-		// Some targets never reveal defenses through espionage (insufficient Espionage Technology on
-		// the report, or it's simply never come back with HasDefensesInformation). Instead of leaving
-		// them stuck as ProbesRequired forever, sends a single expendable Espionage Probe as an ATTACK
-		// mission - if it survives and comes home, the target has no defenses (queue the real attack);
-		// if it never returns, the target has defenses (blacklist it). Cheaper than repeatedly trying
-		// to out-tech-scan a defended target.
+		// Targets whose defenses espionage never reveals get one expendable probe sent as an attack: a returning probe means no defenses, a destroyed one means defenses, which is cheaper than re-scanning.
 		private async Task<int> SendDefenseProbeAttacks(int freeSlots, int slotsToLeaveFree) {
 			if (!IsDefenseProbeEnabled()) return freeSlots;
 
@@ -866,10 +791,7 @@ namespace Tbot.Workers {
 			return freeSlots;
 		}
 
-		// Resolves outstanding defense-probe-attacks from a previous cycle: if the fleet is seen
-		// coming back, the probe survived (no defenses) - queue the real attack. If it's gone from the
-		// fleet list without ever being seen returning, and enough time has passed since arrival that
-		// it can't just be lagging behind, it was destroyed (defenses present) - blacklist the target.
+		// Resolves probes from a previous cycle: a returning probe means no defenses and the real attack is queued, a destroyed one means defenses and the target is blacklisted.
 		private async Task ProcessDefenseProbingResults() {
 			if (!IsDefenseProbeEnabled() || _farmTargetCache == null) return;
 
@@ -900,9 +822,7 @@ namespace Tbot.Workers {
 							cacheEntry.HasDefenses = false;
 							await _farmTargetCache.Upsert(cacheEntry);
 						}
-						// Same ScanOnly > FastFarmMode > AttackPending hierarchy as AutoFarmProcessReports -
-						// a defense-probe check started before ScanOnly was turned on can still resolve
-						// here after the switch; keep it from queuing an attack in that case too.
+						// Same ScanOnly > FastFarmMode > AttackPending hierarchy as AutoFarmProcessReports, so a probe started before ScanOnly was enabled doesn't queue an attack afterwards.
 						bool scanOnly = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "ScanOnly")
 							&& (bool) _tbotInstance.InstanceSettings.AutoFarm.ScanOnly;
 						target.State = scanOnly ? FarmState.Idle : FarmState.AttackPending;
@@ -949,10 +869,7 @@ namespace Tbot.Workers {
 				: 0;
 		}
 
-		// Warship types the user allows AutoFarm to draw on to fight through a defended target, read from
-		// AutoFarm.Ships (e.g. { "Cruiser": true, "Battleship": true, ... }). Cargo/utility ships (probes,
-		// cargos, recyclers, colony ships) are never included even if set to true in that same object -
-		// AutoFarm.Ships lists every ship type for config discoverability, but only these fight.
+		// Combat ships AutoFarm may use come from AutoFarm.Ships; cargo/utility ships in that object are never used to fight.
 		private List<Buildables> GetAllowedFarmCombatShips() {
 			List<Buildables> allowed = new();
 			if (!SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "Ships"))
@@ -970,11 +887,7 @@ namespace Tbot.Workers {
 			return allowed;
 		}
 
-		// Checks whether attacking a defended target is worthwhile. Builds a combat fleet from the allowed
-		// ship types available at the origin, simulates the battle against the target's reported fleet and
-		// defences at increasing fleet sizes (10% steps) until one destroys the defender within the
-		// acceptable loss percentage, then checks that the loot is worth the resource value of the ships
-		// expected to be lost. Returns the (minimal sufficient) ships to send only if both checks pass.
+		// Simulates the battle at growing fleet sizes until one destroys the defender within the acceptable loss, and only then checks the loot is worth the ships expected to be lost.
 		private bool TryGetAcceptableCombatFleet(EspionageReport report, Ships availableShips, out Ships combatShips, out double predictedLossPercentage, out Resources predictedDebris) {
 			combatShips = new Ships();
 			predictedLossPercentage = 0;
@@ -1029,9 +942,7 @@ namespace Tbot.Workers {
 				? (double) _tbotInstance.InstanceSettings.AutoFarm.MinLootToRiskRatio : 1.0;
 			long lootValue = report.Loot(_tbotInstance.UserData.userInfo.Class).TotalResources;
 
-			// Scan fleet sizes from 10% up to 100% of what's available at the origin (rounding each ship
-			// type up so small counts aren't rounded down to 0 at low fractions) and stop at the first size
-			// that both destroys the defender within the acceptable loss and is worth it economically.
+			// Fleet sizes are scanned from 10% to 100% of what the origin has, rounding each type up so low fractions don't round to 0.
 			Ships lastTriedShips = null;
 			for (int step = 1; step <= 10; step++) {
 				double fraction = step / 10.0;
@@ -1079,10 +990,7 @@ namespace Tbot.Workers {
 			return false;
 		}
 
-		// Estimates the debris field a simulated battle would leave, from the ships (both sides) and
-		// defences the simulator predicted destroyed, using real per-unit build cost (CalcPrice) and the
-		// universe's actual DebrisFactor/DebrisFactorDef (ServerData). Only ever computed for defended
-		// targets going through TryGetAcceptableCombatFleet - undefended targets never fight.
+		// Debris of a simulated battle, from real per-unit build costs and the universe's DebrisFactor; only computed for defended targets.
 		private Resources EstimateDebrisField(CombatSimulationResult result) {
 			Resources shipDebris = new();
 			foreach (var kv in new[] { result.AttackerShipsLost, result.DefenderShipsLost }) {
@@ -1116,10 +1024,7 @@ namespace Tbot.Workers {
 			);
 		}
 
-		// Persists what this report revealed into the FastFarm cache, so a future cycle has this
-		// target's last-known state even before a fresh probe comes back. Resource-extrapolation-based
-		// scan skipping (using this data to avoid re-probing recently-seen targets) is not wired up yet -
-		// this only builds up the persistent history for now.
+		// Persists the report's last-known state so a later cycle has it before a fresh probe returns; scan skipping on that data is not wired up yet.
 		private async Task CacheUpsertFromReport(EspionageReport report) {
 			if (_farmTargetCache == null)
 				return;
@@ -1265,20 +1170,7 @@ namespace Tbot.Workers {
 			return neededProbes;
 		}
 
-		// Cargo-capable ship types AutoFarm can combine into an attack fleet, in priority order
-		// (larger capacity first - "priorizar cargueiros sempre" per user, 2026-08-30). Eligibility is
-		// read from the SAME AutoFarm.Ships object combat ships already use, not a separate setting -
-		// user already had SmallCargo/LargeCargo marked true there expecting it to govern cargo
-		// selection too (previously that object only fed GetAllowedFarmCombatShips(), cargo ships in
-		// it were "for config discoverability" only and silently ignored for this purpose).
-		// Pathfinder added 2026-09-12, after SmallCargo rather than before it: it has real cargo
-		// capacity (10000, vs SmallCargo's 5000 and LargeCargo's 25000) and was already enabled in
-		// AutoFarm.Ships, but sat unused as a cargo top-up - with LargeCargo+SmallCargo exhausted
-		// mid-cycle by earlier attacks, later targets in the same run were skipped as "no suitable
-		// origin" despite idle Pathfinders at that origin. Kept last (not reordered by capacity) so the
-		// existing LargeCargo+SmallCargo combo above (which only ever fuses the first two entries) is
-		// unchanged - Pathfinder only kicks in through the per-type fallback loop that tries each
-		// allowed type standalone.
+		// Cargo types AutoFarm may combine, biggest capacity first, read from the same AutoFarm.Ships object as the combat ships.
 		private static readonly Buildables[] CargoCapableTypes = { Buildables.LargeCargo, Buildables.SmallCargo, Buildables.Pathfinder };
 
 		private List<Buildables> GetAllowedFarmCargoShips() {
@@ -1293,9 +1185,7 @@ namespace Tbot.Workers {
 			return allowed;
 		}
 
-		// Primary cargo type: first entry from AutoFarm.Ships (LargeCargo preferred over SmallCargo).
-		// Falls back to the legacy PrimaryShip/CargoType settings only when Ships has no cargo type
-		// marked true at all, so existing configs relying on those keep working unchanged.
+		// The first cargo type enabled in AutoFarm.Ships wins; the legacy PrimaryShip/CargoType settings are only a fallback when none is enabled.
 		private Buildables GetConfiguredCargoType() {
 			var allowedCargo = GetAllowedFarmCargoShips();
 			if (allowedCargo.Count > 0)
@@ -1428,10 +1318,7 @@ namespace Tbot.Workers {
 			while (freeSlots <= slotsToLeaveFree) {
 				_tbotInstance.UserData.fleets = await _fleetScheduler.UpdateFleets();
 				if (_tbotInstance.UserData.fleets.Any()) {
-					// Floor of MinPollIntervalMs: short farm flights mean the "next fleet back" is
-					// often already due any moment, which without a floor produced a sub-second
-					// retry loop (dozens of log lines and ogamed API calls per minute) instead of
-					// actually waiting for a slot to free up.
+					// Minimum poll interval: short farm flights make the next fleet due immediately, and without the floor the retry loop spins in sub-second intervals.
 					const int MinPollIntervalMs = 5000;
 					int interval = Math.Max(MinPollIntervalMs, (int) ((1000 * _tbotInstance.UserData.fleets.OrderBy(fleet => fleet.BackIn).First().BackIn) + RandomizeHelper.CalcRandomInterval(IntervalType.LessThanASecond)));
 					
@@ -1466,18 +1353,13 @@ namespace Tbot.Workers {
 			try {
 				_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, "Running autofarm...");
 				LoadPersistedTargets();
-				// Dispose the previous cycle's SQLite connection before opening a new one - a fresh
-				// connection per Execute() cycle avoids holding one open indefinitely across the
-				// worker's whole lifetime.
+				// A fresh connection per cycle, so none is held open for the worker's whole lifetime.
 				_farmTargetCache?.Dispose();
 				_farmTargetCache = await FarmTargetCache.Load(_tbotInstance.InstanceSettingsPath, _tbotInstance.InstanceAlias);
 				// Initialize Universe View Inactivity Checker (replaces PlayerStatusCache /api/players.xml)
 				// This is the authoritative inactivity detection for BOTH AutoFarm and FastFarm.
 				_universeViewChecker = new UniverseViewInactivityChecker(_ogameService, _farmTargetCache, _tbotInstance);
-				// FastFarmReportRetentionDays (Cache management): How long to keep FarmTargetCache entries that
-				// were ONLY seen in galaxy scans (no espionage report). Applies to ScanOnly, FastFarm, and AutoFarm
-				// modes equally. Controls the persistent cache cleanup for scan-only entries.
-				// DISTINCTION: This is DIFFERENT from KeepReportFor (AutoFarm-specific espionage report retention).
+				// Retention for cache entries seen only in galaxy scans (no espionage report), unlike KeepReportFor, which is the espionage report staleness limit.
 				int reportRetentionDays = SettingsService.GetSetting(_tbotInstance.InstanceSettings.AutoFarm, "FastFarmReportRetentionDays", 7);
 				_farmTargetCache.ReportRetentionDays = Math.Max(1, reportRetentionDays);
 				// Configure shared MinimumResources for both FastFarm and AutoFarm (persisted in FarmTargetCache)
@@ -1911,11 +1793,7 @@ _tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"[GLOBAL SPACING] T
 					};
 					int MaxSlots = _calculationService.CalcSlotsPriority(Feature.AutoFarm, rankSlotsPriority, _tbotInstance.UserData.slots, _tbotInstance.UserData.fleets, (int) _tbotInstance.InstanceSettings.General.SlotsToLeaveFree);
 
-					// AttackPending targets persist across restarts/config changes (loaded from
-					// _stateStore) and were never filtered by the currently configured ScanRange - a
-					// target queued before the user narrowed ScanRange stayed AttackPending forever and
-					// kept getting attacked outside the new range (confirmed live 2026-08-30: ScanRange
-					// set to G3:229-329, but attacks still went out to G1 targets queued earlier).
+					// AttackPending targets loaded from the state store were never filtered by the current ScanRange, so a narrowed range still attacked old targets outside it.
 					bool IsWithinScanRange(Coordinate coord) {
 						if (coord == null)
 							return false;
@@ -1999,23 +1877,13 @@ _tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"[GLOBAL SPACING] T
 							target.Score = score;
 						}
 
-						// Distance is a genuine secondary sort (ThenBy) here, not a second OrderBy - a plain
-						// OrderBy after OrderByDescending doesn't compose in LINQ, it replaces the previous
-						// sort outright. That silently discarded the weighted score (and the legacy
-						// PreferedResource sort in the else branch below) every cycle: attacks actually
-						// went out purely by proximity regardless of UseWeightedScore/PreferedResource,
-						// which is why high-value targets weren't being prioritized. Reported live
-						// 2026-09-17 ("fastfarm... não está buscando por alvos de alto valor").
+						// Distance is a ThenBy here: a plain OrderBy after OrderByDescending replaces the previous sort and would discard the weighted score entirely.
 						attackTargets = attackTargets
 							.OrderByDescending(t => t.Score)
 							.ThenBy(t => GetMinDistanceFromOrigins(t.Celestial.Coordinate, farmOriginsForAttack))
 							.ToList();
 					} else {
-						// Legacy sorting by PreferedResource - see comment above, distance is ThenBy here too.
-						// target.Score is also populated here now (to the same metric being sorted on) -
-						// it used to stay at its default (0) in this branch, so the tie-break block below
-						// treated every target as "tied at the best score" and randomized the ENTIRE list,
-						// silently discarding this sort too whenever UseWeightedScore was off.
+						// Legacy PreferedResource sort; target.Score is filled in too, so the tie-break doesn't treat every target as tied and randomize the whole list.
 						Func<FarmTarget, long> legacyMetric = _tbotInstance.InstanceSettings.AutoFarm.PreferedResource switch {
 							"Metal" => t => t.Report.Loot(_tbotInstance.UserData.userInfo.Class).Metal,
 							"Crystal" => t => t.Report.Loot(_tbotInstance.UserData.userInfo.Class).Crystal,
@@ -2027,14 +1895,7 @@ _tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"[GLOBAL SPACING] T
 							.ThenBy(t => GetMinDistanceFromOrigins(t.Celestial.Coordinate, farmOriginsForAttack)).ToList();
 					}
 
-					// Tie-break: randomize among targets within a narrow band of the best score, so
-					// attacks against near-identical-value targets don't always fire in the exact same
-					// order (a bit of anti-pattern noise), without diluting real value-based prioritization
-					// the way a wide band does. Narrowed from ±10% to ±3% - live 2026-09-17 feedback
-					// ("não está buscando os alvos melhores e mais equilibrados, mas está quase lá"): with
-					// scores clustering fairly close together across many targets, a 10% band could catch
-					// a large chunk of the list and shuffle away most of the ordering this method just spent
-					// effort computing.
+					// Tie-break randomizes only among targets within 3% of the best score, so near-identical targets don't always fire in the same order without diluting the ranking.
 					if (attackTargets.Count > 1) {
 						var bestScore = attackTargets.Max(t => t.Score);
 						var threshold = bestScore * 0.97;
@@ -2050,25 +1911,14 @@ _tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"[GLOBAL SPACING] T
 					bool scanOnly = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "ScanOnly")
 						&& (bool) _tbotInstance.InstanceSettings.AutoFarm.ScanOnly;
 					if (scanOnly) {
-						// Dedicated toggle requested live 2026-09-02, replacing the Ships=all-false +
-						// CargoType="LargeCargo" workaround the user had been using to the same end -
-						// that combo worked but was indirect and (when CargoType got set to "Null" by
-						// mistake) silently broke attack dispatch entirely. This is explicit: scan every
-						// system in ScanRange (still respecting the normal cache - only outdated or
-						// never-scanned systems get a live re-scan, per GetScannedTargetsFromGalaxy),
-						// classify every report, but never actually dispatch a cargo attack.
+						// ScanOnly classifies every report but never dispatches a cargo attack, while still honoring the normal cache.
 						_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm,
 							$"ScanOnly=true: {attackTargets.Count()} target(s) currently classified as attack-pending, not dispatched.");
 						return;
 					}
 
 					if (!_tbotInstance.UserData.autoFarmFullScanCompleted) {
-						// Requested live 2026-09-02: with TargetsProbedBeforeAttack=0 and a large
-						// ScanRange (G1-G4), the physical fleet-slot limit (MaxSlots) forces scanning
-						// to resume across many cycles - attacks used to be dispatched every cycle from
-						// whatever partial results had accumulated instead of waiting for a full sweep.
-						// Reports keep getting classified (AttackPending) normally in the meantime; only
-						// the actual cargo dispatch below is held back, once, until autoFarmFullScanCompleted.
+						// With a large ScanRange the scan spans many cycles, so dispatching is held back until the first full sweep completes; reports keep being classified meanwhile.
 						_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm,
 							$"Holding {attackTargets.Count()} pending attack(s): waiting for the first full sweep of all ScanRange systems to complete before dispatching any attack.");
 						return;
@@ -2129,16 +1979,7 @@ _tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"[GLOBAL SPACING] T
 							tempCelestial = await _tbotOgameBridge.UpdatePlanet(tempCelestial, UpdateTypes.Resources);
 							tempCelestial = await _tbotOgameBridge.UpdatePlanet(tempCelestial, UpdateTypes.LFBonuses);
 
-							// Primary type first; if this origin doesn't have enough of it alone, top up the
-							// shortfall with EVERY other enabled cargo-capable type at the SAME origin (not
-							// just one secondary) - a real mixed fleet, not a full switch. Requested live
-							// 2026-08-30 for LargeCargo+SmallCargo, extended 2026-09-12 to combine all three
-							// (LargeCargo+SmallCargo+Pathfinder) after Pathfinder-only origins were still
-							// being skipped: a two-way top-up stops looking once it name-checks exactly one
-							// fallback type, so an origin needing all three together to cover the loot never
-							// got there. Works in capacity terms (not ship-type-specific resource math):
-							// per-ship capacity is constant for a given type/LF-bonuses, so each type's
-							// contribution scales linearly from a single-ship capacity probe.
+							// The primary cargo type is topped up with every other enabled cargo type at the same origin, so the fleet is mixed instead of switching types; capacity per type scales linearly from a single ship.
 							long minKeep = (long) _tbotInstance.InstanceSettings.AutoFarm.MinCargosToKeep;
 							long availablePrimary = tempCelestial.Ships != null ? Math.Max(0, tempCelestial.Ships.GetAmount(cargoShip) - minKeep) : 0;
 							bool hasEnough = availablePrimary >= numCargo;
@@ -2165,10 +2006,7 @@ _tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"[GLOBAL SPACING] T
 										coveredCapacity += _calculationService.CalcFleetCapacity(new Ships().Add(fallbackType, usedOfType), _tbotInstance.UserData.serverData, _tbotInstance.UserData.researches.HyperspaceTechnology, tempCelestial.LFBonuses, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo);
 										contributionsLog.Add($"{usedOfType} {fallbackType}");
 									}
-									// When the primary cargo type has zero ships available at this origin but the
-									// combined fallback types alone have enough capacity, switch the reported
-									// primary to whichever fallback type actually carries the fleet, instead of
-									// skipping the origin or waiting to build more of the unavailable primary type.
+									// With no primary cargo ships available, the reported primary switches to whichever fallback type actually carries the fleet.
 									if (coveredCapacity >= totalLoot) {
 										if (availablePrimary > 0) {
 											_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm, $"Insufficient {cargoShip} on {tempCelestial.Coordinate} ({availablePrimary}/{numCargo}), combining with {string.Join(", ", contributionsLog)}.");
@@ -2328,18 +2166,7 @@ _tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"[GLOBAL SPACING] T
 							continue;
 						}
 
-						// Real cargo losses reported live 2026-09-11 (~1000 cargo ships lost in one cycle):
-						// the AttackPending report backing this target can be minutes to tens of minutes
-						// old by the time this dispatch loop actually reaches it (up to ~200 targets, each
-						// needing several UpdatePlanet round trips before getting here) - long enough for
-						// the target to log back in, build defense/fleet, and ambush the incoming cargo.
-						// IsInactiveViaUniverseView() is NOT used here - it trusts the eternal DB lock and
-						// never re-checks anything live for a target already locked inactive (the common
-						// case), which reintroduced this exact failure mode invisibly (reported live
-						// 2026-09-17). IsStillInactiveLive() always issues a fresh galaxy scan for this
-						// coordinate right now, and both "active" and "unknown" abort the attack - a real
-						// fleet lost here can't be undone, so an inconclusive recheck is not good enough
-						// to fire on.
+						// The report backing this target can be many minutes old by the time the loop reaches it, so a fresh galaxy scan decides: an active or inconclusive recheck aborts the attack.
 						var targetCoord = target.Celestial.Coordinate;
 						var isInactive = await _universeViewChecker.IsStillInactiveLive(targetCoord, (target.Celestial as Planet)?.Player?.ID);
 						if (isInactive != true) {
@@ -2348,18 +2175,7 @@ _tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"[GLOBAL SPACING] T
 							continue;
 						}
 
-						// IsStillInactiveLive above only re-verifies the PLAYER's activity via a fresh galaxy
-						// scan - the galaxy view has no defense/fleet counts at all, so the defense check just
-						// below is still reading target.Report, which can be up to KeepReportFor (1440min/24h
-						// by default) old. An inactive-but-not-yet-scouted-again player can build defenses at
-						// any point inside that 24h window without TBot ever noticing, since nothing here
-						// forces a fresh espionage probe before firing - reported live 2026-09-18 right after
-						// the combatShipsNeeded fix above ("não verifica as defesas, simplesmente ataca por
-						// ser inativo"): the defense check WAS running, just against a report stale enough to
-						// no longer reflect reality. Enforces a separate, much tighter cap
-						// (MaxReportAgeMinutesForAttack, default 120min) than KeepReportFor's general
-						// retention/probe-recheck cadence - if breached, requeues for a fresh probe instead of
-						// firing on outdated defense data.
+						// The live recheck only covers the player's activity, not defenses, so the report age is capped at MaxReportAgeMinutesForAttack (default 120) and a stale one is requeued for a fresh probe.
 						int maxReportAgeMinutesForAttack = SettingsService.GetSetting(_tbotInstance.InstanceSettings.AutoFarm, "MaxReportAgeMinutesForAttack", 120);
 						var dispatchNow = await _tbotOgameBridge.GetDateTime();
 						var reportAge = dispatchNow - target.Report.Date;
@@ -2372,14 +2188,7 @@ _tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"[GLOBAL SPACING] T
 						}
 
 						bool isUsingProbesForDefenceCheck = cargoShip == Buildables.EspionageProbe && _tbotInstance.UserData.serverData.ProbeCargo == 1;
-						// Combat ships the battle simulation determined are needed to clear this target's
-						// defense, if any - kept in its own variable (not just merged into attackingShips
-						// once here) because the cargo-type retry loop below repeatedly REPLACES
-						// attackingShips wholesale (`attackingShips = new Ships().Add(cargoShip, numCargo)`)
-						// while trying alternate cargo types/fleet sizes, which was silently dropping these
-						// combat ships from the fleet that actually got dispatched - the simulation ran and
-						// passed, but the real SendFleet went out as pure unarmed cargo against a defended
-						// planet. Reported live 2026-09-18 ("atacando alvo com defesas" fleet losses).
+						// The combat ships from the simulation are kept in their own variable, because the cargo retry loop rebuilds attackingShips and would drop them, sending pure cargo against a defended planet.
 						Ships combatShipsNeeded = new();
 						if (!target.Report.IsDefenceless(isUsingProbesForDefenceCheck)) {
 							if (!TryGetAcceptableCombatFleet(target.Report, fromCelestial.Ships, out Ships combatShips, out _, out _)) {
@@ -2395,9 +2204,7 @@ _tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"[GLOBAL SPACING] T
 							}
 						}
 
-						// Ships has no Add(Ships) overload, only Add(Buildables, long) - this local
-						// re-merges combatShipsNeeded (if any) into a cargo-only Ships every time the
-						// retry loop below rebuilds attackingShips from scratch for a new cargo type/size.
+						// Ships has no Add(Ships) overload, so this local re-merges the combat ships each time the retry loop rebuilds attackingShips.
 						Ships MergeCombatShips(Ships s) {
 							foreach (var type in GetAllowedFarmCombatShips()) {
 								long qty = combatShipsNeeded.GetAmount(type);
@@ -2418,14 +2225,7 @@ _tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"[GLOBAL SPACING] T
 
 							bool dispatched = false;
 							bool stopAttacking = false;
-							// Best available capacity found across all cargo types tried below, even when
-							// none of them can carry the FULL reported loot - used as a last-resort partial
-							// attack instead of skipping the target outright. Confirmed live 2026-09-02: the
-							// fleet only had 817 LargeCargo (28.4M capacity) + 1714 SmallCargo (11.9M) total,
-							// ~40M combined, against a 542-target queue averaging 40-70M+ loot each - every
-							// single one was being skipped forever because the old code required capacity to
-							// cover 100% of the loot before sending anything. Taking partial loot beats
-							// taking none.
+							// Best capacity found across the cargo types tried, used as a last-resort partial attack instead of skipping the target when no type covers the full loot.
 							Buildables bestPartialCargo = Buildables.Null;
 							long bestPartialNumCargo = 0;
 							long bestPartialCapacity = 0;
@@ -2438,15 +2238,7 @@ _tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"[GLOBAL SPACING] T
 								}
 								attackingShips = MergeCombatShips(new Ships().Add(cargoShip, numCargo));
 								fromCelestial = await _tbotOgameBridge.UpdatePlanet(fromCelestial, UpdateTypes.Ships);
-								// Pathfinder can be enabled as BOTH a combat ship and a cargo ship
-								// (GetAllowedFarmCombatShips/GetAllowedFarmCargoShips both read the same
-								// AutoFarm.Ships["Pathfinder"] flag) - without subtracting what the battle
-								// simulation already earmarked in combatShipsNeeded, this loop could count
-								// the same physical Pathfinders twice (once reserved for combat, once offered
-								// up as cargo), requesting more Pathfinders total than actually exist at
-								// fromCelestial. MergeCombatShips above already adds combatShipsNeeded's
-								// Pathfinders into attackingShips, so availability here must only count what's
-								// left AFTER that reservation. Found during agent code review, 2026-10-02.
+								// Pathfinder can be both combat and cargo ship, so availability must count only the ships left after the combat reservation.
 								var availableShips = fromCelestial.Ships.GetAmount(cargoShip) - combatShipsNeeded.GetAmount(cargoShip) - (long) _tbotInstance.InstanceSettings.AutoFarm.MinCargosToKeep;
 								if (availableShips <= 0) {
 									if (altCargo != originalCargoShip)
@@ -2614,11 +2406,7 @@ _tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"[GLOBAL SPACING] T
 								continue;
 							}
 						} else {
-							// Log the same freeSlots value the decision above was actually based on
-							// (not a fresh UserData.slots.Free re-read) - that field is shared/updated
-							// concurrently by every other worker (Brain, Expeditions, etc.), so reading
-							// it again here could show a completely different number than what caused
-							// this "exhausted" branch to be taken, making the message actively misleading.
+							// Logs the freeSlots the decision was based on; re-reading UserData.slots.Free here could show a different number, since other workers update it concurrently.
 							_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm,
 								$"AutoFarm attack budget exhausted: {freeSlots} slots free (global), {slotBudget.AvailableSlots} AutoFarm slots available, {slotBudget.OwnedSlots}/{slotBudget.MaxSlots} AutoFarm slots used.");
 							break;
@@ -2640,13 +2428,7 @@ _tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"[GLOBAL SPACING] T
 
 				_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"Attacked targets: {_tbotInstance.UserData.farmTargets.Where(t => t.State == FarmState.AttackSent).Count()}");
 				_tbotInstance.UserData.farmTargets.RemoveAll(t => t.State == FarmState.ProbesSent);
-				// AttackPending targets left over after the dispatch loop above (e.g. undispatchable
-				// for lack of cargo ships at every origin) used to accumulate forever - never removed,
-				// never expired until KeepReportFor - so each new cycle probed TargetsProbedBeforeAttack
-				// MORE targets on top of an ever-growing backlog instead of the discard-and-restart
-				// cycle the user expects (probe N, attack N, discard whatever's left, repeat).
-				// Discard them here: the next cycle's probing will re-discover and re-classify them
-				// fresh if they're still there and still profitable.
+				// Undispatched AttackPending targets are discarded at the end of the cycle, so probing doesn't pile up on an ever-growing backlog; the next cycle re-discovers them.
 				int leftoverPending = _tbotInstance.UserData.farmTargets.Count(t => t.State == FarmState.AttackPending);
 				if (leftoverPending > 0) {
 					_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"Discarding {leftoverPending} undispatched pending attack(s) at end of cycle.");
@@ -2676,13 +2458,7 @@ _tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"[GLOBAL SPACING] T
 		}
 
 		private async Task AutoFarmProcessReports() {
-			// Hierarchy requested live 2026-09-04: ScanOnly > FastFarmMode > normal AttackPending
-			// classification. FastFarmMode only changes where the scanned target list comes from
-			// (live scan vs cache, see GetScannedTargetsFromGalaxy) - both feed this same
-			// classification step, so gating AttackPending here covers both equally. A target that
-			// would otherwise become AttackPending is left/set Idle instead ("listed, no action
-			// taken or to be taken") - still catalogued (loot logged, report deleted as usual),
-			// just never queued for an attack while scanning only.
+			// ScanOnly gates AttackPending here, covering live-scan and FastFarmMode targets alike; such a target is catalogued but never queued for an attack.
 			bool scanOnly = SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "ScanOnly")
 				&& (bool) _tbotInstance.InstanceSettings.AutoFarm.ScanOnly;
 			List<EspionageReportSummary> summaryReports;
@@ -2745,12 +2521,7 @@ _tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"[GLOBAL SPACING] T
 						}
 
 						if (AutoFarmAttackPolicy.IsRepeatedNonActionableReport(target, report)) {
-							// Neither this branch nor the NotSuitable/ProbesRequired/FailedProbesRequired
-							// classification further below ever actually called DeleteReport - this log
-							// line already said "deletion may have failed" but nothing had ever attempted
-							// it in the first place. Confirmed live 2026-08-30 (same report IDs recurring
-							// every cycle) that these reports simply piled up in the in-game inbox
-							// forever. Actually delete it now.
+							// The report is actually deleted here; without it, classified reports piled up in the in-game inbox forever.
 							_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm,
 								$"Report {report.ID} for {report.Coordinate} already classified as {target.State} in a previous cycle (nothing new to act on) - deleting duplicate copy.");
 							await _ogameService.DeleteReport(report.ID);
@@ -2792,10 +2563,7 @@ _tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"[GLOBAL SPACING] T
 								newFarmTarget.State = scanOnly ? FarmState.Idle : FarmState.AttackPending;
 								_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"{(scanOnly ? "Suitable target catalogued (ScanOnly)" : "Attack pending")} on {report.Coordinate}. Loot: {report.Loot(_tbotInstance.UserData.userInfo.Class)}");
 							} else if (GetAcceptableFleetLossPercentage() > 0) {
-								// Defended, but the user allows fighting through a garrison within an acceptable
-								// fleet-loss threshold. Feasibility (does the combat fleet at the chosen origin
-								// actually beat this target within the threshold?) can only be checked once an
-								// origin is picked, so it's re-evaluated in Execute() right before sending.
+								// Feasibility of fighting through the garrison can only be checked once an origin is picked, so it is re-evaluated right before sending.
 								newFarmTarget.State = scanOnly ? FarmState.Idle : FarmState.AttackPending;
 								_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"{(scanOnly ? "Suitable target catalogued (ScanOnly)" : "Attack pending")} on {report.Coordinate} (defended - will simulate battle before sending). Loot: {report.Loot(_tbotInstance.UserData.userInfo.Class)}");
 							} else {
@@ -2836,12 +2604,7 @@ _tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"[GLOBAL SPACING] T
 							}
 						}
 
-						// NotSuitable is terminal for this report (insufficient loot, or defended beyond
-						// what the user allows) - nothing will ever act on it again, so delete it now
-						// instead of waiting for a future cycle's repeat-detection to catch it (which
-						// itself never actually deleted anything until the fix above). ProbesRequired/
-						// FailedProbesRequired are intentionally NOT deleted here - those still expect a
-						// follow-up probe-based report.
+						// NotSuitable is terminal, so the report is deleted now; ProbesRequired/FailedProbesRequired are kept because they still expect a follow-up probe.
 						if (newFarmTarget.State == FarmState.NotSuitable && report.ID > 0) {
 							try {
 								await _ogameService.DeleteReport(report.ID);
@@ -2858,11 +2621,7 @@ _tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"[GLOBAL SPACING] T
 						(SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm, "Blacklist") &&
 						SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.AutoFarm.Blacklist, "ProcessAllReports") &&
 						(bool) _tbotInstance.InstanceSettings.AutoFarm.Blacklist.ProcessAllReports);
-					// Used to require report.IsInactive, discarding manual espionage of an active player
-					// entirely (not even cached for stats/history). Now captured too, but gated below
-					// (newFarmTarget.State forced to Idle, never AttackPending) so this never turns into
-					// an actual attack on an active player - only closes the data gap, doesn't change
-					// who AutoFarm is willing to attack.
+					// Manual espionage of an active player is captured too, but forced to Idle below, so it never becomes an attack.
 					if (processAllReports) {
 						_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"Processing report for {report.Coordinate} not scanned by TBot (ProcessAllReports enabled)...");
 						var galaxyInfo = await _ogameService.GetGalaxyInfo(report.Coordinate.Galaxy, report.Coordinate.System);
@@ -2879,11 +2638,7 @@ _tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"[GLOBAL SPACING] T
 								}
 
 								if (AutoFarmAttackPolicy.IsRepeatedNonActionableReport(target, report)) {
-									// Same bug as the primary (report.HasCoords-in-farmTargets) branch above,
-									// just missed there when that one was fixed: this ProcessAllReports path
-									// (Blacklist.ProcessAllReports=true, confirmed active live 2026-09-02) also
-									// never actually called DeleteReport - only logged that deletion "may have
-									// failed" without ever attempting it. Reports piled up in-game forever.
+									// Same as the branch above: the ProcessAllReports path never called DeleteReport, so reports piled up in-game.
 									_tbotInstance.log(LogLevel.Debug, LogSender.AutoFarm,
 										$"Report {report.ID} for {report.Coordinate} already classified as {target.State} in a previous cycle (nothing new to act on) - deleting duplicate copy.");
 									await _ogameService.DeleteReport(report.ID);
@@ -2944,9 +2699,7 @@ _tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"[GLOBAL SPACING] T
 									}
 								}
 
-								// Same terminal-state deletion as the primary branch above - NotSuitable
-								// here is reached the same way (insufficient loot or defended beyond the
-								// allowed threshold) and nothing acts on it again either.
+								// NotSuitable is terminal here too, so the report is deleted.
 								if (newFarmTarget.State == FarmState.NotSuitable && report.ID > 0) {
 									try {
 										await _ogameService.DeleteReport(report.ID);
@@ -2969,15 +2722,7 @@ _tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"[GLOBAL SPACING] T
 					continue;
 				}
 			}
-			// No bulk DeleteAllEspionageReports() call here on purpose - every report this loop
-			// actually finishes with is already deleted individually above (consumed, expired,
-			// duplicate/repeated, superseded, or NotSuitable). A bulk delete here would also wipe
-			// reports still legitimately in use (ProbesRequired/AttackPending, awaited by a later
-			// cycle) and any manual espionage the player did outside AutoFarm - real player report,
-			// 2026-10-14. This bulk call existed in the original 2021 AutoFarm implementation (with
-			// the original author's own TODO questioning whether it was even needed) and has been
-			// removed and accidentally reintroduced by merges/refactors several times since; ronnie32
-			// independently reached the same per-report-only conclusion in their v3.5.1-beta2 rewrite.
+			// No bulk report deletion on purpose: every finished report is deleted individually, and a bulk call would also wipe reports still in use and the player's manual espionage.
 		}
 	}
 }

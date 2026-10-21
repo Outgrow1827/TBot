@@ -3,13 +3,7 @@ using System.IO;
 using Microsoft.Data.Sqlite;
 
 namespace TBot.Model {
-	// Permanent (never trimmed) counterpart to FeatureResultsStore's capped 200-entry JSON file -
-	// requested live 2026-09-02: the user wants expedition/discovery results kept forever, not just
-	// the most recent 200 (which get silently evicted as new ones arrive). Same SQLite-in-data/
-	// pattern as AutoFarmStateStore's "attacks" table (already unbounded, used as the reference).
-	// Deliberately minimal: one INSERT OR IGNORE (Id-based dedup, same reasoning as
-	// FeatureResultsStore's in-memory dedup) plus one aggregate SUM query for the dashboard's
-	// lifetime totals - the JSON store remains the source for the "recent results" table itself.
+	// Permanent counterpart to the capped 200-entry JSON store; just an Id-dedup INSERT and a SUM query for the dashboard's lifetime totals.
 	public sealed class FeatureResultsSqliteStore : IDisposable {
 		private readonly string _connectionString;
 

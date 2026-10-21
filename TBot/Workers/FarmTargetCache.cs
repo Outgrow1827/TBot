@@ -8,24 +8,10 @@ using Newtonsoft.Json;
 using TBot.Ogame.Infrastructure.Models;
 
 namespace Tbot.Workers {
-	/// <summary>
-	/// Persistent storage for AutoFarm's FastFarm target cache and coordinate blacklist, backed by
-	/// SQLite instead of the single JSON file / in-memory dictionary used before (P20). Each entry is
-	/// upserted individually and immediately (a single-row transaction), instead of rewriting one giant
-	/// JSON file on every Save() - a crash mid-cycle no longer loses everything written so far, and the
-	/// blacklist now survives a bot restart instead of resetting to empty every time.
-	///
-	/// The FarmTargetCacheEntry itself (a small object with a few nested types - Temperature, Buildings,
-	/// Resources) is stored as a single JSON blob per row rather than mapped column-by-column: this keeps
-	/// the schema simple and avoids having to keep a hand-written column mapping in sync with the model
-	/// every time a field is added there, while still getting SQLite's real benefits (atomic per-row
-	/// writes, indexed lookups instead of loading everything into memory to filter).
-	/// </summary>
+	/// <summary>SQLite-backed store for AutoFarm's FastFarm target cache and coordinate blacklist: each entry is upserted in its own transaction, and the entry model is kept as one JSON blob per row.</summary>
 	public class FarmTargetCache : IDisposable {
 		private readonly SqliteConnection _db;
-		// Small in-memory read cache so Get()/GetInRange() (called very frequently, once per scanned
-		// target) don't hit SQLite on every call - refreshed from the DB once at Load(), kept in sync by
-		// Upsert() writing through to both.
+		// In-memory read cache in front of SQLite, so the per-target lookups don't hit the database on every call.
 		private readonly Dictionary<string, FarmTargetCacheEntry> _entries = new();
 
 		private FarmTargetCache(SqliteConnection db) {
@@ -34,20 +20,14 @@ namespace Tbot.Workers {
 
 		public int ReportRetentionDays { get; set; } = 7;
 
-		/// <summary>
-		/// Shared minimum resources threshold for filtering farm targets.
-		/// Applies to both FastFarm and AutoFarm modes. Persisted in the database so the threshold
-		/// survives bot restarts and is consistently applied across all modes (ScanOnly, FastFarm, AutoFarm).
-		/// </summary>
+		/// <summary>Minimum resources threshold for filtering farm targets, shared by FastFarm and AutoFarm and persisted so it survives restarts.</summary>
 		public long MinimumResources { get; set; } = 1000000;
 
 		private static string GetKey(Coordinate coord) {
 			return $"{coord.Galaxy}:{coord.System}:{coord.Position}:{coord.Type}";
 		}
 
-		// Shared with TBotDataCache (AutoHarvest) and AutoDiscovery's cursor persistence - one
-		// physical file per instance instead of one per feature, each keeping its own prefixed
-		// tables (farm_*, harvest_*, autodiscovery_*) so there's no schema collision.
+		// One physical file per instance, shared with TBotDataCache and AutoDiscovery's cursor storage, each keeping its own prefixed tables.
 		public static string GetDatabaseFilePath(string instanceSettingsPath, string instanceAlias) {
 			var directory = Path.GetDirectoryName(Path.GetFullPath(instanceSettingsPath));
 			var dataDir = Path.Combine(directory ?? ".", "data");
@@ -55,12 +35,7 @@ namespace Tbot.Workers {
 			return Path.Combine(dataDir, $"data_{instanceAlias}.db");
 		}
 
-		/// <summary>
-		/// Used by the Telegram /clearcache command. Deletes only the FastFarm target cache rows, not
-		/// the blacklist - same scope as the old command back when it just deleted the JSON cache file.
-		/// Clears via a fresh short-lived connection and DELETE FROM (not File.Delete on the .db) since
-		/// AutoFarmWorker may have its own connection to this same file open concurrently on Windows.
-		/// </summary>
+		/// <summary>Clears only the FastFarm target cache rows (not the blacklist) via DELETE FROM on a short-lived connection, since AutoFarmWorker may hold the same file open on Windows.</summary>
 		public static async Task<bool> ClearTargetCache(string instanceSettingsPath, string instanceAlias) {
 			var dbPath = GetDatabaseFilePath(instanceSettingsPath, instanceAlias);
 			if (!File.Exists(dbPath)) return false;
@@ -78,9 +53,7 @@ namespace Tbot.Workers {
 			return true;
 		}
 
-		// Pre-P20 cache file - if found on first load, its entries are imported into the new SQLite
-		// database once, then the JSON file is left alone (not deleted, in case something goes wrong
-		// with the migration and a rollback to the old code is needed).
+		// Pre-P20 cache file: imported once into the new database on first load, and then left in place as a rollback safety net.
 		private static string GetLegacyCacheFilePath(string instanceSettingsPath, string instanceAlias) {
 			var directory = Path.GetDirectoryName(Path.GetFullPath(instanceSettingsPath));
 			return Path.Combine(directory ?? ".", $"fastfarm_cache_{instanceAlias}.json");
@@ -232,19 +205,7 @@ namespace Tbot.Workers {
 			}
 		}
 
-		/// <summary>
-		/// Prunes stale entries and reconciles the in-memory read cache with the DB.
-		/// Entries with a report (LastReportDate != null) are never pruned.
-		/// Entries marked as inactive (IsInactive == true) are now PERSISTENT/ETERNAL - never auto-cleared.
-		/// Only entries that were only seen in galaxy scans (no espionage report, not inactive) 
-		/// older than ReportRetentionDays (FastFarmReportRetentionDays) are removed.
-		/// 
-		/// DISTINCTION:
-		/// - ReportRetentionDays (FastFarmReportRetentionDays): Controls cache cleanup for entries WITHOUT
-		///   espionage reports. Applies to ScanOnly, FastFarm, and AutoFarm modes equally.
-		/// - KeepReportFor (AutoFarm setting): Controls how long espionage reports are kept before
-		///   re-probing. Only applies to AutoFarm's report processing logic (PruneOldReports).
-		/// </summary>
+		/// <summary>Prunes entries seen only in galaxy scans that are older than ReportRetentionDays; entries with a report or marked inactive are never pruned (unlike KeepReportFor, which times out espionage reports for re-probing).</summary>
 		public async Task Save() {
 			var cutoff = DateTime.UtcNow.AddDays(-ReportRetentionDays);
 			var staleKeys = _entries.Values
@@ -265,10 +226,7 @@ namespace Tbot.Workers {
 
 		public async Task Upsert(FarmTargetCacheEntry entry) {
 			_entries[GetKey(entry.Coordinate)] = entry;
-			// Awaited (not fire-and-forget): the connection gets disposed and replaced at the start of
-			// the next AutoFarm cycle (see AutoFarmWorker.Execute()), so a write that's still in flight
-			// at that point would race the Dispose() - a local SQLite insert is sub-millisecond, so
-			// awaiting here has no meaningful cost.
+			// Awaited, since the connection is disposed and replaced at the start of the next cycle and a write still in flight would race that Dispose().
 			await UpsertAndPersist(entry);
 		}
 
@@ -302,10 +260,7 @@ namespace Tbot.Workers {
 			return _entries.TryGetValue(GetKey(coord), out var entry) ? entry : null;
 		}
 
-		/// <summary>
-		/// Gets all cached entries in a galaxy/system range that meet the minimum resources threshold.
-		/// Used by FastFarmMode and ScanOnly to filter targets consistently.
-		/// </summary>
+		/// <summary>Gets the cached entries in a galaxy/system range that meet the minimum resources threshold, for FastFarmMode and ScanOnly.</summary>
 		public List<FarmTargetCacheEntry> GetInRange(int galaxy, int startSystem, int endSystem) {
 			return _entries.Values
 				.Where(e => e.Coordinate.Galaxy == galaxy && e.Coordinate.System >= startSystem && e.Coordinate.System <= endSystem)
@@ -313,21 +268,14 @@ namespace Tbot.Workers {
 				.ToList();
 		}
 
-		/// <summary>
-		/// Gets all cached entries in a galaxy/system range without MinimumResources filtering.
-		/// Used for debugging and cache management.
-		/// </summary>
+		/// <summary>Gets the cached entries in a galaxy/system range without the minimum resources filter, for debugging and cache management.</summary>
 		public List<FarmTargetCacheEntry> GetAllInRange(int galaxy, int startSystem, int endSystem) {
 			return _entries.Values
 				.Where(e => e.Coordinate.Galaxy == galaxy && e.Coordinate.System >= startSystem && e.Coordinate.System <= endSystem)
 				.ToList();
 		}
 
-		/// <summary>
-		/// Highest known resource stockpile among cached, still-eligible (inactive, non-admin/banned/
-		/// vacation, meeting MinimumResources) targets in this system, or 0 if none are known.
-		/// Used by FastFarmMode to visit the most promising known systems first.
-		/// </summary>
+		/// <summary>Highest known stockpile among the still-eligible cached targets in this system, or 0, so FastFarmMode visits the most promising systems first.</summary>
 		public long GetBestKnownResourcesInSystem(int galaxy, int system) {
 			var candidates = _entries.Values
 				.Where(e => e.Coordinate.Galaxy == galaxy && e.Coordinate.System == system)
@@ -402,13 +350,7 @@ namespace Tbot.Workers {
 			cmd.ExecuteNonQuery();
 		}
 
-		// --- Player blacklist (#10: same idea as coordinate blacklist). This table's primary key is
-		// still player_name (changing it would be a bigger migration), but player_id - when the
-		// caller has it - is now also stored and checked first: a renamed player (OGame allows
-		// renames) used to silently drop out of this blacklist because the lookup only ever matched
-		// the old name, and a new player reusing a stale name could wrongly inherit someone else's
-		// blacklist entry. Callers without an id (eg. from an EspionageReport, which has no PlayerID
-		// field) still work via the name-only path. ---
+		// Player blacklist: the player_id is stored and checked first when the caller has it, so a renamed player stays listed; callers without an id still use the name-only path.
 
 		public bool IsPlayerBlacklisted(string playerName, out DateTime blacklistedUntil, int playerId = 0) {
 			blacklistedUntil = default;

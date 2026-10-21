@@ -56,10 +56,7 @@ namespace TBot.WebUI.Controllers {
 			};
 		}
 
-		// AutoHarvest has no FeatureResultsStore of its own (its dispatch data lives in
-		// TBotDataCache's "harvest_results" table, written by HarvestWorker.RecordHarvest) - read
-		// the lifetime total directly from there instead, same data_{alias}.db file TBotDataCache
-		// itself uses (see TBotDataCache.GetDatabaseFilePath).
+		// AutoHarvest has no results file; its lifetime total lives in TBotDataCache's harvest_results table.
 		private static FeatureResultsTotal ReadHarvestLifetimeTotal(string instanceAlias) {
 			try {
 				var path = Path.Combine(AppContext.BaseDirectory, "data", $"data_{instanceAlias}.db");
