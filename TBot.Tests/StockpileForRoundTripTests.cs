@@ -31,16 +31,23 @@ namespace TBot.Tests {
 				new Coordinate(5, 380, 4), Buildables.LargeCargo, new Researches(), Server, CharacterClass.NoClass, AllianceClass.NoClass, plan);
 
 		[Fact]
-		public void SameBuildingSequenceIsCappedNearTheCurrentLevelCost() {
-			var calc = new CalculationService(new NoOpLogger(), ogameService: null);
-			// instant builds: only the cost cap can stop the old 8-level pile-up
-			var plan = Enumerable.Range(24, 8).Select(lv => (calc.CalcPrice(Buildables.MetalMine, lv), 0L));
+		public void WindowStopsAtTheNextSleep() {
+			// 100 s per construction, sleep in 250 s: steps start at 0, 100, 200 -> 3 covered
+			var plan = Enumerable.Range(0, 10).Select(_ => (new Resources(1_000, 0, 0), 100L));
 
-			var total = Stockpile(plan);
-			var first = calc.CalcPrice(Buildables.MetalMine, 24);
+			var total = BrainTransportCoordinator.CalcResourcesForRoundTrip(new CalculationService(new NoOpLogger(), ogameService: null), Colony,
+				new Coordinate(5, 380, 4), Buildables.LargeCargo, new Researches(), Server, CharacterClass.NoClass, AllianceClass.NoClass, plan,
+				secondsUntilSleep: 250);
 
-			Assert.True(total.Metal <= first.Metal * BrainTransportCoordinator.MaxStockpileCostFactor, $"metal {total.Metal}");
-			Assert.True(total.Metal < 5_000_000, $"metal {total.Metal}");
+			Assert.Equal(3_000, total.Metal);
+		}
+
+		[Fact]
+		public void SleepTimeIsTheNextGoToSleep() {
+			dynamic settings = Newtonsoft.Json.JsonConvert.DeserializeObject("{\"SleepMode\":{\"Active\":true,\"GoToSleep\":\"23:45\"}}");
+
+			Assert.Equal(2 * 3600 + 45 * 60, BrainTransportCoordinator.SecondsUntilSleep(settings, new System.DateTime(2026, 10, 21, 21, 0, 0)));
+			Assert.Equal(23 * 3600 + 45 * 60, BrainTransportCoordinator.SecondsUntilSleep(settings, new System.DateTime(2026, 10, 21, 0, 0, 0)));
 		}
 
 		[Fact]

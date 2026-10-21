@@ -26,11 +26,12 @@ namespace Tbot.Services {
 		// wait so a stuck worker can only ever cost the others this long, not forever.
 		public static readonly TimeSpan ResourceDecisionLockTimeout = TimeSpan.FromMinutes(10);
 
-		public const int MaxStockpileSteps = 10;
-		public const int MaxStockpileCostFactor = 3;
+		// loop guard only; the window is time-based
+		public const int MaxStockpileSteps = 50;
 
-		// Sizes a transport for the constructions the worker would really queue during the round trip.
-		// `plan` is the worker's own simulated sequence (first item = the one about to be built).
+		// Resources for every construction the worker would queue while the fleet flies:
+		// window = 2x one-way (there and back) or 3x with widenStockpileWindow (there, back, there),
+		// never past the next sleep. `plan` is the worker's own simulated sequence.
 		public static Resources CalcResourcesForRoundTrip(
 			ICalculationService calculationService,
 			Celestial celestial,
@@ -41,23 +42,21 @@ namespace Tbot.Services {
 			CharacterClass playerClass,
 			AllianceClass allianceClass,
 			IEnumerable<(Resources Cost, long Seconds)> plan,
-			bool widenStockpileWindow = false) {
+			bool widenStockpileWindow = false,
+			long secondsUntilSleep = long.MaxValue) {
 
 			var timeShips = new Ships();
 			timeShips.Add(preferredShip, 1);
-			long flightWindowSeconds = calculationService.CalcFleetPrediction(
+			long flightWindowSeconds = Math.Min(secondsUntilSleep, calculationService.CalcFleetPrediction(
 				origin, celestial.Coordinate, timeShips, Missions.Transport,
 				Speeds.HundredPercent, researches, serverData, celestial.LFBonuses, playerClass, allianceClass
-			).Time * (widenStockpileWindow ? 3 : 2);
+			).Time * (widenStockpileWindow ? 3 : 2));
 
-			// cost cap keeps the 1.5x-per-level growth from letting far, unlikely steps dominate the total
 			Resources total = new();
-			long elapsed = 0, costCap = 0;
+			long elapsed = 0;
 			int steps = 0;
 			foreach (var (cost, seconds) in plan) {
-				if (steps == 0)
-					costCap = cost.TotalResources * MaxStockpileCostFactor;
-				else if (elapsed >= flightWindowSeconds || steps > MaxStockpileSteps || total.TotalResources + cost.TotalResources > costCap)
+				if (steps > 0 && (elapsed >= flightWindowSeconds || steps >= MaxStockpileSteps))
 					break;
 				total = total.Sum(cost);
 				elapsed += seconds;
@@ -72,6 +71,20 @@ namespace Tbot.Services {
 				Speeds.HundredPercent, researches, serverData, celestial.LFBonuses, playerClass, allianceClass
 			).Fuel * 2;
 			return total.Sum(new Resources(0, 0, roundTripFuel));
+		}
+
+		// Seconds until SleepMode's next GoToSleep; MaxValue when sleep mode is off or unparsable.
+		public static long SecondsUntilSleep(dynamic instanceSettings, DateTime now) {
+			try {
+				if (!(bool) instanceSettings.SleepMode.Active || !DateTime.TryParse((string) instanceSettings.SleepMode.GoToSleep, out DateTime goToSleep))
+					return long.MaxValue;
+				DateTime next = now.Date + goToSleep.TimeOfDay;
+				if (next <= now)
+					next = next.AddDays(1);
+				return (long) (next - now).TotalSeconds;
+			} catch {
+				return long.MaxValue;
+			}
 		}
 
 		// Deep copy so a plan can simulate levels without touching the shared celestial.
