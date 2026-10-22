@@ -270,7 +270,8 @@ namespace Tbot.Workers.Brain {
 							if (maxBuildable < level) {
 								DoLog(LogLevel.Information, $"Building partial batch: {maxBuildable}/{level} {buildable.ToString()} on {celestial.ToString()} (limited by available resources)");
 							}
-							level = (int)Math.Min(maxBuildable, int.MaxValue);
+							// only ever lowers the order to what is affordable, never raises it past the need
+							level = (int) Math.Min(maxBuildable, level);
 							xCostBuildable = _calculationService.CalcPrice(buildable, level, celestial.LFBonuses);
 						}
 					}
