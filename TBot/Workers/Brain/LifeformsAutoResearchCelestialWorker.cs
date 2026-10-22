@@ -251,18 +251,14 @@ namespace Tbot.Workers.Brain {
 								
 								if (MaxSlots > 0) {
 									if (!_calculationService.IsThereTransportTowardsCelestial(celestial, _tbotInstance.UserData.fleets)) {
-										// See AutoMineCelestialWorker for the rationale: the outer worker's
-										// ResourceDecisionLock only serializes the scheduling handoff (fire-and-
-										// forget), not this actual resource-read/decide/SendFleet sequence - lock
-										// here too, or this Brain item can race another one and double-spend the
-										// same origin's resources.
+										// The outer worker's lock only covers the scheduling handoff, so the real read-decide-SendFleet
+										// sequence needs its own lock or two Brain items can double-spend one origin's resources.
 										if (!await BrainTransportCoordinator.GetResourceDecisionLock(_tbotInstance.InstanceAlias).WaitAsync(BrainTransportCoordinator.ResourceDecisionLockTimeout))
 											return;
 										try {
 										Celestial origin = new() { ID = 0 };
-										// Work on a copy and publish it back: UserData.celestials is shared with every other worker, and
-										// assigning allCelestials[i] on the shared List bumps its version, so any worker enumerating it at
-										// the same moment (eg. AutoFarm picking origins) failed with "Collection was modified".
+										// Publishes from a copy: the shared celestials List is versioned on assignment, so a worker
+										// enumerating it in that moment would throw "Collection was modified".
 										List<Celestial> allCelestials = _tbotInstance.UserData.celestials.ToList();
 										for (int i = 0; i < allCelestials.Count(); i++) {
 											allCelestials[i] = await _tbotOgameBridge.UpdatePlanet(allCelestials[i], UpdateTypes.Resources);
@@ -300,9 +296,8 @@ namespace Tbot.Workers.Brain {
 													.SingleOrDefault() ?? new() { ID = 0 };
 											}
 											if (origin.ID != 0) {
-												// See AutoMineCelestialWorker for the rationale: StockpileForRoundTrip can
-												// inflate missingResources beyond what's affordable; fall back to whatever
-												// is available rather than sending nothing, as long as it still covers cost.
+												// StockpileForRoundTrip can inflate missingResources beyond what is affordable, so fall back
+												// to whatever is available as long as it still covers the cost.
 												if (!origin.Resources.IsEnoughFor(missingResources) && origin.Resources.IsEnoughFor(xCostBuildable)) {
 													missingResources = new Resources(
 														Math.Min(missingResources.Metal, origin.Resources.Metal),
@@ -312,11 +307,8 @@ namespace Tbot.Workers.Brain {
 												}
 												if (origin.Resources.IsEnoughFor(missingResources)) {
 													missingResources = _tbotInstance.InstanceSettings.Brain.Transports.RoundResources ? missingResources.Round((int) (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.Transports, "RoundTo") ? _tbotInstance.InstanceSettings.Brain.Transports.RoundTo : 1000)) : missingResources;
-													// Uses whatever mix of cargo-capable ships (LargeCargo/SmallCargo/Pathfinder) is
-													// actually at the origin instead of only the single configured CargoType - otherwise
-													// a moon with plenty of SmallCargo but not enough of the configured LargeCargo would
-													// fail this shortcut and fall through to MultipleOrigins, splitting the transport
-													// across many planets even though the moon alone had enough combined capacity.
+													// Counts every cargo-capable ship type actually at the origin, not only the configured
+													// CargoType, or a moon with only SmallCargo would needlessly split the transport.
 													Ships ships = _calculationService.CalcCargoShipsForPayload(origin.Ships, missingResources, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, origin.LFBonuses, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo);
 													long originCapacity = _calculationService.CalcFleetCapacity(ships, _tbotInstance.UserData.serverData, _tbotInstance.UserData.researches.HyperspaceTechnology, origin.LFBonuses, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo);
 													long originDeutToLeave = origin.Coordinate.Type == Celestials.Moon ? (long) _tbotInstance.InstanceSettings.Brain.Transports.DeutToLeaveOnMoons : 0;
@@ -416,9 +408,8 @@ namespace Tbot.Workers.Brain {
 													var shipmentAmount = shipment.Value;
 													if (shipmentAmount.TotalResources == 0)
 														continue;
-													// Uses whatever mix of cargo-capable ships (LargeCargo/SmallCargo/Pathfinder) is
-													// actually sitting at this origin, not just the single configured CargoType -
-													// matches the capacity estimate CalcMultipleOrigin used to pick this origin.
+													// Counts every cargo-capable ship type actually at this origin, not just the configured
+													// CargoType, so the shipped amount matches the capacity the origin was picked with.
 													var ships = _calculationService.CalcCargoShipsForPayload(shipmentOrigin.Ships, shipmentAmount, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, shipmentOrigin.LFBonuses, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo);
 													long shipmentOriginDeutToLeave = shipmentOrigin.Coordinate.Type == Celestials.Moon ? (long) _tbotInstance.InstanceSettings.Brain.Transports.DeutToLeaveOnMoons : 0;
 													if (shipmentOrigin.Coordinate.IsSame(destination.Coordinate) && transportsSettings.SendToTheMoonIfPossible && destination.Coordinate.Type == Celestials.Moon)

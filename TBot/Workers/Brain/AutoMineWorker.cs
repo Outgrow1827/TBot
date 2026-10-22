@@ -58,11 +58,8 @@ namespace Tbot.Workers.Brain {
 		}
 
 		protected override async Task Execute() {
-			// Serializes this worker's whole run against the other 3 Brain item types (AutoResearch,
-			// LifeformAutoMine, LifeformAutoResearch) - they all read/decide/spend resources from the
-			// same origin celestials independently, and without this they can race to spend the same
-			// resources or starve each other of the shared Transports.MaxSlots budget. See
-			// BrainTransportCoordinator and project memory 2026-08-03.
+			// Serializes this worker against the other 3 Brain item types, which read, decide and spend
+			// the same origin resources independently and share the Transports.MaxSlots budget.
 			if (!await BrainTransportCoordinator.GetResourceDecisionLock(_tbotInstance.InstanceAlias).WaitAsync(BrainTransportCoordinator.ResourceDecisionLockTimeout)) {
 				DoLog(LogLevel.Warning, "Skipping this cycle: resource-decision lock still held by another Brain item after 10 minutes (likely stuck) - not waiting further.");
 				return;
@@ -117,9 +114,8 @@ namespace Tbot.Workers.Brain {
 
 				_tbotInstance.UserData.researches = await _ogameService.GetResearches();
 				_resourceStatsStore ??= await ResourceStatsStore.Load(_tbotInstance.InstanceSettingsPath, _tbotInstance.InstanceAlias);
-				// Garbage-collect stats rows for celestials abandoned/traded away since the last cycle -
-				// RecordSnapshot below only ever appends, so without this a dead planet's last snapshot
-				// (from right before abandonment) sat in the WebUI dashboard forever with frozen numbers.
+				// Prunes stats rows for celestials abandoned or traded away: RecordSnapshot only appends, so a
+				// dead planet would keep its last snapshot on the dashboard forever.
 				await _resourceStatsStore.PruneRemovedCelestials(_tbotInstance.UserData.celestials.Select(c => c.ID));
 				List<Celestial> celestialsToExclude = _calculationService.ParseCelestialsList(_tbotInstance.InstanceSettings.Brain.AutoMine.Exclude, _tbotInstance.UserData.celestials);
 				List<Celestial> celestialsToMine = new();
@@ -128,36 +124,23 @@ namespace Tbot.Workers.Brain {
 					var cel = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.Buildings);
 					cel = await _tbotOgameBridge.UpdatePlanet(cel, UpdateTypes.LFBuildings);
 					cel = await _tbotOgameBridge.UpdatePlanet(cel, UpdateTypes.LFBonuses);
-					// Resource stats (Metal/Crystal/Deuterium/Energy) always recorded as 0 - root cause
-					// confirmed 2026-09-18: UpdateTypes.Fast (below) calls ogamed's GetPlanet/GetCelestial,
-					// which is backed by the ogame library's Planet struct (pkg/ogame/planet.go) - that
-					// struct has NO Resources field at all, it was never going to come back populated
-					// through that path. UpdateTypes.Resources calls the actual /resources endpoint
-					// (GetResourcesHandler in ogamed), which does return real Metal/Crystal/Deuterium/
-					// Energy - fetched here on `cel` so it carries the Buildings/LFBuildings/LFBonuses
-					// already set on it.
+					// Only UpdateTypes.Resources returns real resources: UpdateTypes.Fast goes through ogamed's
+					// Planet struct, which has no Resources field, so the stats would be 0.
 					cel = await _tbotOgameBridge.UpdatePlanet(cel, UpdateTypes.Resources);
 
 					Planet abaCelestial = await _tbotOgameBridge.UpdatePlanet(cel, UpdateTypes.Fast) as Planet;
 					try {
-						// UpdateTypes.Fast returns a brand-new Planet object (GetCelestial), not a merge -
-						// it doesn't carry the Buildings/LFBuildings/LFBonuses/Resources set on `cel` above,
-						// and (per the note above) never carries real Resources at all. Only its Name is
-						// used from here on.
+						// UpdateTypes.Fast returns a new Planet object without the Buildings/LFBuildings/LFBonuses/
+						// Resources set on `cel` - only its Name is used from here on.
 						if (abaCelestial != null && cel is Planet celForStats) {
-							// abaCelestial just came from a fresh GetCelestial() call, so its Name reflects
-							// any in-game rename immediately - `cel`'s Name only updates whenever
-							// UserData.celestials itself gets a full refresh, which can lag well behind a
-							// rename. Copying it here keeps the resource-stats snapshot's name accurate on
-							// every cycle instead of only after the next full celestial refresh.
+							// abaCelestial comes from a fresh GetCelestial() call, so its Name reflects an in-game rename
+							// immediately, while `cel`'s Name only updates on a full celestial refresh.
 							celForStats.Name = abaCelestial.Name;
 							var hourlyProduction = _calculationService.CalcPlanetHourlyProduction(celForStats, _tbotInstance.UserData.serverData.Speed, 1, _tbotInstance.UserData.researches, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.staff.Geologist, _tbotInstance.UserData.staff.IsFull, (int) (celForStats.Ships?.Crawler ?? 0), 1.5F);
 							await _resourceStatsStore.RecordSnapshot(celForStats, hourlyProduction);
 						}
 					} catch (Exception e) {
-						// Was Debug (easy to miss) - a repeated failure here silently freezes that
-						// planet's dashboard numbers at whatever the last successful snapshot was,
-						// exactly the kind of "shows stale/wrong data" symptom that's otherwise invisible.
+						// A repeated failure here silently freezes that planet's dashboard numbers.
 						DoLog(LogLevel.Warning, $"Skipping resource stats snapshot for {cel}: {e.Message}");
 					}
 					var nextMine = _calculationService.GetNextMineToBuild(cel as Planet, _tbotInstance.UserData.researches, _tbotInstance.UserData.serverData.Speed, maxBuildings.MetalMine, maxBuildings.CrystalMine, maxBuildings.DeuteriumSynthesizer, 1, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.staff.Geologist, _tbotInstance.UserData.staff.IsFull, true, int.MaxValue);
@@ -170,12 +153,8 @@ namespace Tbot.Workers.Brain {
 						}
 					}
 					bool includeCelestial = true;
-					// Same home-planet deadlock this sibling worker (AutoMineCelestialWorker.cs) was
-					// already fixed for this session: the home/lowest-ID planet's field count is fixed
-					// by its position and can never satisfy a typical MinFields threshold, so without
-					// this guard it gets silently dropped from celestialsToMine forever on a fresh
-					// account - Fields.Built only becomes >0 once something gets built, but nothing
-					// ever builds here while the celestial is excluded.
+					// The home planet's field count can never satisfy a typical MinFields threshold, so without
+					// this guard it is dropped from celestialsToMine forever on a fresh account.
 					int homePlanetId = _calculationService.GetHomePlanetId(_tbotInstance.UserData.celestials);
 					if (cel.ID != homePlanetId && cel.Coordinate.Type == Celestials.Planet && cel.Fields.Built == 0 && (bool) _tbotInstance.InstanceSettings.AutoColonize.Abandon.Active) {
 						if (abaCelestial != null && _calculationService.ShouldAbandon(cel as Planet, cel.Fields.Total, abaCelestial.Temperature.Max, fieldsSettings, temperaturesSettings)) {

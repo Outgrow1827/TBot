@@ -185,12 +185,8 @@ namespace Tbot.Workers.Brain {
 						DoLog(LogLevel.Information, $"Skipping {celestial.ToString()}: not enough fields available.");
 						return;
 					}
-					// Mirrors ColonizeWorker's own abandon check: the home planet must never be treated
-					// as a disposable colony candidate here - its field count is fixed by its position
-					// and can never reach a typical MinFields threshold, so without this guard it gets
-					// flagged "should be abandoned" from cycle 1 onward and never gets to build anything
-					// (Fields.Built only ever becomes >0 once something gets built, but nothing ever
-					// builds while flagged - a permanent deadlock on a fresh/single-planet account).
+					// Mirrors ColonizeWorker's abandon check: the home planet's field count can never reach a
+					// typical MinFields threshold, so without this guard it is flagged for abandonment forever.
 					int homePlanetId = _calculationService.GetHomePlanetId(_tbotInstance.UserData.celestials);
 					if (celestial.ID != homePlanetId && _tbotInstance.UserData.celestials.Count > 1 && celestial.Coordinate.Type == Celestials.Planet && celestial.Fields.Built == 0 && (bool) _tbotInstance.InstanceSettings.AutoColonize.Abandon.Active) {
 						if (abaCelestial != null && _calculationService.ShouldAbandon(celestial as Planet, celestial.Fields.Total, abaCelestial.Temperature.Max, fieldsSettings, temperaturesSettings)) {

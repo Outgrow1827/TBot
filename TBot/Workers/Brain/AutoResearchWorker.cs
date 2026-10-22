@@ -48,9 +48,8 @@ namespace Tbot.Workers.Brain {
 			_calculationService.GetNextResearchToBuild(celestial, researches, (bool) _tbotInstance.InstanceSettings.Brain.AutoMine.PrioritizeRobotsAndNanites, _tbotInstance.UserData.slots, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxEnergyTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxLaserTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxIonTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxHyperspaceTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxPlasmaTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxCombustionDrive, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxImpulseDrive, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxHyperspaceDrive, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxEspionageTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxComputerTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxAstrophysics, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxIntergalacticResearchNetwork, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxWeaponsTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxShieldingTechnology, (int) _tbotInstance.InstanceSettings.Brain.AutoResearch.MaxArmourTechnology, (bool) _tbotInstance.InstanceSettings.Brain.AutoResearch.OptimizeForStart, (bool) _tbotInstance.InstanceSettings.Brain.AutoResearch.EnsureExpoSlots, (bool) _tbotInstance.InstanceSettings.Brain.AutoResearch.ForceResearchWhateverTheLabLevel, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.staff.Geologist, _tbotInstance.UserData.staff.Admiral);
 
 		protected override async Task Execute() {
-			// Serializes this worker's whole run against the other 3 Brain item types (AutoMine,
-			// LifeformAutoMine, LifeformAutoResearch) - see BrainTransportCoordinator and project
-			// memory 2026-08-03.
+			// Serializes this worker against the other 3 Brain item types, which read, decide and spend the
+			// same origin resources independently.
 			if (!await BrainTransportCoordinator.GetResourceDecisionLock(_tbotInstance.InstanceAlias).WaitAsync(BrainTransportCoordinator.ResourceDecisionLockTimeout)) {
 				DoLog(LogLevel.Warning, "Skipping this cycle: resource-decision lock still held by another Brain item after 10 minutes (likely stuck) - not waiting further.");
 				return;
@@ -94,9 +93,8 @@ namespace Tbot.Workers.Brain {
 						.FirstOrDefault() as Planet;
 				}
 
-				// Null when the configured Target coordinate doesn't match any planet and the fallback found
-				// no planet at all (eg. celestials not loaded yet) - without this the next line threw an NRE
-				// that aborted the cycle while holding the resource-decision lock.
+				// Null when the configured Target matches no planet and the fallback finds none either -
+				// without this the next line threw an NRE while holding the resource-decision lock.
 				if (celestial == null) {
 					DoLog(LogLevel.Warning, "Skipping AutoResearch: no target planet found (check Brain.AutoResearch.Target).");
 					return;
@@ -248,19 +246,11 @@ namespace Tbot.Workers.Brain {
 							
 							if (MaxSlots > 0) {
 								if (!_calculationService.IsThereTransportTowardsCelestial(celestial, _tbotInstance.UserData.fleets)) {
-									// NOTE: unlike AutoMine/LifeformAutoMine/LifeformAutoResearch, this worker
-									// does its resource-read/decide/SendFleet inline in Execute() instead of
-									// delegating to a separately-scheduled *CelestialWorker - the outer
-									// ResourceDecisionLock acquired at the top of Execute() already covers
-									// this whole method's call stack. Taking the lock again here would be a
-									// self-deadlock (SemaphoreSlim(1,1) is not reentrant): this method already
-									// holds it, so WaitAsync here would block for the full 10-minute timeout on
-									// every cycle that reaches this branch, then give up without ever sending
-									// the needed transport.
+									// This worker does its resource-read/decide/SendFleet inline in Execute(), so the outer
+									// ResourceDecisionLock already covers it: SemaphoreSlim(1,1) is not reentrant.
 									Celestial origin = new() { ID = 0 };
-									// Work on a copy and publish it back: UserData.celestials is shared with every other worker, and
-									// assigning allCelestials[i] on the shared List bumps its version, so any worker enumerating it at
-									// the same moment (eg. AutoFarm picking origins) failed with "Collection was modified".
+									// Work on a copy and publish it back: the shared celestials List is versioned on assignment,
+									// so a worker enumerating it at that moment would fail with "Collection was modified".
 									List<Celestial> allCelestials = _tbotInstance.UserData.celestials.ToList();
 									for (int i = 0; i < allCelestials.Count(); i++) {
 										allCelestials[i] = await _tbotOgameBridge.UpdatePlanet(allCelestials[i], UpdateTypes.Resources);
@@ -307,9 +297,8 @@ namespace Tbot.Workers.Brain {
 												.SingleOrDefault() ?? new() { ID = 0 };
 										}
 										if (origin.ID != 0) {
-										// See AutoMineCelestialWorker for the rationale: StockpileForRoundTrip can
-										// inflate missingResources beyond what's affordable; fall back to whatever
-										// is available rather than sending nothing, as long as it still covers cost.
+										// StockpileForRoundTrip can inflate missingResources beyond what is affordable, so fall back
+										// to what is available as long as it still covers cost.
 										if (!origin.Resources.IsEnoughFor(missingResources) && origin.Resources.IsEnoughFor(cost)) {
 											missingResources = new Resources(
 												Math.Min(missingResources.Metal, origin.Resources.Metal),
@@ -319,11 +308,8 @@ namespace Tbot.Workers.Brain {
 										}
 										if (origin.Resources.IsEnoughFor(missingResources)) {
 											missingResources = _tbotInstance.InstanceSettings.Brain.Transports.RoundResources ? missingResources.Round((int) (SettingsService.IsSettingSet(_tbotInstance.InstanceSettings.Brain.Transports, "RoundTo") ? _tbotInstance.InstanceSettings.Brain.Transports.RoundTo : 1000)) : missingResources;
-												// Uses whatever mix of cargo-capable ships (LargeCargo/SmallCargo/Pathfinder) is
-												// actually at the origin instead of only the single configured CargoType - otherwise
-												// a moon with plenty of SmallCargo but not enough of the configured LargeCargo would
-												// fail this shortcut and fall through to MultipleOrigins, splitting the transport
-												// across many planets even though the moon alone had enough combined capacity.
+												// Counts every cargo-capable ship type actually at the origin, not only the configured
+												// CargoType, or a moon with only SmallCargo would fall through to MultipleOrigins.
 												Ships ships = _calculationService.CalcCargoShipsForPayload(origin.Ships, missingResources, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, origin.LFBonuses, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo);
 												long originCapacity = _calculationService.CalcFleetCapacity(ships, _tbotInstance.UserData.serverData, _tbotInstance.UserData.researches.HyperspaceTechnology, origin.LFBonuses, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo);
 												long originDeutToLeave = origin.Coordinate.Type == Celestials.Moon ? (long) _tbotInstance.InstanceSettings.Brain.Transports.DeutToLeaveOnMoons : 0;
@@ -421,9 +407,8 @@ namespace Tbot.Workers.Brain {
 												var shipmentAmount = shipment.Value;
 												if (shipmentAmount.TotalResources == 0)
 													continue;
-												// Uses whatever mix of cargo-capable ships (LargeCargo/SmallCargo/Pathfinder) is
-												// actually sitting at this origin, not just the single configured CargoType -
-												// matches the capacity estimate CalcMultipleOrigin used to pick this origin.
+												// Counts every cargo-capable ship type actually at this origin, not only the configured
+												// CargoType, matching the capacity estimate the origin was picked with.
 												var ships = _calculationService.CalcCargoShipsForPayload(shipmentOrigin.Ships, shipmentAmount, _tbotInstance.UserData.researches.HyperspaceTechnology, _tbotInstance.UserData.serverData, shipmentOrigin.LFBonuses, _tbotInstance.UserData.userInfo.Class, _tbotInstance.UserData.serverData.ProbeCargo);
 												long shipmentOriginDeutToLeave = shipmentOrigin.Coordinate.Type == Celestials.Moon ? (long) _tbotInstance.InstanceSettings.Brain.Transports.DeutToLeaveOnMoons : 0;
 												if (shipmentOrigin.Coordinate.IsSame(destination.Coordinate) && transportsSettings.SendToTheMoonIfPossible && destination.Coordinate.Type == Celestials.Moon)

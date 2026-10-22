@@ -10,20 +10,14 @@ namespace Tbot.Services {
 	// The 4 Brain workers share Brain.Transports.MaxSlots as one pool; the lock keeps them from
 	// spending the same origin's resources twice.
 	public static class BrainTransportCoordinator {
-		// One lock per instance (account), not one process-wide: the 4 Brain workers of the SAME account
-		// must serialize against each other, but two different accounts running in the same process
-		// never share resources, so a single static lock only made one account's slow/stalled worker
-		// block every other account's Brain cycle for up to ResourceDecisionLockTimeout.
+		// One lock per account, not process-wide: two accounts in the same process never share
+		// resources, so one account's stalled worker must not block the others' cycles.
 		private static readonly ConcurrentDictionary<string, SemaphoreSlim> _resourceDecisionLocks = new();
 		public static SemaphoreSlim GetResourceDecisionLock(string instanceAlias) =>
 			_resourceDecisionLocks.GetOrAdd(instanceAlias ?? "", _ => new SemaphoreSlim(1, 1));
 
-		// A network call stuck inside one worker's locked section (no response, no error - the
-		// kind of silent connection stall seen against Gameforge's servers) would otherwise hold
-		// this semaphore forever, permanently blocking the other 3 Brain workers too and, since
-		// they're awaited from the same scheduling loop, potentially freezing the whole app
-		// (observed 2026-08-05: console stopped responding, had to be force-closed). Bound the
-		// wait so a stuck worker can only ever cost the others this long, not forever.
+		// A network call stuck in the locked section would hold the semaphore forever, so the wait is
+		// bounded: a stuck worker can only cost the others this long.
 		public static readonly TimeSpan ResourceDecisionLockTimeout = TimeSpan.FromMinutes(10);
 
 		// loop guard only; the window is time-based
