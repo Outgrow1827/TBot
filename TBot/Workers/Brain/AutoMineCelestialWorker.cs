@@ -259,31 +259,6 @@ namespace Tbot.Workers.Brain {
 						}
 					}
 
-					// Remembers the FULL count actually needed to close the energy deficit (before the
-					// affordability cap below reduces `level`), so a partial batch can still trigger a
-					// transport request for the shortfall afterwards - see the top-up block after the
-					// build attempt. Only SolarSatellite/Crawler ever get capped this way.
-					int originalLevel = level;
-					if (buildable == Buildables.SolarSatellite || buildable == Buildables.Crawler) {
-						long maxBuildable = _calculationService.CalcMaxBuildableNumber(buildable, celestial.Resources);
-						if (maxBuildable > 0) {
-							if (maxBuildable < level) {
-								DoLog(LogLevel.Information, $"Building partial batch: {maxBuildable}/{level} {buildable.ToString()} on {celestial.ToString()} (limited by available resources)");
-							}
-							// only ever lowers the order to what is affordable, never raises it past the need
-							level = (int) Math.Min(maxBuildable, level);
-							xCostBuildable = _calculationService.CalcPrice(buildable, level, celestial.LFBonuses);
-						}
-					}
-
-					// A transport is requested for the remaining shortfall after this build attempt via
-					// RequestTransportTopUp() below - either because nothing could be built at all
-					// (existing behavior), or because SolarSatellite/Crawler could only get a partial
-					// batch (drains the celestial's Crystal/Deuterium to build what it could) and the
-					// energy deficit is still only partly covered. Previously only the "built nothing"
-					// case requested a transport; a successful partial build skipped it entirely and just
-					// waited for slow natural production to refill the resources for the rest - reported
-					// live 2026-09-16 ("consumindo todas as reservas... ao invés de... aguardar o transporte").
 					if (celestial.Resources.IsEnoughFor(xCostBuildable) && buildable != Buildables.Null) {
 						bool result = false;
 						if (buildable == Buildables.SolarSatellite || buildable == Buildables.Crawler) {
@@ -331,12 +306,6 @@ namespace Tbot.Workers.Brain {
 									started = true;
 									DoLog(LogLevel.Information, $"Unable to determine if the production has started.");
 								}
-								if (started && level < originalLevel) {
-									int stillNeeded = originalLevel - level;
-									DoLog(LogLevel.Information, $"{buildable.ToString()} batch only covers {level}/{originalLevel} needed on {celestial.ToString()} - requesting transport for the remaining {stillNeeded}.");
-									xCostBuildable = _calculationService.CalcPrice(buildable, stillNeeded, celestial.LFBonuses);
-									await RequestTransportTopUp();
-								}
 							} else {
 								celestial = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.Constructions);
 								if (celestial.Constructions.BuildingID == (int) buildable) {
@@ -370,12 +339,7 @@ namespace Tbot.Workers.Brain {
 						await RequestTransportTopUp();
 					}
 
-					// Extracted so a SolarSatellite/Crawler partial batch (built above using whatever
-					// resources were on hand) can also request a transport for the remaining shortfall,
-					// not just the "built nothing at all" case this was originally written for. A local
-					// function closes over celestial/buildable/level/xCostBuildable/fleetId/stop/delay
-					// from the enclosing method, so both call sites share one implementation instead of
-					// duplicating this ~270-line dispatch block.
+					// requests a transport for what xCostBuildable still lacks
 					async Task RequestTransportTopUp() {
 						if ((bool) _tbotInstance.InstanceSettings.Brain.AutoMine.Transports.Active && (bool) _tbotInstance.InstanceSettings.Brain.Transports.Active) {
 							_tbotInstance.UserData.slots = await _tbotOgameBridge.UpdateSlots();

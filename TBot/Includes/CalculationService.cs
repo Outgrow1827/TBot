@@ -3179,15 +3179,8 @@ namespace Tbot.Includes {
 		public int GetNextLevel(Celestial planet, Buildables buildable, bool isCollector = false, bool hasEngineer = false, bool hasFullStaff = false) {
 			int output = 0;
 			if (buildable == Buildables.SolarSatellite) {
-				if (planet is Planet p) {
-					long energyDeficit = Math.Abs(p.ResourcesProduction.Energy.Available);
-					// Exactly 0 means no deficit (balanced or surplus) - nothing to build. The
-					// hardcoded "100" this used to fall back to had no basis at all and could queue
-					// 100 unneeded satellites on a perfectly healthy planet.
-					output = energyDeficit > 0
-						? CalcNeededSolarSatellites(p, energyDeficit, isCollector, hasEngineer, hasFullStaff)
-						: 0;
-				}
+				if (planet is Planet)
+					output = CalcNeededSolarSatellites(planet as Planet, Math.Abs(planet.Resources.Energy), isCollector, hasEngineer, hasFullStaff);
 			} else if (output == 0 && planet is Planet) {
 				foreach (PropertyInfo prop in planet.Buildings.GetType().GetProperties()) {
 					if (prop.Name == buildable.ToString()) {
@@ -3319,45 +3312,13 @@ namespace Tbot.Includes {
 			return (int) Math.Round(production + collectorProd + engineerProd + staffProd);
 		}
 
-		// Real incident 2026-10-15: requested 2,303,257 satellites in one shot (the game itself capped
-		// the actual build at 99999, still wiping the account's resources). The deficit this computes
-		// from ultimately comes from ogamed/the game server's own reported production numbers - on a
-		// high-speed server those can be scaled far beyond what GetSolarSatelliteOutput (never
-		// speed-scaled - satellite output is purely temperature-based in OGame) can plausibly need to
-		// cover, so a bad/transient reading turns into an astronomical, resource-draining order with no
-		// sanity check at all between "needed" and "plausible". MaxSatellitesPerOrder caps a single
-		// computed order at a planet's own existing fleet of satellites plus a fixed safety margin, so
-		// one bad reading can inflate the order by a bounded amount rather than without limit - a
-		// legitimately large real deficit still gets covered over several cycles instead of one bad
-		// order burning every resource at once.
-		private const int MaxSatellitesPerOrderMargin = 50;
 		public int CalcNeededSolarSatellites(Planet planet, long requiredEnergy = 0, bool isCollector = false, bool hasEngineer = false, bool hasFullStaff = false) {
-			int cap = (int) planet.Ships.SolarSatellite + MaxSatellitesPerOrderMargin;
-
-			// An extreme (likely unreachable in practice) planet temperature can make
-			// GetSolarSatelliteOutput return 0, turning the division below into Infinity/NaN -
-			// casting that to int is undefined in C# and can yield a garbage value that slips past
-			// the "needed > cap" check entirely (eg. a huge negative number). Guard it explicitly
-			// instead of relying on the cap to catch every possible float edge case.
-			int output = GetSolarSatelliteOutput(planet, isCollector, hasEngineer, hasFullStaff);
-			if (output <= 0) {
-				_logger.WriteLog(LogLevel.Warning, LogSender.Brain, $"{planet}: GetSolarSatelliteOutput returned {output} (implausible planet temperature?) - cannot size a SolarSatellite order, capping to {cap}.");
-				return cap;
-			}
-
-			int needed;
 			if (requiredEnergy <= 0) {
 				if (planet.Resources.Energy > 0)
 					return 0;
-				needed = (int) Math.Round((float) Math.Abs(planet.Resources.Energy) / output, MidpointRounding.ToPositiveInfinity);
+				return (int) Math.Round((float) (Math.Abs(planet.Resources.Energy) / (float) GetSolarSatelliteOutput(planet, isCollector, hasEngineer, hasFullStaff)), MidpointRounding.ToPositiveInfinity);
 			} else
-				needed = (int) Math.Round((float) Math.Abs(requiredEnergy) / output, MidpointRounding.ToPositiveInfinity);
-
-			if (needed > cap || needed < 0) {
-				_logger.WriteLog(LogLevel.Warning, LogSender.Brain, $"{planet}: computed need of {needed} SolarSatellite looks implausible (existing: {planet.Ships.SolarSatellite}) - capping this order to {cap}. Will re-evaluate and continue next cycle if the real deficit is still there.");
-				return cap;
-			}
-			return needed;
+				return (int) Math.Round((float) (Math.Abs(requiredEnergy) / (float) GetSolarSatelliteOutput(planet, isCollector, hasEngineer, hasFullStaff)), MidpointRounding.ToPositiveInfinity);
 		}
 
 		public Buildables GetNextMineToBuild(Planet planet, int maxMetalMine = 100, int maxCrystalMine = 100, int maxDeuteriumSynthetizer = 100, bool optimizeForStart = true) {
