@@ -61,15 +61,8 @@ namespace Tbot.Services {
 				elapsed += seconds;
 				steps++;
 			}
-
-			long shipsNeeded = calculationService.CalcShipNumberForPayload(total, preferredShip, researches.HyperspaceTechnology, serverData, 0, playerClass, 0);
-			var fuelShips = new Ships();
-			fuelShips.Add(preferredShip, shipsNeeded);
-			long roundTripFuel = calculationService.CalcFleetPrediction(
-				origin, celestial.Coordinate, fuelShips, Missions.Transport,
-				Speeds.HundredPercent, researches, serverData, celestial.LFBonuses, playerClass, allianceClass
-			).Fuel * 2;
-			return total.Sum(new Resources(0, 0, roundTripFuel));
+			// fuel is not added: it is paid from the origin's deuterium when the fleet leaves
+			return total;
 		}
 
 		// Seconds until SleepMode's next GoToSleep; MaxValue when sleep mode is off or unparsable.

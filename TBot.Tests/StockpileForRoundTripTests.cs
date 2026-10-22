@@ -65,6 +65,14 @@ namespace TBot.Tests {
 		}
 
 		[Fact]
+		public void FlightFuelIsNotShippedToTheColony() {
+			// 2:201:9 kept 2.4M idle deut while every transport delivered the round-trip fuel again
+			var total = Stockpile(new[] { (new Resources(63_000_000, 22_000_000, 1_638_400), 0L) });
+
+			Assert.Equal(1_638_400, total.Deuterium);
+		}
+
+		[Fact]
 		public void FirstStepIsAlwaysCovered() {
 			var total = Stockpile(new[] { (new Resources(673_365, 168_342, 0), 999_999L) });
 
