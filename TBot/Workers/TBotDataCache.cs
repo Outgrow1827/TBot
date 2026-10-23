@@ -92,33 +92,7 @@ namespace Tbot.Workers {
 
 		// The AutoDiscovery cursor survives a restart instead of restarting at system/position 1 on every deploy cycle.
 
-		public void SaveDiscoveryCursor(Celestial origin, int system, int nextPosition) {
-			using var cmd = _db.CreateCommand();
-			cmd.CommandText = @"
-				INSERT INTO autodiscovery_cursor (origin_key, system, next_position, updated_at)
-				VALUES ($key, $system, $nextPosition, $now)
-				ON CONFLICT(origin_key) DO UPDATE SET
-					system = excluded.system,
-					next_position = excluded.next_position,
-					updated_at = excluded.updated_at;
-			";
-			cmd.Parameters.AddWithValue("$key", $"{origin.Coordinate.Galaxy}:{origin.Coordinate.System}:{origin.Coordinate.Position}:{origin.Coordinate.Type}");
-			cmd.Parameters.AddWithValue("$system", system);
-			cmd.Parameters.AddWithValue("$nextPosition", nextPosition);
-			cmd.Parameters.AddWithValue("$now", DateTime.UtcNow.ToString("O"));
-			cmd.ExecuteNonQuery();
-		}
 
-		public (int System, int NextPosition)? LoadDiscoveryCursor(Celestial origin) {
-			using var cmd = _db.CreateCommand();
-			cmd.CommandText = "SELECT system, next_position FROM autodiscovery_cursor WHERE origin_key = $key";
-			cmd.Parameters.AddWithValue("$key", $"{origin.Coordinate.Galaxy}:{origin.Coordinate.System}:{origin.Coordinate.Position}:{origin.Coordinate.Type}");
-			using var reader = cmd.ExecuteReader();
-			if (reader.Read()) {
-				return (reader.GetInt32(0), reader.GetInt32(1));
-			}
-			return null;
-		}
 
 		// --- Galaxy scan cache (lets AutoHarvest.ScanRange skip re-fetching a system it already
 		// scanned recently, surviving a bot restart instead of resetting to empty every time) ---
@@ -187,36 +161,7 @@ namespace Tbot.Workers {
 			cmd.ExecuteNonQuery();
 		}
 
-		public (long Metal, long Crystal, long Deuterium) GetHarvestLifetimeTotal() {
-			using var cmd = _db.CreateCommand();
-			cmd.CommandText = @"
-				SELECT COALESCE(SUM(metal),0), COALESCE(SUM(crystal),0), COALESCE(SUM(deuterium),0)
-				FROM harvest_results;
-			";
-			using var reader = cmd.ExecuteReader();
-			if (reader.Read())
-				return (reader.GetInt64(0), reader.GetInt64(1), reader.GetInt64(2));
-			return (0, 0, 0);
-		}
 
-		/// <summary>Positions that have produced debris repeatedly, ordered by how often - useful to
-		/// prioritize a wide ScanRange or to eyeball which players are worth watching.</summary>
-		public List<(int Galaxy, int System, int Position, int TimesSeen)> GetFrequentPositions(int galaxy, int minTimesSeen = 2) {
-			var result = new List<(int, int, int, int)>();
-			using var cmd = _db.CreateCommand();
-			cmd.CommandText = @"
-				SELECT galaxy, system, position, times_seen FROM harvest_debris_history
-				WHERE galaxy = $galaxy AND times_seen >= $minTimesSeen
-				ORDER BY times_seen DESC;
-			";
-			cmd.Parameters.AddWithValue("$galaxy", galaxy);
-			cmd.Parameters.AddWithValue("$minTimesSeen", minTimesSeen);
-			using var reader = cmd.ExecuteReader();
-			while (reader.Read()) {
-				result.Add((reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2), reader.GetInt32(3)));
-			}
-			return result;
-		}
 
 		// Full-scan throttling: the expensive ScanRange sweep runs every few hours instead of every cycle, since it alone could exceed the watchdog's stuck window.
 

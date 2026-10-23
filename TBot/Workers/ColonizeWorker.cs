@@ -89,10 +89,7 @@ namespace Tbot.Workers {
 
 		// Each AutoColonize.Exclude entry is either a single coordinate or a range; an empty list excludes nothing.
 		private static bool HasKey(dynamic entry, string key) {
-			foreach (var value in (IEnumerable<string>) entry.Keys)
-				if (value == key)
-					return true;
-			return false;
+			return ((IEnumerable<string>) entry.Keys).Contains(key);
 		}
 
 		private bool ShouldExcludeSystem(int galaxy, int system) {

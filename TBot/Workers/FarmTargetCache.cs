@@ -268,27 +268,7 @@ namespace Tbot.Workers {
 				.ToList();
 		}
 
-		/// <summary>Gets the cached entries in a galaxy/system range without the minimum resources filter, for debugging and cache management.</summary>
-		public List<FarmTargetCacheEntry> GetAllInRange(int galaxy, int startSystem, int endSystem) {
-			return _entries.Values
-				.Where(e => e.Coordinate.Galaxy == galaxy && e.Coordinate.System >= startSystem && e.Coordinate.System <= endSystem)
-				.ToList();
-		}
 
-		/// <summary>Highest known stockpile among the still-eligible cached targets in this system, or 0, so FastFarmMode visits the most promising systems first.</summary>
-		public long GetBestKnownResourcesInSystem(int galaxy, int system) {
-			var candidates = _entries.Values
-				.Where(e => e.Coordinate.Galaxy == galaxy && e.Coordinate.System == system)
-				.Where(e => e.IsInactive && !e.IsAdministrator && !e.IsBanned && !e.IsVacation)
-				.Where(e => e.LastKnownResources != null && e.LastKnownResources.TotalResources >= MinimumResources);
-			long best = 0;
-			foreach (var entry in candidates) {
-				var total = entry.LastKnownResources.TotalResources;
-				if (total > best)
-					best = total;
-			}
-			return best;
-		}
 
 		// --- System scan cache (FastFarmMode: lets AutoFarm skip a live galaxy scan for a system
 		// it already scanned recently, reusing what a normal AutoFarm cycle found instead) ---
@@ -343,12 +323,6 @@ namespace Tbot.Workers {
 			cmd.ExecuteNonQuery();
 		}
 
-		public void RemoveFromBlacklist(Coordinate coord) {
-			using var cmd = _db.CreateCommand();
-			cmd.CommandText = "DELETE FROM farm_blacklist WHERE coordinate_key = $key";
-			cmd.Parameters.AddWithValue("$key", GetKey(coord));
-			cmd.ExecuteNonQuery();
-		}
 
 		// Player blacklist: the player_id is stored and checked first when the caller has it, so a renamed player stays listed; callers without an id still use the name-only path.
 
@@ -388,12 +362,6 @@ namespace Tbot.Workers {
 			cmd.ExecuteNonQuery();
 		}
 
-		public void RemoveFromPlayerBlacklist(string playerName) {
-			using var cmd = _db.CreateCommand();
-			cmd.CommandText = "DELETE FROM player_blacklist WHERE player_name = $name";
-			cmd.Parameters.AddWithValue("$name", playerName);
-			cmd.ExecuteNonQuery();
-		}
 
 		// --- Player activity tracking (keyed by PlayerId so an inactive who resettles/reactivates
 		// on a different planet is recognized immediately; avoids wasting fleets/probes on active players) ---
@@ -485,23 +453,7 @@ namespace Tbot.Workers {
 			return Convert.ToInt32(cmd.ExecuteScalar());
 		}
 
-		/// <summary>Average real total loot collected across all recorded raids against this player (any coordinate), or null if never recorded. Used for poor-farm blacklisting by player (#10) - recognizes an inactive even after they resettle on a different planet.</summary>
-		public double? GetAveragePlayerLoot(string playerName) {
-			if (string.IsNullOrEmpty(playerName)) return null;
-			using var cmd = _db.CreateCommand();
-			cmd.CommandText = "SELECT AVG(metal + crystal + deuterium) FROM attack_history WHERE player_name = $name";
-			cmd.Parameters.AddWithValue("$name", playerName);
-			var result = cmd.ExecuteScalar();
-			return result == null || result == DBNull.Value ? null : Convert.ToDouble(result);
-		}
 
-		public int GetPlayerAttackCount(string playerName) {
-			if (string.IsNullOrEmpty(playerName)) return 0;
-			using var cmd = _db.CreateCommand();
-			cmd.CommandText = "SELECT COUNT(*) FROM attack_history WHERE player_name = $name";
-			cmd.Parameters.AddWithValue("$name", playerName);
-			return Convert.ToInt32(cmd.ExecuteScalar());
-		}
 
 		public void Dispose() {
 			_db?.Dispose();

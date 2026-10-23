@@ -280,10 +280,7 @@ namespace Tbot.Workers {
 						_farmTargetCache?.BlacklistPlayer(playerName, DateTime.UtcNow.AddHours(blacklistHours), blacklistPlayerId);
 					}
 					
-					var blacklistedTarget = target;
-					blacklistedTarget.State = FarmState.NotSuitable;
-					_tbotInstance.UserData.farmTargets.Remove(target);
-					_tbotInstance.UserData.farmTargets.Add(blacklistedTarget);
+					target.State = FarmState.NotSuitable;
 					continue;
 				}
 
@@ -345,13 +342,10 @@ namespace Tbot.Workers {
 					freeSlots--;
 					celestialProbes[bestOrigin.Origin.ID] -= neededProbes;
 
-					var updatedTarget = target;
-					updatedTarget.ProbeRetryCount++;
-					updatedTarget.LastProbeSentAt = now;
-					_tbotInstance.UserData.farmTargets.Remove(target);
-					_tbotInstance.UserData.farmTargets.Add(updatedTarget);
+					target.ProbeRetryCount++;
+					target.LastProbeSentAt = now;
 
-					_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"Probe retry dispatched for {target} (fleet ID: {fleetId}, retry count: {updatedTarget.ProbeRetryCount}).");
+					_tbotInstance.log(LogLevel.Information, LogSender.AutoFarm, $"Probe retry dispatched for {target} (fleet ID: {fleetId}, retry count: {target.ProbeRetryCount}).");
 				} else if (fleetId == (int) SendFleetCode.AfterSleepTime) {
 					break;
 				} else if (fleetId == (int) SendFleetCode.NotEnoughSlots) {
@@ -370,18 +364,6 @@ namespace Tbot.Workers {
 					group => group.First().Ships?.EspionageProbe ?? 0);
 		}
 
-		// Live variant kept from the previous tree: refreshes every celestial before reading its
-		// probe count, for the code paths that cannot rely on an already-updated origin list.
-		private async Task<Dictionary<int, long>> GetCelestialProbes() {
-			var localCelestials = await _tbotOgameBridge.UpdateCelestials();
-			Dictionary<int, long> celestialProbes = new Dictionary<int, long>();
-			foreach (var celestial in localCelestials) {
-				Celestial tempCelestial = await _tbotOgameBridge.UpdatePlanet(celestial, UpdateTypes.Fast);
-				tempCelestial = await _tbotOgameBridge.UpdatePlanet(tempCelestial, UpdateTypes.Ships);
-				celestialProbes.Add(tempCelestial.ID, tempCelestial.Ships.EspionageProbe);
-			}
-			return celestialProbes;
-		}
 
 		private List<Celestial> GetFarmOrigins() {
 			List<Celestial> origins;
@@ -400,15 +382,10 @@ namespace Tbot.Workers {
 		private long GetMinDistanceFromOrigins(Coordinate targetCoord, List<Celestial> origins) {
 			if (targetCoord == null || origins == null || origins.Count == 0)
 				return long.MaxValue;
-			long minDist = long.MaxValue;
-			foreach (var origin in origins) {
-				if (origin.Coordinate == null)
-					continue;
-				long dist = _calculationService.CalcDistance(origin.Coordinate, targetCoord, _tbotInstance.UserData.serverData);
-				if (dist < minDist)
-					minDist = dist;
-			}
-			return minDist;
+			return origins.Where(o => o.Coordinate != null)
+				.Select(o => (long) _calculationService.CalcDistance(o.Coordinate, targetCoord, _tbotInstance.UserData.serverData))
+				.DefaultIfEmpty(long.MaxValue)
+				.Min();
 		}
 
 		private long GetDistance(Coordinate from, Coordinate to) {
